@@ -1,0 +1,26 @@
+{
+  "name": "@shoots/imaging",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "shoots imaging layer: exiftool wrapper, sharp-based thumbnails/previews, classic blur detection. Headless, no UI dependencies.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@shoots/core": "^0.1.0",
+    "sharp": "^0.34.2"
+  }
+}

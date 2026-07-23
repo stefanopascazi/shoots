@@ -1,0 +1,25 @@
+{
+  "name": "@shoots/core",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "shoots pipeline engine: file discovery, templating, job orchestration, declarative pipeline config. Zero UI dependencies.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0"
+  }
+}

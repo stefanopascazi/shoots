@@ -1,0 +1,44 @@
+# Sample shoots pipeline: card → tagged → culled → rated.
+#
+# Consumed by `shoots run <config.yaml>` (lands in a later stage).
+# Types: packages/core/src/pipeline/PipelineConfig.ts
+#
+# Pipelines are plain files on purpose: version them, share them across the
+# studio, run them headless from cron / CI / a watch folder.
+version: 1
+name: wedding-ingest
+
+steps:
+  - type: import
+    id: offload-card
+    source: "E:/DCIM/100CANON"
+    dest: "D:/Shoots/2026/smith-wedding/raw"
+    pattern: "{date}_{time}_{camera}_{seq:4}.{ext}"
+    move: false            # copy only; checksum-verified either way
+
+  - type: exif
+    id: studio-tags
+    set:
+      artist: "Jane Doe Photography"
+      copyright: "© 2026 Jane Doe Photography. All rights reserved."
+      keywords: [wedding, smith, "2026"]
+
+  - type: cull
+    id: focus-check
+    threshold: 100         # Laplacian variance; tune per camera/subject
+    separate: true
+    dest: "D:/Shoots/2026/smith-wedding/culled"
+
+  - type: rate
+    id: first-pass-rating
+    model: stub            # swap for 'onnx' when the real model lands
+    output: sidecar
+
+  # Future stage — declared now so this config keeps working unchanged later.
+  - type: export
+    id: client-proofs
+    enabled: false
+    format: jpeg
+    maxDimension: 3000
+    quality: 90
+    dest: "D:/Shoots/2026/smith-wedding/proofs"

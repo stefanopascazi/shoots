@@ -1,0 +1,22 @@
+{
+  "name": "@shoots/inference",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "shoots ML inference seam: QualityModel interface + deterministic local stub. Future backend: onnxruntime-node (local) or a cloud endpoint — no changes required outside this package.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  }
+}

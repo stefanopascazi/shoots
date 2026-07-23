@@ -1,0 +1,29 @@
+{
+  "name": "@shoots/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "shoots — scriptable batch automation CLI for photography workflows",
+  "bin": {
+    "shoots": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@shoots/core": "^0.1.0",
+    "@shoots/imaging": "^0.1.0",
+    "@shoots/inference": "^0.1.0",
+    "commander": "^14.0.0",
+    "ink": "^6.0.0",
+    "react": "^19.0.0",
+    "yaml": "^2.6.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0"
+  }
+}
