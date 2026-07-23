@@ -52,6 +52,32 @@ npm link -w @shoots/cli && shoots --help
 
 For iterative development, `npm run dev -w @shoots/core` (etc.) runs `tsup --watch` per package.
 
+## Interactive shell
+
+Running `shoots` with no arguments on a terminal opens a fullscreen interactive shell (Claude Code-style):
+
+```
+  ███████╗██╗  ██╗ ██████╗  ██████╗ ████████╗███████╗
+  ██╔════╝██║  ██║██╔═══██╗██╔═══██╗╚══██╔══╝██╔════╝
+  ███████╗███████║██║   ██║██║   ██║   ██║   ███████╗
+  ╚════██║██╔══██║██║   ██║██║   ██║   ██║   ╚════██║
+  ███████║██║  ██║╚██████╔╝╚██████╔╝   ██║   ███████║
+  ╚══════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝
+  ◉ v0.1.0 — batch automation for photographers
+
+❯ /cull @raw/ --threshold 120 --separate
+```
+
+- Runs in the terminal's **alternate screen buffer** (like vim): it takes over a clean screen, and on exit your previous terminal content is restored exactly as it was
+- The **input is pinned to the bottom**; command output scrolls in the shell's own history above it
+- **`/`** opens the command palette with autocomplete (`/import`, `/cull`, …) — `↑`/`↓` to navigate, `Tab` to accept
+- **`@`** mentions files/folders with filesystem autocomplete (`@raw/`, `@"my folder/"`), capped at 6 entries with a `+N more` hint; mentions expand to plain paths before execution
+- **`↑`/`↓`** also recall command history; **`Esc`** clears the input or cancels a running command
+- Builtins: `/cd`, `/pwd`, `/clear`, `/help`, `/version`, `/exit`
+- Commands run in a child process with live output streaming — identical behavior to batch mode
+
+The shell only activates on a TTY; `shoots` in a pipe/cron prints help and all batch commands work unchanged, so scripts are unaffected.
+
 ## Commands
 
 ### `shoots import <source> --dest <path>`
