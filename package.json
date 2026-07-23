@@ -14,7 +14,8 @@
     "build": "npm run build -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "clean": "node -e \"for (const p of ['core','imaging','inference','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
-    "shoots": "node packages/cli/dist/cli.js"
+    "shoots": "node packages/cli/dist/cli.js",
+    "build:binary": "bun scripts/build-binary.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
