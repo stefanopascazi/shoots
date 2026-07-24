@@ -88,7 +88,15 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     return;
   }
 
-  const files = await scanFiles(targetPath);
+  // Destination for --separate; resolved up front so we can keep it out of the
+  // scan. scanFiles recurses and the default dest lives inside the target, so
+  // re-running --separate would otherwise re-analyze the sharp/ and blurry/ copies.
+  const destRoot = path.resolve(options.dest ?? path.join(targetPath, '_culled'));
+  const destPrefix = destRoot + path.sep;
+  const scanned = await scanFiles(targetPath);
+  const files = options.separate
+    ? scanned.filter((f) => f.path !== destRoot && !f.path.startsWith(destPrefix))
+    : scanned;
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
     if (io.json) printJson({ command: 'cull', threshold, results: [], errors: [], summary: { total: 0, sharp: 0, blurry: 0, failed: 0 } });
@@ -133,7 +141,6 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   const apertureByFile = await readApertures(io, files.map((f) => f.path));
 
   // ---- optional separation (copies only, originals untouched) ----
-  const destRoot = path.resolve(options.dest ?? path.join(targetPath, '_culled'));
   const copied: { source: string; dest: string }[] = [];
   if (options.separate && !options.dryRun) {
     await mkdir(path.join(destRoot, 'sharp'), { recursive: true });
