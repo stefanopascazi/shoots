@@ -28,6 +28,8 @@ const VERSION = '0.1.0';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const MAX_HISTORY_LINES = 1000;
 const RUNNING_TAIL = 10;
+/** How many suggestions are visible at once; the rest scroll into view. */
+const SUGGEST_WINDOW = 5;
 
 // ---------------------------------------------------------------------------
 // History line model: one visual row = one Line = a list of styled spans.
@@ -367,8 +369,18 @@ export function Shell() {
   const runningTail = outputRef.current.slice(-RUNNING_TAIL);
   const elapsed = running ? ((Date.now() - running.startedAt) / 1000).toFixed(0) : '0';
 
+  // ---- suggestion window: show SUGGEST_WINDOW rows, scroll to keep the
+  // selection in view; overflow is summarized as "↑/↓ N more". ----
+  const total = suggestions.length;
+  const winStart =
+    total <= SUGGEST_WINDOW ? 0 : Math.max(0, Math.min(selIndex - 2, total - SUGGEST_WINDOW));
+  const windowed = suggestions.slice(winStart, winStart + SUGGEST_WINDOW);
+  const moreAbove = winStart;
+  const moreBelow = total - (winStart + windowed.length) + hiddenCount;
+
   // ---- viewport math: history gets whatever the bottom area doesn't need ----
-  const suggestionRows = suggestions.length + (hiddenCount > 0 ? 1 : 0);
+  const suggestionRows =
+    total > 0 ? windowed.length + (moreAbove > 0 ? 1 : 0) + (moreBelow > 0 ? 1 : 0) : 0;
   const usageRows = activeSpec && suggestions.length === 0 ? 1 : 0;
   const bottomRows = running
     ? 1 + runningTail.length
@@ -406,6 +418,41 @@ export function Shell() {
         </Box>
       ) : (
         <Box flexDirection="column">
+          {suggestions.length > 0 && (
+            <Box flexDirection="column" paddingLeft={2}>
+              {moreAbove > 0 && (
+                <Text dimColor wrap="truncate-end">
+                  {'  '}↑ {moreAbove} more
+                </Text>
+              )}
+              {windowed.map((s, i) => {
+                const idx = winStart + i;
+                return (
+                  <Text key={s.apply + s.label} wrap="truncate-end">
+                    {idx === selIndex ? <Text color="cyan">❯ </Text> : '  '}
+                    <Text color={idx === selIndex ? 'cyan' : undefined} bold={idx === selIndex}>
+                      {s.kind === 'path' && <Text color="magenta">@</Text>}
+                      {s.label}
+                    </Text>
+                    {s.hint && <Text dimColor> {s.hint}</Text>}
+                  </Text>
+                );
+              })}
+              {moreBelow > 0 && (
+                <Text dimColor wrap="truncate-end">
+                  {'  '}↓ {moreBelow} more — ↑↓ to scroll
+                </Text>
+              )}
+            </Box>
+          )}
+
+          {activeSpec && suggestions.length === 0 && (
+            <Text dimColor wrap="truncate-end">
+              {'  '}
+              {activeSpec.usage}
+            </Text>
+          )}
+
           <Box borderStyle="round" borderColor="cyan" paddingX={1}>
             <Text color="cyan" bold>
               ❯{' '}
@@ -420,33 +467,6 @@ export function Shell() {
               </Text>
             )}
           </Box>
-
-          {suggestions.length > 0 && (
-            <Box flexDirection="column" paddingLeft={2}>
-              {suggestions.map((s, i) => (
-                <Text key={s.apply + s.label} wrap="truncate-end">
-                  {i === selIndex ? <Text color="cyan">❯ </Text> : '  '}
-                  <Text color={i === selIndex ? 'cyan' : undefined} bold={i === selIndex}>
-                    {s.kind === 'path' && <Text color="magenta">@</Text>}
-                    {s.label}
-                  </Text>
-                  {s.hint && <Text dimColor> {s.hint}</Text>}
-                </Text>
-              ))}
-              {hiddenCount > 0 && (
-                <Text dimColor wrap="truncate-end">
-                  {'  '}… +{hiddenCount} more — keep typing to filter
-                </Text>
-              )}
-            </Box>
-          )}
-
-          {activeSpec && suggestions.length === 0 && (
-            <Text dimColor wrap="truncate-end">
-              {'  '}
-              {activeSpec.usage}
-            </Text>
-          )}
 
           <Text dimColor wrap="truncate-end">
             {'  '}

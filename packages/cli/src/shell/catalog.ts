@@ -14,8 +14,8 @@ export interface CommandSpec {
 export const COMMANDS: CommandSpec[] = [
   {
     name: 'import',
-    summary: 'Offload a card: copy, rename from EXIF, checksum-verify',
-    usage: '/import <source> --dest <path> [--pattern <tpl>] [--move] [--dry-run] [--json]',
+    summary: 'Offload a card: copy into date folders, checksum-verify',
+    usage: '/import <source> --dest <path> [--rename | --pattern <tpl>] [--dir <tpl> | --flat] [--move] [--dry-run]',
   },
   {
     name: 'rename',
@@ -36,6 +36,16 @@ export const COMMANDS: CommandSpec[] = [
     name: 'rate',
     summary: 'Star ratings + keyword suggestions via the inference model',
     usage: '/rate <path> [--write-xmp] [--dry-run] [--json]',
+  },
+  {
+    name: 'setup',
+    summary: 'Download & verify external tools (exiftool) into ~/.shoots',
+    usage: '/setup [--json]',
+  },
+  {
+    name: 'doctor',
+    summary: 'Check the environment: home, tools, imaging stack',
+    usage: '/doctor [--json]',
   },
   { name: 'cd', builtin: true, summary: 'Change the shell working directory', usage: '/cd <path>' },
   { name: 'pwd', builtin: true, summary: 'Print the shell working directory', usage: '/pwd' },
