@@ -144,6 +144,7 @@ export interface ShellProps {
 /** Live state of an interactive triage review. */
 interface TriageSession {
   dest: string;
+  dryRun: boolean;
   items: ReviewItem[];
   index: number;
   kept: number;
@@ -384,23 +385,27 @@ export function Shell({ mouse }: ShellProps = {}) {
       return i >= 0 ? args[i + 1] : undefined;
     };
     const dest = flag('--dest');
+    const dryRun = args.includes('--dry-run');
     const abs = path.resolve(cwd, positional[0] ?? '.');
     setTriageBusy({ done: 0, total: 0 });
     runTriage(abs, {
       dest: dest ? path.resolve(cwd, dest) : undefined,
       threshold: numOrUndef(flag('--threshold')),
       focusThreshold: numOrUndef(flag('--focus-threshold')),
+      dryRun,
       onProgress: (done, total) => setTriageBusy({ done, total }),
     })
       .then((res) => {
         setTriageBusy(null);
+        const filed = res.dryRun ? 'would file' : 'auto-filed';
         const lines: Line[] = [
           [
-            span('  auto-filed ', { dim: true }),
+            span(`  ${filed} `, { dim: true }),
             span(`${res.autoSharp} sharp`, { color: 'green' }),
             span(' · ', { dim: true }),
             span(`${res.autoBlurry} blurry`, { color: 'yellow' }),
             span(` → ${res.dest}`, { dim: true }),
+            res.dryRun ? span('  (dry run)', { color: 'cyan' }) : span(''),
           ],
         ];
         if (res.failed.length > 0) lines.push([span(`  ${res.failed.length} failed to analyze`, { color: 'red' })]);
@@ -415,7 +420,7 @@ export function Shell({ mouse }: ShellProps = {}) {
         ]);
         pushLines(lines);
         setScrollOffset(0);
-        setTriage({ dest: res.dest, items: res.review, index: 0, kept: 0, discarded: 0 });
+        setTriage({ dest: res.dest, dryRun: res.dryRun, items: res.review, index: 0, kept: 0, discarded: 0 });
       })
       .catch((err: unknown) => {
         setTriageBusy(null);
@@ -430,12 +435,14 @@ export function Shell({ mouse }: ShellProps = {}) {
     const kept = session.kept + deltaKept;
     const discarded = session.discarded + deltaDiscarded;
     const nextIndex = session.index + 1;
+    const suffix = session.dryRun ? span('  (dry run — nothing copied)', { color: 'cyan' }) : span('');
     if (nextIndex >= session.items.length) {
       setTriage(null);
       pushLines([
         [
           span('  review complete', { color: 'magenta', bold: true }),
           span(` — ${kept} kept, ${discarded} discarded → ${session.dest}`, { dim: true }),
+          suffix,
         ],
         BLANK,
       ]);
@@ -447,11 +454,13 @@ export function Shell({ mouse }: ShellProps = {}) {
   function reviewDecide(decision: ReviewDecision): void {
     if (!triage) return;
     const item = triage.items[triage.index];
-    commitDecision(triage.dest, item.file, decision).catch((err: unknown) => {
-      pushLines([
-        [span(`  ✗ copy failed: ${item.name}: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
-      ]);
-    });
+    if (!triage.dryRun) {
+      commitDecision(triage.dest, item.file, decision).catch((err: unknown) => {
+        pushLines([
+          [span(`  ✗ copy failed: ${item.name}: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
+        ]);
+      });
+    }
     reviewAdvance(triage, decision === 'keep' ? 1 : 0, decision === 'discard' ? 1 : 0);
   }
 
@@ -466,6 +475,7 @@ export function Shell({ mouse }: ShellProps = {}) {
           ` — ${triage.kept} kept, ${triage.discarded} discarded, ${remaining} left undecided → ${triage.dest}`,
           { dim: true },
         ),
+        triage.dryRun ? span('  (dry run)', { color: 'cyan' }) : span(''),
       ],
       BLANK,
     ]);
@@ -582,8 +592,8 @@ export function Shell({ mouse }: ShellProps = {}) {
   const suggestionRows =
     total > 0 ? windowed.length + (moreAbove > 0 ? 1 : 0) + (moreBelow > 0 ? 1 : 0) : 0;
   const usageRows = activeSpec && suggestions.length === 0 ? 1 : 0;
-  // Rough height of the review overlay: border + header + heatmap + keys.
-  const reviewRows = triage ? triage.items[triage.index].focusMap.rows + 8 : 0;
+  // Rough height of the review overlay: border + header + heatmap + legend + keys.
+  const reviewRows = triage ? triage.items[triage.index].focusMap.rows + 9 : 0;
   const bottomRows = triage
     ? reviewRows
     : triageBusy
@@ -628,6 +638,7 @@ export function Shell({ mouse }: ShellProps = {}) {
           total={triage.items.length}
           kept={triage.kept}
           discarded={triage.discarded}
+          dryRun={triage.dryRun}
         />
       ) : triageBusy ? (
         <Text wrap="truncate-end">

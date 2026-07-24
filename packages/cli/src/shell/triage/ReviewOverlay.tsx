@@ -13,11 +13,12 @@ export interface ReviewOverlayProps {
   total: number;
   kept: number;
   discarded: number;
+  dryRun: boolean;
 }
 
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
-export function ReviewOverlay({ item, index, total, kept, discarded }: ReviewOverlayProps) {
+export function ReviewOverlay({ item, index, total, kept, discarded, dryRun }: ReviewOverlayProps) {
   const grid = focusHeatmap(item.focusMap);
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="magenta" paddingX={1}>
@@ -26,6 +27,7 @@ export function ReviewOverlay({ item, index, total, kept, discarded }: ReviewOve
           Review {index + 1}/{total}
         </Text>
         <Text dimColor> · uncertain — subject in focus but frame is soft (shallow DoF)</Text>
+        {dryRun && <Text color="cyan"> · dry run</Text>}
       </Text>
 
       <Box marginTop={1}>
@@ -40,7 +42,16 @@ export function ReviewOverlay({ item, index, total, kept, discarded }: ReviewOve
               ))}
             </Text>
           ))}
-          <Text dimColor>focus map</Text>
+          <Text dimColor>focus map · each cell = a region</Text>
+          <Text>
+            <Text dimColor>soft </Text>
+            {HEATMAP_BLOCKS.map((block, lvl) => (
+              <Text key={lvl} color={HEATMAP_COLORS[lvl]}>
+                {block}
+              </Text>
+            ))}
+            <Text dimColor> sharp</Text>
+          </Text>
         </Box>
 
         <Box flexDirection="column">

@@ -56,7 +56,7 @@ export const COMMANDS: CommandSpec[] = [
     name: 'triage',
     builtin: true,
     summary: 'Interactive cull: auto-file clear shots, review the uncertain (shallow-DoF) ones',
-    usage: '/triage <path> [--dest <dir>] [--threshold 100] [--focus-threshold 250]',
+    usage: '/triage <path> [--dest <dir>] [--threshold 100] [--focus-threshold 250] [--dry-run]',
   },
   { name: 'cd', builtin: true, summary: 'Change the shell working directory', usage: '/cd <path>' },
   { name: 'pwd', builtin: true, summary: 'Print the shell working directory', usage: '/pwd' },

@@ -25,9 +25,11 @@ export type ReviewDecision = 'keep' | 'discard';
 
 export interface TriageResult {
   dest: string;
-  /** Confident keepers already copied into dest/sharp. */
+  /** Whether this was a dry run (nothing copied; counts are what *would* happen). */
+  dryRun: boolean;
+  /** Confident keepers copied into dest/sharp (or that would be, in a dry run). */
   autoSharp: number;
-  /** Confident rejects already copied into dest/blurry. */
+  /** Confident rejects copied into dest/blurry (or that would be, in a dry run). */
   autoBlurry: number;
   /** Uncertain (rescued) frames awaiting a decision. */
   review: ReviewItem[];
@@ -40,6 +42,8 @@ export interface TriageOptions {
   threshold?: number;
   focusThreshold?: number;
   concurrency?: number;
+  /** Analyse and queue for review, but copy nothing. */
+  dryRun?: boolean;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -59,8 +63,14 @@ const bucketOf = (decision: ReviewDecision): 'sharp' | 'blurry' =>
 
 /** Analyse a folder, auto-file the confident verdicts, queue the rest. */
 export async function runTriage(targetPath: string, options: TriageOptions = {}): Promise<TriageResult> {
+  const dryRun = options.dryRun ?? false;
   const dest = path.resolve(options.dest ?? path.join(targetPath, '_culled'));
-  const files = await scanFiles(targetPath);
+  // Never re-scan our own output: the default dest lives inside the target, so
+  // a second run would otherwise pick up the sharp/ and blurry/ copies.
+  const destPrefix = dest + path.sep;
+  const files = (await scanFiles(targetPath)).filter(
+    (f) => f.path !== dest && !f.path.startsWith(destPrefix),
+  );
   const total = files.length;
 
   const queue = new JobQueue({ concurrency: options.concurrency ?? 4 });
@@ -110,15 +120,15 @@ export async function runTriage(targetPath: string, options: TriageOptions = {})
         focusMap: r.focusMap,
       });
     } else if (r.verdict === 'sharp') {
-      await copyInto(dest, 'sharp', r.file);
+      if (!dryRun) await copyInto(dest, 'sharp', r.file);
       autoSharp++;
     } else {
-      await copyInto(dest, 'blurry', r.file);
+      if (!dryRun) await copyInto(dest, 'blurry', r.file);
       autoBlurry++;
     }
   }
 
-  return { dest, autoSharp, autoBlurry, review, failed, total };
+  return { dest, dryRun, autoSharp, autoBlurry, review, failed, total };
 }
 
 /** Apply a review decision: copy the frame into its chosen bucket. */
