@@ -1,0 +1,25 @@
+name: ci
+
+# Fast feedback on every push to main and every PR: typecheck + build only.
+# Standalone binaries are NOT built here — that happens on release tags
+# (see release.yml). Keeps main green without the per-OS binary matrix cost.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build

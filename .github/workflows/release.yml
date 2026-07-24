@@ -1,18 +1,21 @@
-name: build binaries
+name: release
 
 # Builds standalone executables (Bun runtime + bundled JS + sharp's native
-# libraries) for every supported platform. Each binary is built natively on
-# its own runner: sharp ships per-platform prebuilt addons, so
-# cross-compilation is not an option.
+# libraries) for every supported platform and publishes them as a GitHub
+# release. Each binary is built natively on its own runner: sharp ships
+# per-platform prebuilt addons, so cross-compilation is not an option.
 #
-# - push to main / manual dispatch: build + upload artifacts (smoke check)
-# - push a v* tag: additionally create a GitHub release with all binaries
+# Trigger: pushing a version tag (v*) — never a push to main. Release notes are
+# generated from the conventional commits since the previous tag (git-cliff).
+# To cut a release: bump the version, commit, then `git tag vX.Y.Z && git push --tags`.
 
 on:
   push:
-    branches: [main]
     tags: ['v*']
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -24,8 +27,7 @@ jobs:
             target: windows-x64
           - os: ubuntu-latest
             target: linux-x64
-          # NOTE: arm64 runners are free for public repos only — comment this
-          # entry out if the repo is private and has no paid plan.
+          # NOTE: arm64 runners are free for public repos only.
           - os: ubuntu-24.04-arm
             target: linux-arm64
           - os: macos-13 # last Intel macOS runner
@@ -64,16 +66,26 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags so the changelog can diff against the prior tag.
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+
+      # Release notes from the conventional commits in this tag.
+      - name: Generate changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --latest --strip header
 
       - name: Generate checksums
         run: |
@@ -82,5 +94,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          body: ${{ steps.changelog.outputs.content }}
           files: artifacts/*
-          generate_release_notes: true
+          fail_on_unmatched_files: true
