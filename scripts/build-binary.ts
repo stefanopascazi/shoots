@@ -38,6 +38,10 @@ const sharpVersion = (
     version: string;
   }
 ).version;
+// User-facing shoots version — single source of truth: the root package.json.
+const shootsVersion = (
+  JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as { version: string }
+).version;
 
 /**
  * Stage native files with a `.bin` extension so Bun's bundler treats them as
@@ -149,6 +153,8 @@ const result = await Bun.build({
   define: {
     // Dead-code-eliminates React development branches.
     'process.env.NODE_ENV': '"production"',
+    // Stamp the user-facing version into the binary.
+    'process.env.SHOOTS_VERSION': JSON.stringify(shootsVersion),
   },
   plugins: [staticSharpLoader, stubReactDevtools],
   compile: {

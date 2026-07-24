@@ -23,8 +23,8 @@ import { COMMANDS, findCliCommand } from './catalog.js';
 import { runCli, type OutputStream, type RunningCommand } from './runner.js';
 import { getSuggestions, type Suggestion } from './suggestions.js';
 import { expandMentions, tokenize } from './tokenize.js';
+import { VERSION } from '../version.js';
 
-const VERSION = '0.1.0';
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const MAX_HISTORY_LINES = 1000;
 const RUNNING_TAIL = 10;

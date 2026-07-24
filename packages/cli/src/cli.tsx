@@ -12,6 +12,7 @@ import { registerCullCommand } from './commands/cull.js';
 import { registerRateCommand } from './commands/rate.js';
 import { registerSetupCommand } from './commands/setup.js';
 import { registerDoctorCommand } from './commands/doctor.js';
+import { VERSION } from './version.js';
 
 const program = new Command();
 
@@ -22,7 +23,7 @@ program
       'An orchestration layer for your pipeline — not an editor, not a DAM.\n\n' +
       'Run with no arguments to open the interactive shell.',
   )
-  .version('0.1.0');
+  .version(VERSION);
 
 registerImportCommand(program);
 registerRenameCommand(program);
