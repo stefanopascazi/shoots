@@ -5,6 +5,11 @@ Questo file e' il contesto operativo rapido per agenti AI che lavorano su Shoots
 ## Regole tecniche da preservare
 
 - Verifica sempre il flusso end-to-end
+- OGNI SOFTWARE ESTERNO DEVE POTER ESSERE COMMERCIALIZZATO. Ogni dipendenza runtime,
+  binario di terze parti o modello adottato deve avere una licenza che consenta l'uso e la
+  redistribuzione commerciale (es. MIT, BSD, Apache-2.0, Artistic/GPL per binari eseguiti
+  come processo esterno). Verificare la licenza PRIMA di introdurre una nuova dipendenza;
+  in caso di dubbio, scartarla o cercare un'alternativa.
 
 ## Convenzioni di lavoro
 

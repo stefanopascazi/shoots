@@ -23,11 +23,15 @@ import {
 import { buildNamingPlan, collectNamingInfo } from '../naming.js';
 import { startProgress } from '../progress.js';
 
-export const DEFAULT_IMPORT_PATTERN = '{date}_{time}_{camera}_{seq:4}.{ext}';
+/** Applied with `--rename` when no explicit `--pattern` is given. */
+export const DEFAULT_RENAME_PATTERN = '{camera}{orig}.{ext}';
+/** Default behaviour: keep the original file name untouched. */
+export const KEEP_ORIGINAL_PATTERN = '{orig}.{ext}';
 
 interface ImportOptions {
   dest: string;
-  pattern: string;
+  pattern?: string;
+  rename?: boolean;
   move?: boolean;
   dryRun?: boolean;
   json?: boolean;
@@ -50,7 +54,8 @@ export function registerImportCommand(program: Command): void {
     .description('Copy/move photos from a source (e.g. memory card) into a destination, renamed and checksum-verified')
     .argument('<source>', 'source directory (or single file)')
     .requiredOption('--dest <path>', 'destination directory')
-    .option('--pattern <template>', 'filename template', DEFAULT_IMPORT_PATTERN)
+    .option('--rename', `rename files using the default template "${DEFAULT_RENAME_PATTERN}" (default: keep original names)`)
+    .option('--pattern <template>', 'rename files using a custom filename template (implies --rename)')
     .option('--move', 'delete each source file after its copy is checksum-verified (default: copy only)')
     .option('--dry-run', 'show planned actions without executing them')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -61,11 +66,19 @@ export function registerImportCommand(program: Command): void {
 
 async function runImport(source: string, options: ImportOptions): Promise<void> {
   const io = makeIo(options);
-  const templateError = validateTemplate(options.pattern);
-  if (templateError) {
-    logError(`Invalid --pattern: ${templateError}`);
-    process.exitCode = 2;
-    return;
+
+  // Renaming is opt-in: --pattern (custom) or --rename (default template).
+  // Without either, files keep their original names.
+  const wantsRename = options.pattern !== undefined || !!options.rename;
+  const pattern = options.pattern ?? (options.rename ? DEFAULT_RENAME_PATTERN : KEEP_ORIGINAL_PATTERN);
+
+  if (wantsRename) {
+    const templateError = validateTemplate(pattern);
+    if (templateError) {
+      logError(`Invalid --pattern: ${templateError}`);
+      process.exitCode = 2;
+      return;
+    }
   }
 
   const files = await scanFiles(source);
@@ -77,8 +90,18 @@ async function runImport(source: string, options: ImportOptions): Promise<void> 
   logVerbose(io, `Found ${files.length} files under ${source}`);
 
   const destRoot = path.resolve(options.dest);
-  const infos = await collectNamingInfo(io, files);
-  const plan = buildNamingPlan(infos, options.pattern, () => destRoot);
+  // Only read EXIF when a template needs it; keeping original names must not
+  // depend on exiftool being installed.
+  const infos = wantsRename
+    ? await collectNamingInfo(io, files)
+    : files.map((file) => ({
+        file,
+        date: file.mtime,
+        dateSource: 'mtime' as const,
+        camera: null,
+        lens: null,
+      }));
+  const plan = buildNamingPlan(infos, pattern, () => destRoot);
 
   if (options.dryRun) {
     if (io.json) {
