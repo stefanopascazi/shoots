@@ -14,7 +14,6 @@
  *   Tab      accept the highlighted suggestion
  *   Enter    run · Esc clears input / cancels a running command
  */
-import type { EventEmitter } from 'node:events';
 import { statSync } from 'node:fs';
 import path from 'node:path';
 import { Box, Text, useApp, useInput } from 'ink';
@@ -23,6 +22,7 @@ import { exiftoolVersion } from '@shoots/imaging';
 import { COMMANDS, findCliCommand } from './catalog.js';
 import { runCli, type OutputStream, type RunningCommand } from './runner.js';
 import { getSuggestions, type Suggestion } from './suggestions.js';
+import type { MouseWheel } from './mouse.js';
 import { expandMentions, tokenize } from './tokenize.js';
 import { AUTHOR, VERSION } from '../version.js';
 
@@ -133,12 +133,12 @@ function useTerminalSize(): { rows: number; columns: number } {
 
 // ---------------------------------------------------------------------------
 
-/** Emits `'scroll'` with a signed line delta (negative = up/back). */
 export interface ShellProps {
-  wheel?: EventEmitter;
+  /** Wheel-scroll + mouse-capture control (undefined when stdin isn't mouse-wrapped). */
+  mouse?: MouseWheel;
 }
 
-export function Shell({ wheel }: ShellProps = {}) {
+export function Shell({ mouse }: ShellProps = {}) {
   const { exit } = useApp();
   const { rows, columns } = useTerminalSize();
 
@@ -155,6 +155,8 @@ export function Shell({ wheel }: ShellProps = {}) {
   const [running, setRunning] = useState<{ command: string; startedAt: number } | null>(null);
   const [frame, setFrame] = useState(0);
   const [exiftool, setExiftool] = useState<string | null | undefined>(undefined);
+  // Whether SGR mouse capture is on (wheel scrolls; native selection suppressed).
+  const [mouseCapture, setMouseCapture] = useState(!!mouse);
   // Scrollback: how many lines the viewport is scrolled up from the bottom.
   // 0 = pinned to the latest output (live). Driven by PgUp/PgDn/Home/End since
   // the alt screen buffer disables the terminal's own scroll.
@@ -183,14 +185,14 @@ export function Shell({ wheel }: ShellProps = {}) {
 
   // ---- mouse wheel → scrollback (negative delta = scroll up/back) ----
   useEffect(() => {
-    if (!wheel) return;
+    if (!mouse) return;
     const onScroll = (delta: number): void =>
       setScrollOffset((o) => Math.min(MAX_HISTORY_LINES, Math.max(0, o - delta)));
-    wheel.on('scroll', onScroll);
+    mouse.events.on('scroll', onScroll);
     return () => {
-      wheel.off('scroll', onScroll);
+      mouse.events.off('scroll', onScroll);
     };
-  }, [wheel]);
+  }, [mouse]);
 
   // ---- spinner / elapsed ticker while a command runs ----
   useEffect(() => {
@@ -261,6 +263,22 @@ export function Shell({ wheel }: ShellProps = {}) {
         setLines(logoLines(columns));
         setScrollOffset(0);
         return;
+      case 'mouse': {
+        pushEcho('/mouse');
+        if (!mouse) {
+          pushLines([[span('  mouse capture is not available in this terminal', { dim: true })], BLANK]);
+          return;
+        }
+        const on = mouse.setReporting(!mouseCapture);
+        setMouseCapture(on);
+        pushLines([
+          on
+            ? [span('  mouse capture on', { color: 'green' }), span(' — wheel scrolls · hold Shift to select text', { dim: true })]
+            : [span('  mouse capture off', { color: 'yellow' }), span(' — native text selection restored · wheel falls back to history', { dim: true })],
+          BLANK,
+        ]);
+        return;
+      }
       case 'pwd':
         pushEcho('/pwd');
         pushLines([[span(`  ${cwd}`, { dim: true })], BLANK]);
@@ -536,6 +554,7 @@ export function Shell({ wheel }: ShellProps = {}) {
             {shortCwd} · exiftool{' '}
             {exiftool === undefined ? '…' : exiftool ? `✓ ${exiftool}` : '– not found'} · Tab
             completes · ↑↓ navigate · PgUp/PgDn scroll · Esc clears
+            {mouse && (mouseCapture ? ' · Shift-drag or /mouse to select text' : ' · /mouse to re-enable wheel')}
           </Text>
         </Box>
       )}

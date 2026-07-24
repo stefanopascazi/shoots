@@ -27,10 +27,17 @@ export interface MouseWheel {
   readonly events: EventEmitter;
   /** stdin to hand to Ink's `render()` — a clone of the real one with mouse reports removed. */
   readonly stdin: NodeJS.ReadStream;
-  /** Turn on mouse reporting and start filtering. Call after entering the alt buffer. */
-  enable(): void;
-  /** Turn off mouse reporting and detach. Safe to call more than once. */
-  disable(): void;
+  /** Start forwarding keystrokes to Ink and turn mouse reporting on. Call after entering the alt buffer. */
+  start(): void;
+  /**
+   * Toggle *only* the SGR mouse reporting. Keystroke forwarding stays alive, so
+   * turning reporting off (to restore the terminal's native text selection /
+   * copy) never kills keyboard input — the wheel just falls back to the
+   * terminal's own scroll translation. Returns the new state.
+   */
+  setReporting(on: boolean): boolean;
+  /** Tear down: reporting off and detach the pump. Safe to call more than once. */
+  stop(): void;
 }
 
 /**
@@ -86,21 +93,33 @@ export function createMouseWheel(source: NodeJS.ReadStream): MouseWheel {
     if (cleaned.length > 0) filtered.write(cleaned);
   };
 
-  let enabled = false;
+  let pumping = false;
+  let reporting = false;
+  const setReporting = (on: boolean): boolean => {
+    if (on === reporting) return reporting;
+    reporting = on;
+    // 1000h/l: button (incl. wheel) events · 1006h/l: SGR extended coordinates.
+    process.stdout.write(on ? '\x1b[?1000h\x1b[?1006h' : '\x1b[?1000l\x1b[?1006l');
+    return reporting;
+  };
+
   return {
     events,
     stdin: proxy,
-    enable(): void {
-      if (enabled) return;
-      enabled = true;
-      process.stdout.write('\x1b[?1000h\x1b[?1006h');
-      source.on('data', onData);
+    start(): void {
+      if (!pumping) {
+        pumping = true;
+        source.on('data', onData);
+      }
+      setReporting(true);
     },
-    disable(): void {
-      if (!enabled) return;
-      enabled = false;
-      process.stdout.write('\x1b[?1000l\x1b[?1006l');
-      source.off('data', onData);
+    setReporting,
+    stop(): void {
+      setReporting(false);
+      if (pumping) {
+        pumping = false;
+        source.off('data', onData);
+      }
     },
   };
 }

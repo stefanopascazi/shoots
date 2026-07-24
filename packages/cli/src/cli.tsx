@@ -70,15 +70,15 @@ async function launchShell(): Promise<void> {
   // Route the mouse wheel to scrollback (the alt buffer disables native scroll).
   const mouse = createMouseWheel(process.stdin);
   const cleanup = (): void => {
-    mouse.disable();
+    mouse.stop();
     leaveAltScreen();
   };
   // Safety net: never leave the terminal stuck in the alt buffer or mouse mode.
   process.on('exit', cleanup);
 
   enterAltScreen();
-  mouse.enable();
-  const app = render(<Shell wheel={mouse.events} />, { stdin: mouse.stdin });
+  mouse.start();
+  const app = render(<Shell mouse={mouse} />, { stdin: mouse.stdin });
   await app.waitUntilExit();
   cleanup();
   process.stdout.write('◉ shoots — session closed. See you at the next shoot.\n');

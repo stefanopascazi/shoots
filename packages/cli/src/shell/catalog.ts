@@ -29,8 +29,8 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: 'cull',
-    summary: 'Blur detection (Laplacian): report + sharp/blurry split',
-    usage: '/cull <path> [--threshold 100] [--separate] [--format csv] [--out <report>] [--dry-run]',
+    summary: 'Blur detection (Laplacian, focus-aware): report + sharp/blurry split',
+    usage: '/cull <path> [--threshold 100] [--focus-threshold 250] [--no-focus-rescue] [--separate] [--format csv] [--out <report>] [--dry-run]',
   },
   {
     name: 'rate',
@@ -55,6 +55,7 @@ export const COMMANDS: CommandSpec[] = [
   { name: 'cd', builtin: true, summary: 'Change the shell working directory', usage: '/cd <path>' },
   { name: 'pwd', builtin: true, summary: 'Print the shell working directory', usage: '/pwd' },
   { name: 'clear', builtin: true, summary: 'Clear the screen', usage: '/clear' },
+  { name: 'mouse', builtin: true, summary: 'Toggle mouse capture (off = select/copy text; on = wheel scroll)', usage: '/mouse' },
   { name: 'help', builtin: true, summary: 'Show commands and shell tips', usage: '/help' },
   { name: 'version', builtin: true, summary: 'Show the shoots version', usage: '/version' },
   { name: 'exit', builtin: true, summary: 'Leave the shell', usage: '/exit' },
