@@ -14,6 +14,7 @@ import {
   analyzeBlur,
   DEFAULT_BLUR_THRESHOLD,
   DEFAULT_FOCUS_THRESHOLD,
+  readMetadata,
   type BlurAnalysis,
 } from '@shoots/imaging';
 import {
@@ -124,6 +125,13 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   const blurry = results.filter((r) => r.verdict === 'blurry');
   const rescued = results.filter((r) => r.rescued);
 
+  // ---- aperture context (EXIF FNumber), best-effort ----
+  // Reported alongside the scores so borderline/rescued frames can be judged:
+  // a low global score at a narrow aperture means something different than at
+  // f/1.4. Needs exiftool (already ensured for RAW batches); if it isn't
+  // available we simply omit the column rather than failing the cull.
+  const apertureByFile = await readApertures(io, files.map((f) => f.path));
+
   // ---- optional separation (copies only, originals untouched) ----
   const destRoot = path.resolve(options.dest ?? path.join(targetPath, '_culled'));
   const copied: { source: string; dest: string }[] = [];
@@ -156,6 +164,7 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
       focusPeak: round2(r.focusPeak),
       verdict: r.verdict,
       rescued: r.rescued,
+      aperture: apertureByFile.get(normalizePath(r.file)) ?? null,
       pixelSource: r.pixelSource,
     })),
     errors,
@@ -183,10 +192,11 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     printHuman(io, '');
     printHuman(io, summaryLine(report.summary, threshold));
   } else {
-    printHuman(io, `${'verdict'.padEnd(7)}  ${'score'.padStart(10)}  ${'focus'.padStart(10)}  file`);
+    printHuman(io, `${'verdict'.padEnd(7)}  ${'score'.padStart(10)}  ${'focus'.padStart(10)}  ${'aper'.padStart(6)}  file`);
     for (const r of report.results) {
       const tag = r.verdict === 'blurry' ? 'blurry' : r.rescued ? 'sharp*' : 'sharp';
-      printHuman(io, `${tag.padEnd(7)}  ${String(r.score).padStart(10)}  ${String(r.focusPeak).padStart(10)}  ${r.file}`);
+      const aper = r.aperture ? `f/${r.aperture}` : '—';
+      printHuman(io, `${tag.padEnd(7)}  ${String(r.score).padStart(10)}  ${String(r.focusPeak).padStart(10)}  ${aper.padStart(6)}  ${r.file}`);
     }
     printHuman(io, '');
     printHuman(io, summaryLine(report.summary, threshold));
@@ -213,12 +223,47 @@ function summaryLine(
 }
 
 function toCsv(
-  rows: { file: string; score: number; focusPeak: number; verdict: string; rescued: boolean; pixelSource: string }[],
+  rows: {
+    file: string;
+    score: number;
+    focusPeak: number;
+    verdict: string;
+    rescued: boolean;
+    aperture: number | null;
+    pixelSource: string;
+  }[],
 ): string {
   const escape = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-  const lines = ['file,score,focus_peak,verdict,rescued,pixel_source'];
+  const lines = ['file,score,focus_peak,verdict,rescued,aperture,pixel_source'];
   for (const row of rows) {
-    lines.push(`${escape(row.file)},${row.score},${row.focusPeak},${row.verdict},${row.rescued},${row.pixelSource}`);
+    lines.push(
+      `${escape(row.file)},${row.score},${row.focusPeak},${row.verdict},${row.rescued},${row.aperture ?? ''},${row.pixelSource}`,
+    );
   }
   return lines.join('\n');
+}
+
+/** Slash-normalized path key so exiftool's SourceFile matches our file paths. */
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
+/**
+ * Batch-read the aperture (EXIF FNumber) for a set of files. Best-effort: any
+ * failure (exiftool missing, unreadable files) yields an empty map rather than
+ * aborting the cull — aperture is report context, not a decision input.
+ */
+async function readApertures(io: ReturnType<typeof makeIo>, files: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  try {
+    const records = await readMetadata(files, { tags: ['FNumber'] });
+    for (const rec of records) {
+      const raw = rec.FNumber;
+      const f = typeof raw === 'number' ? raw : Number.parseFloat(String(raw ?? ''));
+      if (Number.isFinite(f)) map.set(normalizePath(rec.SourceFile), f);
+    }
+  } catch (err) {
+    logVerbose(io, `Aperture unavailable (exiftool): ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return map;
 }
