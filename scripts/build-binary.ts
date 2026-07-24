@@ -4,17 +4,23 @@
  * Usage:
  *   bun scripts/build-binary.ts [--outfile <path>]
  *
- * The executable embeds the Bun runtime, the bundled JS and sharp's native
- * libraries for the *host* platform — cross-compilation is not supported
- * because sharp ships per-platform prebuilds. CI builds natively on each OS.
+ * The executable embeds the Bun runtime, the bundled JS and the native
+ * libraries of every native addon we depend on — for the *host* platform.
+ * Cross-compilation is not supported because these addons ship per-platform
+ * prebuilds; CI builds natively on each OS.
  *
- * How sharp is handled: its native addon (.node) depends on libvips shared
- * libraries that must sit at a fixed path relative to the addon (Windows DLL
- * search / ELF $ORIGIN rpath / Mach-O @loader_path). Bun's automatic .node
- * embedding extracts the addon alone, so the libraries are never found.
- * Instead we embed every native file as a plain asset, extract them at first
- * run into a per-version cache directory that mirrors the @img package
- * layout, and load the addon from there.
+ * Why native addons need special handling: an addon's `.node` file depends on
+ * shared libraries (libvips for sharp, onnxruntime.dll/.so/.dylib for
+ * onnxruntime-node) that the OS loader resolves *relative to the addon's own
+ * directory*. Bun's automatic `.node` embedding extracts the addon alone, so
+ * those sibling libraries are never found at runtime. Instead we embed every
+ * native file as a plain asset, extract them at first run into a per-version
+ * cache directory (addon + its libraries side by side), and load the addon
+ * from there.
+ *
+ * NOTE: only the ONNX *runtime* is embedded here — the model *weights* are not.
+ * Weights are downloaded on demand into ~/.shoots/models (see @shoots/inference
+ * provisioning), mirroring how exiftool is provisioned.
  */
 import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -29,15 +35,19 @@ function argValue(flag: string): string | undefined {
 const outfile = argValue('--outfile') ?? 'dist-bin/shoots';
 
 const repoRoot = path.resolve(import.meta.dir, '..');
-const imgRoot = path.join(repoRoot, 'node_modules', '@img');
-// sharp's platform id: win32-x64, linux-x64, darwin-arm64... (musl not handled:
-// CI builds on glibc runners).
-const sharpPlatform = `${process.platform}-${process.arch}`;
-const sharpVersion = (
-  JSON.parse(readFileSync(path.join(repoRoot, 'node_modules', 'sharp', 'package.json'), 'utf8')) as {
-    version: string;
-  }
-).version;
+const nodeModules = path.join(repoRoot, 'node_modules');
+const imgRoot = path.join(nodeModules, '@img');
+// Native addon platform id: win32-x64, linux-x64, darwin-arm64...
+// (musl not handled: CI builds on glibc runners).
+const hostPlatform = process.platform;
+const hostArch = process.arch;
+const sharpPlatform = `${hostPlatform}-${hostArch}`;
+
+function pkgVersion(pkgDir: string): string {
+  return (JSON.parse(readFileSync(path.join(pkgDir, 'package.json'), 'utf8')) as { version: string }).version;
+}
+
+const sharpVersion = pkgVersion(path.join(nodeModules, 'sharp'));
 // User-facing shoots metadata — single source of truth: the root package.json.
 const shootsPkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
   version: string;
@@ -46,67 +56,64 @@ const shootsPkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), '
 const shootsVersion = shootsPkg.version;
 const shootsAuthor = shootsPkg.author ?? '';
 
+// ---------------------------------------------------------------------------
+// Generic native-addon embedding
+// ---------------------------------------------------------------------------
+
+interface NativeFile {
+  /** Absolute source path of the native file. */
+  abs: string;
+  /** Path the runtime loader recreates under the cache root (POSIX separators). */
+  rel: string;
+}
+
 /**
- * Recursively collect regular files under a directory as paths relative to it.
- * The libvips prebuilds for linux/darwin nest subdirectories (e.g. `glib-2.0`)
- * inside `lib/`; blindly copyFileSync-ing every readdir entry throws ENOTSUP on
- * those directories, so we walk the tree and keep only regular files.
+ * Recursively collect regular files under a directory as {abs, rel} pairs.
+ * Some libvips prebuilds nest subdirectories (e.g. `glib-2.0`) inside `lib/`;
+ * readdir-ing blindly throws ENOTSUP on those, so we walk the tree and keep
+ * only regular files. Symlinks (many versioned `.so`s) are resolved.
  */
-function walkFiles(dir: string, base = dir): string[] {
-  const out: string[] = [];
+function walkFiles(dir: string, base = dir): NativeFile[] {
+  const out: NativeFile[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const abs = path.join(dir, entry.name);
-    // Resolve symlinks (many .so files are versioned symlinks) to decide
-    // whether the target is a directory to recurse into or a file to copy.
     const stats = entry.isSymbolicLink() ? statSync(abs) : entry;
     if (stats.isDirectory()) {
       out.push(...walkFiles(abs, base));
     } else if (stats.isFile()) {
-      out.push(path.relative(base, abs));
+      out.push({ abs, rel: path.relative(base, abs).split(path.sep).join('/') });
     }
   }
   return out;
 }
 
 /**
- * Stage native files with a `.bin` extension so Bun's bundler treats them as
- * plain embeddable assets: a `.node` extension would trigger dlopen semantics
- * on require, and we need paths, not loaded modules.
+ * Copy native files into `dist-bin/.native-staging` under a flat, prefixed
+ * name (with a `.bin` extension so Bun's bundler treats them as plain
+ * embeddable assets — a `.node` extension would trigger dlopen-on-require).
+ * Returns the staged path alongside the runtime-relative path to recreate.
  */
-function stageNativeFiles(): { staged: string; rel: string }[] {
+function stageFiles(files: NativeFile[], prefix: string): { staged: string; rel: string }[] {
   const staging = path.join(repoRoot, 'dist-bin', '.native-staging');
   mkdirSync(staging, { recursive: true });
-  const entries: { staged: string; rel: string }[] = [];
-  // On win32 the libvips DLLs live inside sharp-<platform> itself; on
-  // linux/darwin they come from the separate sharp-libvips-<platform> package.
-  for (const pkg of [`sharp-${sharpPlatform}`, `sharp-libvips-${sharpPlatform}`]) {
-    const libDir = path.join(imgRoot, pkg, 'lib');
-    if (!existsSync(libDir)) continue;
-    for (const relFile of walkFiles(libDir)) {
-      // rel is the path the loader recreates at runtime; keep POSIX separators.
-      const rel = `${pkg}/lib/${relFile.split(path.sep).join('/')}`;
-      // Flatten the (possibly nested) rel path into a single staged filename.
-      const staged = path.join(staging, `${pkg}--${relFile.split(path.sep).join('__')}.bin`);
-      copyFileSync(path.join(libDir, relFile), staged);
-      entries.push({ staged, rel });
-    }
-  }
-  if (entries.length === 0) {
-    throw new Error(`no sharp prebuilt binaries found for ${sharpPlatform} under ${imgRoot}`);
-  }
-  return entries;
+  return files.map(({ abs, rel }) => {
+    const staged = path.join(staging, `${prefix}--${rel.split('/').join('__')}.bin`);
+    copyFileSync(abs, staged);
+    return { staged, rel };
+  });
 }
 
 /**
- * Generates the module that replaces sharp/lib/sharp.js in the bundle.
- * At runtime it extracts the embedded native files into a cache directory
- * (skipping files already extracted with the right size) and requires the
- * addon from there.
+ * Generate the JS module body that, at first run, extracts embedded native
+ * files into a per-version cache directory and `require`s the addon from there.
+ * `requireRel` is the addon path (relative to the cache root) to load and
+ * re-export.
  */
-function generateSharpLoader(): string {
-  const entries = stageNativeFiles();
-  const nodeRel = `sharp-${sharpPlatform}/lib/sharp-${sharpPlatform}.node`;
-  const cacheKey = `shoots-sharp-${sharpVersion}-${sharpPlatform}`;
+function generateExtractorModule(
+  entries: { staged: string; rel: string }[],
+  cacheKey: string,
+  requireRel: string,
+): string {
   const imports = entries
     .map((e) => `[require(${JSON.stringify(e.staged)}), ${JSON.stringify(e.rel)}]`)
     .join(',\n  ');
@@ -141,15 +148,85 @@ for (const [src, rel] of entries) {
   }
 }
 
-module.exports = require(path.join(root, ${JSON.stringify(nodeRel)}));
+module.exports = require(path.join(root, ${JSON.stringify(requireRel)}));
 `;
+}
+
+// ---------------------------------------------------------------------------
+// sharp: replace sharp/lib/sharp.js with an extractor that loads the addon.
+// ---------------------------------------------------------------------------
+
+function sharpLoaderContents(): string {
+  const files: NativeFile[] = [];
+  // On win32 the libvips DLLs live inside sharp-<platform> itself; on
+  // linux/darwin they come from the separate sharp-libvips-<platform> package.
+  for (const pkg of [`sharp-${sharpPlatform}`, `sharp-libvips-${sharpPlatform}`]) {
+    const libDir = path.join(imgRoot, pkg, 'lib');
+    if (!existsSync(libDir)) continue;
+    for (const f of walkFiles(libDir)) {
+      files.push({ abs: f.abs, rel: `${pkg}/lib/${f.rel}` });
+    }
+  }
+  if (files.length === 0) {
+    throw new Error(`no sharp prebuilt binaries found for ${sharpPlatform} under ${imgRoot}`);
+  }
+  const entries = stageFiles(files, 'sharp');
+  const nodeRel = `sharp-${sharpPlatform}/lib/sharp-${sharpPlatform}.node`;
+  return generateExtractorModule(entries, `shoots-sharp-${sharpVersion}-${sharpPlatform}`, nodeRel);
 }
 
 const staticSharpLoader = {
   name: 'static-sharp-loader',
   setup(build: import('bun').PluginBuilder) {
-    const contents = generateSharpLoader();
+    const contents = sharpLoaderContents();
     build.onLoad({ filter: /[\\/]sharp[\\/]lib[\\/]sharp\.js$/ }, () => ({
+      contents,
+      loader: 'js' as const,
+    }));
+  },
+};
+
+// ---------------------------------------------------------------------------
+// onnxruntime-node: intercept the `require(...onnxruntime_binding.node)` in
+// dist/binding.js and route it to an extractor that co-locates the addon with
+// onnxruntime.dll/.so/.dylib in a cache dir, then loads it from there.
+// ---------------------------------------------------------------------------
+
+// The win32 prebuild bundles the DirectML execution provider (DirectML.dll,
+// dxcompiler.dll, dxil.dll — ~38MB). shoots rates on CPU, so these are dropped
+// to keep the binary small; only the addon and the core runtime are embedded.
+const ORT_SKIP = /^(DirectML|dxcompiler|dxil)\.dll$/i;
+
+function ortLoaderContents(): string | null {
+  const ortRoot = path.join(nodeModules, 'onnxruntime-node');
+  if (!existsSync(ortRoot)) return null; // dependency not installed — skip
+  const ortVersion = pkgVersion(ortRoot);
+  const platformDir = path.join(ortRoot, 'bin', 'napi-v6', hostPlatform, hostArch);
+  if (!existsSync(platformDir)) {
+    throw new Error(`no onnxruntime-node prebuilt binaries found at ${platformDir}`);
+  }
+  // Flat directory: addon + its sibling shared libraries, all in one place so
+  // the OS loader resolves the dependent library next to the addon.
+  const files = walkFiles(platformDir).filter((f) => !ORT_SKIP.test(path.basename(f.rel)));
+  const entries = stageFiles(files, 'ort');
+  return generateExtractorModule(
+    entries,
+    `shoots-ort-${ortVersion}-${sharpPlatform}`,
+    'onnxruntime_binding.node',
+  );
+}
+
+const staticOrtLoader = {
+  name: 'static-onnxruntime-loader',
+  setup(build: import('bun').PluginBuilder) {
+    const contents = ortLoaderContents();
+    if (contents === null) return; // onnxruntime-node absent: nothing to embed
+    // Match the addon require target regardless of the platform/arch segment.
+    build.onResolve({ filter: /onnxruntime_binding\.node$/ }, () => ({
+      path: 'onnxruntime_binding.node',
+      namespace: 'ort-addon',
+    }));
+    build.onLoad({ filter: /.*/, namespace: 'ort-addon' }, () => ({
       contents,
       loader: 'js' as const,
     }));
@@ -176,8 +253,10 @@ const stubReactDevtools = {
   },
 };
 
+const entrypoint = argValue('--entry') ?? path.join(repoRoot, 'packages', 'cli', 'src', 'cli.tsx');
+
 const result = await Bun.build({
-  entrypoints: [path.join(repoRoot, 'packages', 'cli', 'src', 'cli.tsx')],
+  entrypoints: [entrypoint],
   define: {
     // Dead-code-eliminates React development branches.
     'process.env.NODE_ENV': '"production"',
@@ -185,7 +264,7 @@ const result = await Bun.build({
     'process.env.SHOOTS_VERSION': JSON.stringify(shootsVersion),
     'process.env.SHOOTS_AUTHOR': JSON.stringify(shootsAuthor),
   },
-  plugins: [staticSharpLoader, stubReactDevtools],
+  plugins: [staticSharpLoader, staticOrtLoader, stubReactDevtools],
   compile: {
     outfile,
   },
