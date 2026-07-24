@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "shoots — scriptable batch automation for photography workflows (monorepo root)",
+  "author": "Stefano Pascazi <stefanopascazi@gmail.com>",
   "workspaces": [
     "packages/*"
   ],

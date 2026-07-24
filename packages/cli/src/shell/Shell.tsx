@@ -24,7 +24,7 @@ import { COMMANDS, findCliCommand } from './catalog.js';
 import { runCli, type OutputStream, type RunningCommand } from './runner.js';
 import { getSuggestions, type Suggestion } from './suggestions.js';
 import { expandMentions, tokenize } from './tokenize.js';
-import { VERSION } from '../version.js';
+import { AUTHOR, VERSION } from '../version.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 const MAX_HISTORY_LINES = 1000;
@@ -80,6 +80,9 @@ function logoLines(columns: number): Line[] {
     span(`v${VERSION} — batch automation for photographers`, { dim: true }),
   ]);
   lines.push([span('    not an editor, not a DAM — the pipeline glue in between', { dim: true })]);
+  if (AUTHOR) {
+    lines.push([span(`    by ${AUTHOR}`, { dim: true })]);
+  }
   lines.push(BLANK);
   lines.push([
     span('  Type '),

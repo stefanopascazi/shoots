@@ -38,10 +38,13 @@ const sharpVersion = (
     version: string;
   }
 ).version;
-// User-facing shoots version — single source of truth: the root package.json.
-const shootsVersion = (
-  JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as { version: string }
-).version;
+// User-facing shoots metadata — single source of truth: the root package.json.
+const shootsPkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
+  version: string;
+  author?: string;
+};
+const shootsVersion = shootsPkg.version;
+const shootsAuthor = shootsPkg.author ?? '';
 
 /**
  * Recursively collect regular files under a directory as paths relative to it.
@@ -178,8 +181,9 @@ const result = await Bun.build({
   define: {
     // Dead-code-eliminates React development branches.
     'process.env.NODE_ENV': '"production"',
-    // Stamp the user-facing version into the binary.
+    // Stamp the user-facing version and author into the binary.
     'process.env.SHOOTS_VERSION': JSON.stringify(shootsVersion),
+    'process.env.SHOOTS_AUTHOR': JSON.stringify(shootsAuthor),
   },
   plugins: [staticSharpLoader, stubReactDevtools],
   compile: {
