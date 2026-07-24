@@ -16,7 +16,7 @@
  * run into a per-version cache directory that mirrors the @img package
  * layout, and load the addon from there.
  */
-import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, copyFileSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 const args = process.argv.slice(2);
@@ -44,6 +44,28 @@ const shootsVersion = (
 ).version;
 
 /**
+ * Recursively collect regular files under a directory as paths relative to it.
+ * The libvips prebuilds for linux/darwin nest subdirectories (e.g. `glib-2.0`)
+ * inside `lib/`; blindly copyFileSync-ing every readdir entry throws ENOTSUP on
+ * those directories, so we walk the tree and keep only regular files.
+ */
+function walkFiles(dir: string, base = dir): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const abs = path.join(dir, entry.name);
+    // Resolve symlinks (many .so files are versioned symlinks) to decide
+    // whether the target is a directory to recurse into or a file to copy.
+    const stats = entry.isSymbolicLink() ? statSync(abs) : entry;
+    if (stats.isDirectory()) {
+      out.push(...walkFiles(abs, base));
+    } else if (stats.isFile()) {
+      out.push(path.relative(base, abs));
+    }
+  }
+  return out;
+}
+
+/**
  * Stage native files with a `.bin` extension so Bun's bundler treats them as
  * plain embeddable assets: a `.node` extension would trigger dlopen semantics
  * on require, and we need paths, not loaded modules.
@@ -57,10 +79,13 @@ function stageNativeFiles(): { staged: string; rel: string }[] {
   for (const pkg of [`sharp-${sharpPlatform}`, `sharp-libvips-${sharpPlatform}`]) {
     const libDir = path.join(imgRoot, pkg, 'lib');
     if (!existsSync(libDir)) continue;
-    for (const file of readdirSync(libDir)) {
-      const staged = path.join(staging, `${pkg}--${file}.bin`);
-      copyFileSync(path.join(libDir, file), staged);
-      entries.push({ staged, rel: `${pkg}/lib/${file}` });
+    for (const relFile of walkFiles(libDir)) {
+      // rel is the path the loader recreates at runtime; keep POSIX separators.
+      const rel = `${pkg}/lib/${relFile.split(path.sep).join('/')}`;
+      // Flatten the (possibly nested) rel path into a single staged filename.
+      const staged = path.join(staging, `${pkg}--${relFile.split(path.sep).join('__')}.bin`);
+      copyFileSync(path.join(libDir, relFile), staged);
+      entries.push({ staged, rel });
     }
   }
   if (entries.length === 0) {

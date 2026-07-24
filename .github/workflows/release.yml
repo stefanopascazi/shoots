@@ -8,6 +8,13 @@ name: release
 # Trigger: pushing a version tag (v*) — never a push to main. Release notes are
 # generated from the conventional commits since the previous tag (git-cliff).
 # To cut a release: bump the version, commit, then `git tag vX.Y.Z && git push --tags`.
+#
+# Intel macOS (darwin-x64) is built on GitHub's last Intel runner (macos-13),
+# whose queue is scarce and can leave jobs pending for a long time. To keep
+# that from blocking every release, it lives in its own build/publish chain
+# that is NOT a dependency of the main `release` job: the release ships the
+# four reliable targets on time, and the Intel binary is appended to the same
+# release asynchronously whenever its runner eventually completes.
 
 on:
   push:
@@ -30,11 +37,11 @@ jobs:
           # NOTE: arm64 runners are free for public repos only.
           - os: ubuntu-24.04-arm
             target: linux-arm64
-          - os: macos-13 # last Intel macOS runner
-            target: darwin-x64
           - os: macos-latest
             target: darwin-arm64
     runs-on: ${{ matrix.os }}
+    # Safety net against execution hangs (does NOT cover queue/pending time).
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -96,4 +103,57 @@ jobs:
         with:
           body: ${{ steps.changelog.outputs.content }}
           files: artifacts/*
+          fail_on_unmatched_files: true
+
+  # ---------------------------------------------------------------------------
+  # Intel macOS (darwin-x64): decoupled so a pending/slow macos-13 runner never
+  # blocks the main release above. When it does complete, the binary is appended
+  # to the existing release. If it never runs, the release simply ships without
+  # the Intel binary.
+  # ---------------------------------------------------------------------------
+  build-intel-mac:
+    runs-on: macos-13 # last Intel macOS runner
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: bun scripts/build-binary.ts --outfile dist-bin/shoots-darwin-x64
+
+      - run: ./dist-bin/shoots-darwin-x64 --version
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shoots-darwin-x64
+          path: dist-bin/shoots-darwin-x64
+          if-no-files-found: error
+
+  release-intel:
+    needs: build-intel-mac
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: shoots-darwin-x64
+          path: artifacts
+
+      # Append the Intel binary to the release created by the `release` job for
+      # this tag. No body/changelog passed, so the existing release notes are
+      # left untouched — this only adds the asset.
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/shoots-darwin-x64
           fail_on_unmatched_files: true
