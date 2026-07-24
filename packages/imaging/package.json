@@ -1,6 +1,7 @@
 {
   "name": "@shoots/imaging",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "description": "shoots imaging layer: exiftool wrapper, sharp-based thumbnails/previews, classic blur detection. Headless, no UI dependencies.",
   "main": "./dist/index.js",

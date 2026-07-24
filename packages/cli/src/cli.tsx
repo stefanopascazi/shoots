@@ -12,6 +12,7 @@ import { registerCullCommand } from './commands/cull.js';
 import { registerRateCommand } from './commands/rate.js';
 import { registerSetupCommand } from './commands/setup.js';
 import { registerDoctorCommand } from './commands/doctor.js';
+import { registerUpdateCommand } from './commands/update.js';
 import { VERSION } from './version.js';
 
 const program = new Command();
@@ -32,6 +33,7 @@ registerCullCommand(program);
 registerRateCommand(program);
 registerSetupCommand(program);
 registerDoctorCommand(program);
+registerUpdateCommand(program);
 
 program
   .command('shell')

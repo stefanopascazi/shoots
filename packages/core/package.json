@@ -1,6 +1,7 @@
 {
   "name": "@shoots/core",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "description": "shoots pipeline engine: file discovery, templating, job orchestration, declarative pipeline config. Zero UI dependencies.",
   "main": "./dist/index.js",

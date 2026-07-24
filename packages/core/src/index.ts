@@ -29,6 +29,8 @@ export {
 
 export { extractTarGz, ArchiveError } from './archive.js';
 
+export { compareSemver } from './semver.js';
+
 export {
   renderTemplate,
   sanitizeToken,
