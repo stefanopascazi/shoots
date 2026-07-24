@@ -151,7 +151,11 @@ Classic (non-ML) Laplacian-variance blur detection. RAW files are scored from th
 ```sh
 shoots cull ./raw --threshold 100 --format csv --out report.csv
 shoots cull ./raw --separate --dest ./culled          # copies into culled/sharp + culled/blurry
+shoots cull ./raw --focus-threshold 250               # tune the shallow-DoF rescue (default 250)
+shoots cull ./raw --no-focus-rescue                   # classify purely on the global score
 ```
+
+**Focus-aware.** A single global sharpness score misjudges wide-aperture work: a shallow-depth-of-field portrait is mostly bokeh, so the global score is low even though the subject is tack-sharp. Alongside the global score, `cull` builds a focus map over a tile grid and takes a robust peak — the sharpness of the sharpest region. A frame whose global score is below `--threshold` is still kept as **sharp** (marked `sharp*`, `rescued: true`) when that peak clears `--focus-threshold`, since a motion-blurred or missed-focus frame is soft *everywhere*. The rescue only ever moves a frame from blurry → sharp; disable it with `--no-focus-rescue`.
 
 Strictly non-destructive: originals are never moved or deleted — `--separate` copies.
 

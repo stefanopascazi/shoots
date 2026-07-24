@@ -44,6 +44,7 @@ export {
   laplacianVariance,
   analyzeBlur,
   DEFAULT_BLUR_THRESHOLD,
+  DEFAULT_FOCUS_THRESHOLD,
   type LaplacianResult,
   type LaplacianOptions,
   type BlurAnalysis,

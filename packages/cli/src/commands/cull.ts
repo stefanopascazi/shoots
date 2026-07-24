@@ -10,7 +10,12 @@ import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
-import { analyzeBlur, DEFAULT_BLUR_THRESHOLD, type BlurAnalysis } from '@shoots/imaging';
+import {
+  analyzeBlur,
+  DEFAULT_BLUR_THRESHOLD,
+  DEFAULT_FOCUS_THRESHOLD,
+  type BlurAnalysis,
+} from '@shoots/imaging';
 import {
   logError,
   logVerbose,
@@ -25,6 +30,8 @@ import { ensureExiftoolReady } from '../tools.js';
 
 interface CullOptions {
   threshold: string;
+  focusThreshold: string;
+  focusRescue?: boolean;
   separate?: boolean;
   dest?: string;
   format: string;
@@ -38,9 +45,11 @@ interface CullOptions {
 export function registerCullCommand(program: Command): void {
   program
     .command('cull')
-    .description('Detect blurry shots via Laplacian variance; report and optionally separate sharp/blurry (never deletes)')
+    .description('Detect blurry shots via Laplacian variance, focus-aware to spare shallow-DoF keepers; report and optionally separate sharp/blurry (never deletes)')
     .argument('<path>', 'folder (or single file) to analyze')
-    .option('--threshold <n>', 'Laplacian variance below this = blurry', String(DEFAULT_BLUR_THRESHOLD))
+    .option('--threshold <n>', 'global Laplacian variance below this = blurry', String(DEFAULT_BLUR_THRESHOLD))
+    .option('--focus-threshold <n>', 'keep a globally-soft frame if its sharpest region scores above this (rescues shallow depth of field)', String(DEFAULT_FOCUS_THRESHOLD))
+    .option('--no-focus-rescue', 'disable the shallow-DoF rescue and classify purely on the global score')
     .option('--separate', 'copy files into sharp/ and blurry/ subfolders of --dest')
     .option('--dest <dir>', 'destination for --separate (default: <path>/_culled)')
     .option('--format <fmt>', 'report format: json | csv', 'json')
@@ -65,6 +74,13 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     process.exitCode = 2;
     return;
   }
+  const focusThreshold = Number.parseFloat(options.focusThreshold);
+  if (!Number.isFinite(focusThreshold) || focusThreshold < 0) {
+    logError(`Invalid --focus-threshold: ${options.focusThreshold}`);
+    process.exitCode = 2;
+    return;
+  }
+  const focusRescue = options.focusRescue !== false;
   if (options.format !== 'json' && options.format !== 'csv') {
     logError(`Invalid --format: ${options.format} (expected json or csv)`);
     process.exitCode = 2;
@@ -77,7 +93,10 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     if (io.json) printJson({ command: 'cull', threshold, results: [], errors: [], summary: { total: 0, sharp: 0, blurry: 0, failed: 0 } });
     return;
   }
-  logVerbose(io, `Analyzing ${files.length} files (threshold ${threshold})`);
+  logVerbose(
+    io,
+    `Analyzing ${files.length} files (threshold ${threshold}, focus ${focusRescue ? focusThreshold : 'off'})`,
+  );
 
   // RAW files are analyzed via their embedded JPEG preview, extracted with
   // exiftool; only provision it when the batch actually contains RAW.
@@ -88,7 +107,7 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
 
   const outcomes = await queue.run(
     files,
-    (file) => analyzeBlur(file.path, { threshold }),
+    (file) => analyzeBlur(file.path, { threshold, focusThreshold, focusRescue }),
     progress.onProgress,
     (file) => file.name,
   );
@@ -103,6 +122,7 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   }
   const sharp = results.filter((r) => r.verdict === 'sharp');
   const blurry = results.filter((r) => r.verdict === 'blurry');
+  const rescued = results.filter((r) => r.rescued);
 
   // ---- optional separation (copies only, originals untouched) ----
   const destRoot = path.resolve(options.dest ?? path.join(targetPath, '_culled'));
@@ -123,19 +143,24 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   }
 
   // ---- report ----
+  const round2 = (n: number): number => Math.round(n * 100) / 100;
   const report = {
     command: 'cull',
     threshold,
+    focusThreshold,
+    focusRescue,
     dryRun: !!options.dryRun,
     results: results.map((r) => ({
       file: r.file,
-      score: Math.round(r.score * 100) / 100,
+      score: round2(r.score),
+      focusPeak: round2(r.focusPeak),
       verdict: r.verdict,
+      rescued: r.rescued,
       pixelSource: r.pixelSource,
     })),
     errors,
     separated: options.separate ? { dest: destRoot, copied: copied.length, planned: options.dryRun ? results.length : undefined } : undefined,
-    summary: { total: files.length, sharp: sharp.length, blurry: blurry.length, failed: errors.length },
+    summary: { total: files.length, sharp: sharp.length, blurry: blurry.length, rescued: rescued.length, failed: errors.length },
   };
 
   const reportText =
@@ -158,11 +183,16 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     printHuman(io, '');
     printHuman(io, summaryLine(report.summary, threshold));
   } else {
+    printHuman(io, `${'verdict'.padEnd(7)}  ${'score'.padStart(10)}  ${'focus'.padStart(10)}  file`);
     for (const r of report.results) {
-      printHuman(io, `${r.verdict === 'sharp' ? 'sharp ' : 'blurry'}  ${String(r.score).padStart(10)}  ${r.file}`);
+      const tag = r.verdict === 'blurry' ? 'blurry' : r.rescued ? 'sharp*' : 'sharp';
+      printHuman(io, `${tag.padEnd(7)}  ${String(r.score).padStart(10)}  ${String(r.focusPeak).padStart(10)}  ${r.file}`);
     }
     printHuman(io, '');
     printHuman(io, summaryLine(report.summary, threshold));
+    if (rescued.length > 0) {
+      printHuman(io, `  sharp* = subject in focus despite a soft frame (shallow DoF), kept via --focus-threshold ${focusThreshold}`);
+    }
     if (options.separate && options.dryRun) {
       printHuman(io, `(dry run) files would be copied into ${destRoot}\\sharp and \\blurry`);
     } else if (options.separate) {
@@ -174,15 +204,21 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   if (errors.length > 0) markFailure();
 }
 
-function summaryLine(summary: { total: number; sharp: number; blurry: number; failed: number }, threshold: number): string {
-  return `${summary.total} analyzed @ threshold ${threshold}: ${summary.sharp} sharp, ${summary.blurry} blurry, ${summary.failed} failed`;
+function summaryLine(
+  summary: { total: number; sharp: number; blurry: number; rescued: number; failed: number },
+  threshold: number,
+): string {
+  const rescued = summary.rescued > 0 ? ` (${summary.rescued} rescued)` : '';
+  return `${summary.total} analyzed @ threshold ${threshold}: ${summary.sharp} sharp${rescued}, ${summary.blurry} blurry, ${summary.failed} failed`;
 }
 
-function toCsv(rows: { file: string; score: number; verdict: string; pixelSource: string }[]): string {
+function toCsv(
+  rows: { file: string; score: number; focusPeak: number; verdict: string; rescued: boolean; pixelSource: string }[],
+): string {
   const escape = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
-  const lines = ['file,score,verdict,pixel_source'];
+  const lines = ['file,score,focus_peak,verdict,rescued,pixel_source'];
   for (const row of rows) {
-    lines.push(`${escape(row.file)},${row.score},${row.verdict},${row.pixelSource}`);
+    lines.push(`${escape(row.file)},${row.score},${row.focusPeak},${row.verdict},${row.rescued},${row.pixelSource}`);
   }
   return lines.join('\n');
 }
