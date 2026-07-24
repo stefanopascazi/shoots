@@ -93,17 +93,20 @@ const FOCUS_SOFT = 0.55;
  *   4 = exhibition-grade (rare)
  *   5 = an image that carries a story on its own, beyond time and viewer (almost never)
  *
- * The aesthetic is zero-shot CLIP, whose scores sit in a compressed band, so the
- * upper cut-offs are close together and 5 is effectively unreachable without a
- * stronger aesthetic model — an intentional, honest ceiling. Calibrated against
- * real professional shoots to put the mass of frames at 0.
+ * The aesthetic is zero-shot CLIP merit (artistic aspects only — see
+ * MERIT_WEIGHTS in models/aesthetics.ts), whose scores sit in a compressed band,
+ * so the upper cut-offs are close together and 5 is effectively unreachable
+ * without a stronger aesthetic model — an intentional, honest ceiling. Anchored
+ * on real professional judgement of a documentary shoot (an ordinary, technically
+ * clean frame the photographer rejects lands at 0), which puts ~85% of frames at
+ * 0 and promotes only a handful.
  */
 const AESTHETIC_STARS: readonly { min: number; stars: StarRating }[] = [
-  { min: 0.65, stars: 5 },
-  { min: 0.61, stars: 4 },
-  { min: 0.57, stars: 3 },
-  { min: 0.53, stars: 2 },
-  { min: 0.48, stars: 1 },
+  { min: 0.63, stars: 5 },
+  { min: 0.58, stars: 4 },
+  { min: 0.55, stars: 3 },
+  { min: 0.525, stars: 2 },
+  { min: 0.5, stars: 1 },
 ];
 
 /**
