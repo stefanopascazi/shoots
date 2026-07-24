@@ -146,8 +146,15 @@ export function Shell() {
   const [running, setRunning] = useState<{ command: string; startedAt: number } | null>(null);
   const [frame, setFrame] = useState(0);
   const [exiftool, setExiftool] = useState<string | null | undefined>(undefined);
+  // Scrollback: how many lines the viewport is scrolled up from the bottom.
+  // 0 = pinned to the latest output (live). Driven by PgUp/PgDn/Home/End since
+  // the alt screen buffer disables the terminal's own scroll.
+  const [scrollOffset, setScrollOffset] = useState(0);
 
   const runningRef = useRef<RunningCommand | null>(null);
+  // Current history viewport height, kept in a ref so key handlers can page by
+  // a real screenful without recomputing the layout math.
+  const viewportRef = useRef(10);
   const outputRef = useRef<{ text: string; stream: OutputStream }[]>([]);
   const killedRef = useRef(false);
 
@@ -216,6 +223,7 @@ export function Shell() {
     setCursor(0);
     setSuggestions([]);
     setHiddenCount(0);
+    setScrollOffset(0); // running/echoing a command snaps the view back to live
 
     const rawTokens = tokenize(line);
     let name = rawTokens[0] ?? '';
@@ -231,6 +239,7 @@ export function Shell() {
         return;
       case 'clear':
         setLines(logoLines(columns));
+        setScrollOffset(0);
         return;
       case 'pwd':
         pushEcho('/pwd');
@@ -298,11 +307,32 @@ export function Shell() {
         BLANK,
       ];
       pushLines(finished);
+      setScrollOffset(0); // reveal the tail of the fresh output; PgUp to review
       setRunning(null);
     });
   };
 
   useInput((ch, key) => {
+    // Scrollback — works in every state since the alt buffer has no native
+    // scroll. A page overlaps by one line so nothing is skipped between pages.
+    const page = Math.max(1, viewportRef.current - 1);
+    if (key.pageUp) {
+      setScrollOffset((o) => o + page);
+      return;
+    }
+    if (key.pageDown) {
+      setScrollOffset((o) => Math.max(0, o - page));
+      return;
+    }
+    if (key.home) {
+      setScrollOffset(() => lines.length); // clamped to the top in render
+      return;
+    }
+    if (key.end) {
+      setScrollOffset(0);
+      return;
+    }
+
     if (running) {
       if (key.escape) {
         killedRef.current = true;
@@ -385,12 +415,25 @@ export function Shell() {
   const bottomRows = running
     ? 1 + runningTail.length
     : 3 /* bordered input */ + suggestionRows + usageRows + 1; /* status bar */
-  const visibleCount = Math.max(3, rows - bottomRows - 1);
-  const visibleLines = lines.slice(-visibleCount);
+  const rawVisible = Math.max(3, rows - bottomRows - 1);
+  const maxOffset = Math.max(0, lines.length - rawVisible);
+  const clampedOffset = Math.min(Math.max(0, scrollOffset), maxOffset);
+  const scrolled = clampedOffset > 0;
+  // Reserve one row for the scroll indicator while scrolled up.
+  const visibleCount = scrolled ? Math.max(3, rawVisible - 1) : rawVisible;
+  viewportRef.current = visibleCount;
+  const end = lines.length - clampedOffset;
+  const visibleLines = lines.slice(Math.max(0, end - visibleCount), end);
+  const linesBelow = lines.length - end; // === clampedOffset, kept explicit
 
   return (
     <Box flexDirection="column" height={rows}>
       <Box flexDirection="column" flexGrow={1}>
+        {scrolled && (
+          <Text wrap="truncate-end" color="cyan" dimColor>
+            {'  '}↓ {linesBelow} more line{linesBelow === 1 ? '' : 's'} below · PgDn / End to catch up
+          </Text>
+        )}
         {visibleLines.map((l, i) => (
           <Text key={i} wrap="truncate-end">
             {l.map((s, j) => (
@@ -472,7 +515,7 @@ export function Shell() {
             {'  '}
             {shortCwd} · exiftool{' '}
             {exiftool === undefined ? '…' : exiftool ? `✓ ${exiftool}` : '– not found'} · Tab
-            completes · ↑↓ navigate · Esc clears
+            completes · ↑↓ navigate · PgUp/PgDn scroll · Esc clears
           </Text>
         </Box>
       )}
