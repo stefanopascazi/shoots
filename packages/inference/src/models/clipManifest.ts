@@ -17,13 +17,12 @@ import { modelDir, provisionArchive, isProvisioned } from '@shoots/core';
  * Model identity + our packaging revision. Bump when the archive contents change
  * so a fresh install dir is used and existing installs re-provision.
  *
- * NOTE: the shipped `int8-1` archive predates aesthetics.json, so the onnx
- * backend uses the technical heuristic fallback for the aesthetic score. Once the
- * aesthetics-enabled `int8-2` archive (scripts/prepare-model-mirror.ts) is built
- * and uploaded to the `models-v1` release, bump this to 'vit-b32-int8-2' and set
- * SHA256 to the printed checksum to switch on zero-shot aesthetic scoring.
+ * `int8-2` adds aesthetics.json, switching the aesthetic score from the technical
+ * heuristic fallback to zero-shot CLIP over quality aspects. Built by
+ * scripts/prepare-model-mirror.ts — the archive must be uploaded to the
+ * `models-v1` release for runtime provisioning to succeed.
  */
-export const CLIP_MODEL_VERSION = 'vit-b32-int8-1';
+export const CLIP_MODEL_VERSION = 'vit-b32-int8-2';
 
 /** CLIP ViT-B/32 image preprocessing parameters (from preprocessor_config.json). */
 export const CLIP_INPUT = {
@@ -51,7 +50,7 @@ const ARCHIVE = `clip-${CLIP_MODEL_VERSION}.tar.gz`;
 // SHA-256 of the archive produced by scripts/prepare-model-mirror.ts. gzip is
 // not deterministic across rebuilds, so upload the built dist-models/ file as-is
 // to the `models-v1` release rather than regenerating it.
-const SHA256 = '49fbd5d7dd24a18c4588aa1388c2c65fb1bb2908065622059616dcc5cf5497b0';
+const SHA256 = '499783345892c111950d08484acef46314374462bf5797374944fc043ff39505';
 
 /** File names inside the extracted archive. */
 const IMAGE_ENCODER = 'clip-image-encoder.onnx';
