@@ -15,6 +15,7 @@ export {
   binDir,
   toolDir,
   modelsDir,
+  modelDir,
   cacheDir,
   logsDir,
   configPath,
@@ -28,6 +29,13 @@ export {
 } from './net/download.js';
 
 export { extractTarGz, ArchiveError } from './archive.js';
+
+export {
+  provisionArchive,
+  isProvisioned,
+  PROVISION_MARKER,
+  type ProvisionArchiveOptions,
+} from './provision.js';
 
 export { compareSemver } from './semver.js';
 

@@ -34,6 +34,11 @@ export function modelsDir(): string {
   return path.join(shootsHome(), 'models');
 }
 
+/** Install directory for a specific version of a named model. */
+export function modelDir(name: string, version: string): string {
+  return path.join(modelsDir(), name, version);
+}
+
 /** Root for regenerable caches (thumbnails, RAW previews). */
 export function cacheDir(): string {
   return path.join(shootsHome(), 'cache');

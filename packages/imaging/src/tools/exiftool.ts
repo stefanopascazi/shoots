@@ -6,11 +6,14 @@
  * forever after. `resolveExiftool()` is the cheap synchronous lookup used on
  * every exiftool call; `ensureExiftool()` performs the one-time download and is
  * called up-front by `shoots setup` and lazily by any command that needs it.
+ *
+ * The generic download → verify → extract → mark machinery (locking, staging,
+ * atomic swap) lives in `@shoots/core`'s `provisionArchive`; this module only
+ * resolves the per-platform manifest and knows how to run the result.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { downloadFile, extractTarGz } from '@shoots/core';
+import { provisionArchive, PROVISION_MARKER } from '@shoots/core';
 import {
   exiftoolManifest,
   type ResolvedExiftoolManifest,
@@ -26,10 +29,7 @@ export interface ExiftoolCommand {
 
 export class ToolMirrorNotConfiguredError extends Error {}
 
-/** Written into the install dir once extraction has fully succeeded. */
-const MARKER = '.shoots-ok';
 const SHA256_RE = /^[0-9a-f]{64}$/;
-const LOCK_STALE_MS = 5 * 60_000;
 
 const override = (): string | undefined => {
   const v = process.env.SHOOTS_EXIFTOOL;
@@ -41,7 +41,7 @@ function commandFor(m: ResolvedExiftoolManifest): ExiftoolCommand {
 }
 
 function isInstalled(m: ResolvedExiftoolManifest): boolean {
-  return existsSync(path.join(m.installDir, MARKER)) && existsSync(m.binPath);
+  return existsSync(path.join(m.installDir, PROVISION_MARKER)) && existsSync(m.binPath);
 }
 
 /**
@@ -67,7 +67,7 @@ export interface EnsureExiftoolOptions {
 
 /**
  * Provision exiftool if missing: download → verify sha256 → extract → mark.
- * Idempotent, and safe against two first-run processes racing (dir lock).
+ * Idempotent, and safe against two first-run processes racing.
  */
 export async function ensureExiftool(options: EnsureExiftoolOptions = {}): Promise<ExiftoolCommand> {
   const o = override();
@@ -83,65 +83,17 @@ export async function ensureExiftool(options: EnsureExiftoolOptions = {}): Promi
     );
   }
 
-  await withLock(m.installDir, async () => {
-    if (isInstalled(m)) return; // another process won the race
-
-    const parent = path.dirname(m.installDir);
-    const base = path.basename(m.installDir);
-    const staging = path.join(parent, `${base}.staging.${process.pid}`);
-    const archive = path.join(parent, `${base}.download.${process.pid}.tar.gz`);
-    await rm(staging, { recursive: true, force: true });
-
-    try {
-      options.onStatus?.(`downloading exiftool ${m.version}`);
-      await downloadFile(m.url, archive, { sha256: m.sha256, onProgress: options.onProgress });
-      options.onStatus?.('extracting');
-      await extractTarGz(archive, staging);
-      await writeFile(path.join(staging, MARKER), `${m.version}\n${m.sha256}\n`, 'utf8');
-      // Atomically swap staging → final install dir.
-      await rm(m.installDir, { recursive: true, force: true });
-      await mkdir(parent, { recursive: true });
-      await rename(staging, m.installDir);
-    } finally {
-      await rm(archive, { force: true });
-      await rm(staging, { recursive: true, force: true });
-    }
+  await provisionArchive({
+    installDir: m.installDir,
+    url: m.url,
+    sha256: m.sha256,
+    label: `exiftool ${m.version}`,
+    markerContent: `${m.version}\n${m.sha256}\n`,
+    onStatus: options.onStatus,
+    onProgress: options.onProgress,
   });
 
+  // provisionArchive verified its own marker; this also checks the binary path.
   if (!isInstalled(m)) throw new Error('exiftool provisioning did not complete');
   return commandFor(m);
 }
-
-/** Cross-process lock via atomic mkdir; recovers stale locks by age. */
-async function withLock<T>(installDir: string, fn: () => Promise<T>): Promise<T> {
-  const lockDir = `${installDir}.lock`;
-  await mkdir(path.dirname(lockDir), { recursive: true });
-  const start = Date.now();
-  for (;;) {
-    try {
-      await mkdir(lockDir); // fails if it already exists
-      break;
-    } catch {
-      try {
-        const age = Date.now() - (await stat(lockDir)).mtimeMs;
-        if (age > LOCK_STALE_MS) {
-          await rm(lockDir, { recursive: true, force: true });
-          continue;
-        }
-      } catch {
-        continue; // lock vanished — retry acquiring
-      }
-      if (Date.now() - start > LOCK_STALE_MS) {
-        throw new Error(`Timed out waiting for tool lock: ${lockDir}`);
-      }
-      await delay(300);
-    }
-  }
-  try {
-    return await fn();
-  } finally {
-    await rm(lockDir, { recursive: true, force: true });
-  }
-}
-
-const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
