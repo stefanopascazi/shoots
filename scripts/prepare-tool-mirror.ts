@@ -7,10 +7,15 @@
  *   win32 : exiftool.exe + exiftool_files/
  *   unix  : exiftool     + lib/
  *
+ * Source: the official exiftool distributions on SourceForge (exiftool.org no
+ * longer self-hosts the files — it links out to SourceForge). We fetch from
+ * SF's direct-download mirror host, which serves the file without the HTML
+ * interstitial that the sourceforge.net/.../download links return.
+ *
  * Usage (run on a machine whose `tar` is bsdtar for --platform win32, i.e.
  * Windows 10+ or macOS; any tar works for unix):
- *   bun scripts/prepare-tool-mirror.ts --platform win32 --version 13.10
- *   bun scripts/prepare-tool-mirror.ts --platform unix  --version 13.10
+ *   bun scripts/prepare-tool-mirror.ts --platform win32 --version 13.59
+ *   bun scripts/prepare-tool-mirror.ts --platform unix  --version 13.59
  *
  * Then upload dist-tools/*.tar.gz to the GitHub release `tools-v1`, paste the
  * printed checksums into the manifest, and set OWNER/REPO there.
@@ -53,8 +58,12 @@ function run(cmd: string, cmdArgs: string[], cwd?: string): Promise<void> {
   });
 }
 
+/** SourceForge direct-download mirror host (serves the raw file, no interstitial). */
+const SF_MIRROR = 'https://master.dl.sourceforge.net/project/exiftool';
+
 async function download(url: string, dest: string): Promise<void> {
-  const res = await fetch(url, { redirect: 'follow' });
+  // A browser-like UA: some mirrors reject unknown/empty agents.
+  const res = await fetch(url, { redirect: 'follow', headers: { 'user-agent': 'curl/8' } });
   if (!res.ok || !res.body) throw new Error(`download failed ${res.status}: ${url}`);
   await pipeline(Readable.fromWeb(res.body as never), createWriteStream(dest));
 }
@@ -74,21 +83,30 @@ async function main(): Promise<void> {
   await mkdir(staged, { recursive: true });
 
   if (platform === 'win32') {
-    const url = `https://exiftool.org/exiftool-${version}_64.zip`;
+    const url = `${SF_MIRROR}/exiftool-${version}_64.zip`;
     const zip = path.join(workDir, 'src.zip');
     console.error(`↓ ${url}`);
     await download(url, zip);
     // bsdtar (Windows 10+/macOS) extracts zip transparently.
     await run('tar', ['-xf', zip, '-C', workDir]);
-    // The official zip contains `exiftool(-k).exe` + `exiftool_files/`.
-    const entries = await readdir(workDir, { withFileTypes: true });
+    // Recent Windows builds wrap everything in a top-level `exiftool-<v>_64/`
+    // folder; older ones extracted `exiftool(-k).exe` + `exiftool_files/` at
+    // the root. Support both by locating the dir that holds exiftool_files.
+    const wrapped = path.join(workDir, `exiftool-${version}_64`);
+    const srcRoot = existsSync(path.join(wrapped, 'exiftool_files')) ? wrapped : workDir;
+    const entries = await readdir(srcRoot, { withFileTypes: true });
     const exe = entries.find((e) => e.isFile() && /^exiftool.*\.exe$/i.test(e.name));
     if (!exe) throw new Error('exiftool exe not found in extracted zip');
-    await rename(path.join(workDir, exe.name), path.join(staged, 'exiftool.exe'));
-    if (!existsSync(path.join(workDir, 'exiftool_files'))) throw new Error('exiftool_files/ missing');
-    await rename(path.join(workDir, 'exiftool_files'), path.join(staged, 'exiftool_files'));
+    // Renaming away the `(-k)` suffix disables the "keep window open" pause.
+    await rename(path.join(srcRoot, exe.name), path.join(staged, 'exiftool.exe'));
+    if (!existsSync(path.join(srcRoot, 'exiftool_files'))) throw new Error('exiftool_files/ missing');
+    await rename(path.join(srcRoot, 'exiftool_files'), path.join(staged, 'exiftool_files'));
+    // Ship the readme (license lives in exiftool_files/) for compliance.
+    if (existsSync(path.join(srcRoot, 'README.txt'))) {
+      await rename(path.join(srcRoot, 'README.txt'), path.join(staged, 'README.txt'));
+    }
   } else {
-    const url = `https://exiftool.org/Image-ExifTool-${version}.tar.gz`;
+    const url = `${SF_MIRROR}/Image-ExifTool-${version}.tar.gz`;
     const tgz = path.join(workDir, 'src.tar.gz');
     console.error(`↓ ${url}`);
     await download(url, tgz);

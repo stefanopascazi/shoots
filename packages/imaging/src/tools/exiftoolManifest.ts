@@ -12,7 +12,7 @@
 import path from 'node:path';
 import { toolDir } from '@shoots/core';
 
-export const EXIFTOOL_VERSION = '13.10';
+export const EXIFTOOL_VERSION = '13.59';
 
 /** GitHub release tag that hosts the repackaged tool archives. */
 export const TOOLS_RELEASE = 'tools-v1';
@@ -37,24 +37,26 @@ export interface ExiftoolPlatformSpec {
   viaPerl: boolean;
 }
 
-// TODO: fill sha256 from `bun scripts/prepare-tool-mirror.ts` output once the
-// mirror archives are uploaded, and replace OWNER/REPO above.
+// SHA-256 of the repackaged archives produced by scripts/prepare-tool-mirror.ts
+// for EXIFTOOL_VERSION. These must match the exact files uploaded to the
+// `tools-v1` release — gzip is not deterministic across rebuilds, so upload the
+// built dist-tools/ files as-is rather than regenerating them.
 const SPECS: Record<string, ExiftoolPlatformSpec | undefined> = {
   win32: {
     archive: `exiftool-${EXIFTOOL_VERSION}-win32.tar.gz`,
-    sha256: '',
+    sha256: '6ce38d90c460cf23c8cd17fe33eb1dd224115eceba4526342aab410fcc42991e',
     bin: 'exiftool.exe',
     viaPerl: false,
   },
   darwin: {
     archive: `exiftool-${EXIFTOOL_VERSION}-unix.tar.gz`,
-    sha256: '',
+    sha256: '617e6715a44e8a970731b135eb1d28e0250f7c7832253da9d8058096f4cb70c5',
     bin: 'exiftool',
     viaPerl: true,
   },
   linux: {
     archive: `exiftool-${EXIFTOOL_VERSION}-unix.tar.gz`,
-    sha256: '',
+    sha256: '617e6715a44e8a970731b135eb1d28e0250f7c7832253da9d8058096f4cb70c5',
     bin: 'exiftool',
     viaPerl: true,
   },
