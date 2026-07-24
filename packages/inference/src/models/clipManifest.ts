@@ -14,8 +14,14 @@ import path from 'node:path';
 import { modelDir, provisionArchive, isProvisioned } from '@shoots/core';
 
 /**
- * Model identity + our packaging revision. Bump when the exported/quantized
- * artifact changes so a fresh install dir is used.
+ * Model identity + our packaging revision. Bump when the archive contents change
+ * so a fresh install dir is used and existing installs re-provision.
+ *
+ * NOTE: the shipped `int8-1` archive predates aesthetics.json, so the onnx
+ * backend uses the technical heuristic fallback for the aesthetic score. Once the
+ * aesthetics-enabled `int8-2` archive (scripts/prepare-model-mirror.ts) is built
+ * and uploaded to the `models-v1` release, bump this to 'vit-b32-int8-2' and set
+ * SHA256 to the printed checksum to switch on zero-shot aesthetic scoring.
  */
 export const CLIP_MODEL_VERSION = 'vit-b32-int8-1';
 
@@ -50,6 +56,7 @@ const SHA256 = '49fbd5d7dd24a18c4588aa1388c2c65fb1bb2908065622059616dcc5cf5497b0
 /** File names inside the extracted archive. */
 const IMAGE_ENCODER = 'clip-image-encoder.onnx';
 const VOCAB = 'keywords.json';
+const AESTHETICS = 'aesthetics.json';
 
 export interface ResolvedModelManifest {
   version: string;
@@ -60,6 +67,11 @@ export interface ResolvedModelManifest {
   imageEncoderPath: string;
   /** Zero-shot keyword vocabulary (curated, user-extensible). */
   vocabPath: string;
+  /**
+   * Zero-shot aesthetic prompt embeddings. Optional: older archives predate it,
+   * so consumers must tolerate the file being absent (technical fallback).
+   */
+  aestheticsPath: string;
 }
 
 export function clipModelManifest(): ResolvedModelManifest {
@@ -71,6 +83,7 @@ export function clipModelManifest(): ResolvedModelManifest {
     installDir,
     imageEncoderPath: path.join(installDir, IMAGE_ENCODER),
     vocabPath: path.join(installDir, VOCAB),
+    aestheticsPath: path.join(installDir, AESTHETICS),
   };
 }
 

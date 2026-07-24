@@ -34,12 +34,12 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: 'rate',
-    summary: 'Star ratings + keyword suggestions via the inference model',
-    usage: '/rate <path> [--write-xmp] [--dry-run] [--json]',
+    summary: 'Strict 0–5 star ratings + keyword suggestions via the ONNX model',
+    usage: '/rate <path> [--model onnx] [--write-xmp] [--dry-run] [--json]',
   },
   {
     name: 'setup',
-    summary: 'Download & verify external tools (exiftool) into ~/.shoots',
+    summary: 'Download & verify external tools (exiftool) and the inference model into ~/.shoots',
     usage: '/setup [--json]',
   },
   {

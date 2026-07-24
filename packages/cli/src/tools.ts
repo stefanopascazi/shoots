@@ -1,17 +1,23 @@
 /**
- * CLI-side glue for on-demand external tool provisioning.
+ * CLI-side glue for on-demand provisioning of external tools and ML models.
  *
- * Commands that need exiftool call `ensureExiftoolReady` at their start: it
- * downloads exiftool lazily on first use (with a short progress line on
- * stderr) and returns false — after logging a clear error — when provisioning
- * fails, so the caller can abort cleanly.
+ * Commands call these `ensure*Ready` helpers at their start: they download the
+ * dependency lazily on first use (with a short progress line on stderr) and
+ * return false — after logging a clear error — when provisioning fails, so the
+ * caller can abort cleanly. The same download UX is used by `shoots setup`.
  */
 import { ensureExiftool } from '@shoots/imaging';
+import { ensureClipModel, ModelMirrorNotConfiguredError } from '@shoots/inference';
 import { logError, logWarn, markFailure, type CliIo } from './io.js';
 
-function provision(io: CliIo): Promise<unknown> {
+/**
+ * Shared download reporter: a status line plus a throttled percentage on stderr,
+ * suppressed under --json. Reused by every provisioning path so the download UX
+ * is identical across tools and models (and in `setup`).
+ */
+export function mirrorProgress(io: CliIo): { onStatus: (m: string) => void; onProgress: (received: number, total: number | null) => void } {
   let lastPct = -1;
-  return ensureExiftool({
+  return {
     onStatus: (message) => process.stderr.write(`· ${message}...\n`),
     onProgress: (received, total) => {
       if (io.json || !total) return;
@@ -20,7 +26,11 @@ function provision(io: CliIo): Promise<unknown> {
       lastPct = pct;
       process.stderr.write(`\r  ${pct}%${received >= total ? '\n' : ''}`);
     },
-  });
+  };
+}
+
+function provision(io: CliIo): Promise<unknown> {
+  return ensureExiftool(mirrorProgress(io));
 }
 
 /**
@@ -53,6 +63,27 @@ export async function tryEnsureExiftool(io: CliIo): Promise<boolean> {
       `exiftool unavailable (${err instanceof Error ? err.message : String(err)}). ` +
         'Falling back to file modification times.',
     );
+    return false;
+  }
+}
+
+/**
+ * Hard requirement: provision the ONNX CLIP model (downloaded and checksum-
+ * verified into ~/.shoots/models on first use). On failure log an error, mark
+ * the run failed and return false so the caller aborts. Used by `rate` and
+ * shared with `setup`.
+ */
+export async function ensureClipModelReady(io: CliIo): Promise<boolean> {
+  try {
+    await ensureClipModel(mirrorProgress(io));
+    return true;
+  } catch (err) {
+    if (err instanceof ModelMirrorNotConfiguredError) {
+      logError(`inference model not available: ${err.message}`);
+    } else {
+      logError(err instanceof Error ? err.message : String(err));
+    }
+    markFailure();
     return false;
   }
 }

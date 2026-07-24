@@ -6,6 +6,9 @@
  *   clip-image-encoder.onnx   ONNX CLIP ViT-B/32 image encoder (image_embeds)
  *   keywords.json             curated vocabulary with precomputed CLIP text
  *                             embeddings (so runtime needs no text encoder)
+ *   aesthetics.json           contrastive quality-aspect prompt embeddings for
+ *                             zero-shot aesthetic scoring (composition, exposure,
+ *                             subject, lighting, sharpness, storytelling)
  *
  * Source: Xenova/clip-vit-base-patch32 — ONNX weights of openai/clip-vit-base-
  * patch32 (MIT). The text embeddings are computed here, offline, with
@@ -13,8 +16,11 @@
  *
  * Usage:
  *   bun scripts/prepare-model-mirror.ts
- * Then upload dist-models/clip-vit-b32-int8-1.tar.gz to the `models-v1` release
- * and paste the printed checksum into clipManifest.ts.
+ * This build adds aesthetics.json, so it is a NEW archive revision. After
+ * building: upload dist-models/clip-<MODEL_VERSION>.tar.gz to the `models-v1`
+ * release, then in clipManifest.ts bump CLIP_MODEL_VERSION to MODEL_VERSION and
+ * paste the printed checksum into SHA256. Until then the shipped archive has no
+ * aesthetics.json and the onnx backend falls back to the technical heuristic.
  */
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -27,7 +33,11 @@ import { AutoTokenizer, CLIPTextModelWithProjection } from '@huggingface/transfo
 
 const MODEL_ID = 'Xenova/clip-vit-base-patch32';
 const HF_BASE = `https://huggingface.co/${MODEL_ID}/resolve/main`;
-const ARCHIVE = 'clip-vit-b32-int8-1.tar.gz';
+/** Packaging revision (matches CLIP_MODEL_VERSION once this build goes live). */
+const MODEL_VERSION = 'vit-b32-int8-2';
+const ARCHIVE = `clip-${MODEL_VERSION}.tar.gz`;
+/** CLIP logit scale for the zero-shot aesthetic softmax (openai/clip default). */
+const AESTHETIC_TEMPERATURE = 100;
 
 /**
  * Curated photography vocabulary. `label` is the keyword written to sidecars;
@@ -69,6 +79,59 @@ const VOCAB: { label: string; prompt: string }[] = [
   { label: 'outdoor', prompt: 'an outdoor scene' },
 ];
 
+/**
+ * Quality aspects for zero-shot aesthetic scoring. Each is a contrastive pair:
+ * the image is scored by how much closer it sits to `positive` than `negative`
+ * in CLIP space. Together they cover the dimensions of a well-made photograph —
+ * composition, exposure, subject, lighting, sharpness and storytelling — so the
+ * aggregate is far richer than a single "good photo?" prompt. `weight` biases
+ * the aggregate toward the dimensions that matter most for a keeper.
+ */
+const ASPECTS: { name: string; weight: number; positive: string; negative: string }[] = [
+  {
+    name: 'overall',
+    weight: 1.5,
+    positive: 'a high quality professional photograph',
+    negative: 'a low quality amateur snapshot',
+  },
+  {
+    name: 'composition',
+    weight: 1.2,
+    positive: 'a well composed photograph with balanced framing',
+    negative: 'a poorly composed photograph with awkward framing',
+  },
+  {
+    name: 'exposure',
+    weight: 1,
+    positive: 'a well exposed photograph with balanced light',
+    negative: 'a badly exposed photograph, too dark or overexposed',
+  },
+  {
+    name: 'subject',
+    weight: 1.2,
+    positive: 'a photograph with a clear compelling subject',
+    negative: 'a cluttered photograph with no clear subject',
+  },
+  {
+    name: 'sharpness',
+    weight: 1,
+    positive: 'a sharp photograph in crisp focus',
+    negative: 'a blurry out of focus photograph',
+  },
+  {
+    name: 'lighting',
+    weight: 1,
+    positive: 'a photograph with beautiful lighting',
+    negative: 'a photograph with flat dull lighting',
+  },
+  {
+    name: 'storytelling',
+    weight: 1,
+    positive: 'an evocative photograph that tells a story',
+    negative: 'a boring uninteresting photograph',
+  },
+];
+
 const repoRoot = path.resolve(import.meta.dir, '..');
 const workDir = path.join(repoRoot, 'dist-models', '.work');
 const outDir = path.join(repoRoot, 'dist-models');
@@ -79,19 +142,46 @@ async function download(url: string, dest: string): Promise<void> {
   await pipeline(Readable.fromWeb(res.body as never), createWriteStream(dest));
 }
 
-async function computeKeywordEmbeddings(): Promise<{ label: string; embedding: number[] }[]> {
+type TextEncoder = (prompts: string[]) => Promise<{ embeddings: number[][]; dim: number }>;
+
+/** Load the CLIP text encoder once and return a batch-embedding function. */
+async function loadTextEncoder(): Promise<TextEncoder> {
   const tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID);
   const text = await CLIPTextModelWithProjection.from_pretrained(MODEL_ID, { dtype: 'int8' });
-  const prompts = VOCAB.map((v) => `a photo of ${v.prompt}`);
-  const inputs = tokenizer(prompts, { padding: true, truncation: true });
-  const { text_embeds } = (await text(inputs)) as { text_embeds: { data: number[]; dims: number[] } };
-  const dim = text_embeds.dims[1];
-  const data = Array.from(text_embeds.data as ArrayLike<number>);
-  return VOCAB.map((v, i) => ({
-    label: v.label,
-    // Round to 6 decimals — plenty for cosine ranking, ~halves the JSON size.
-    embedding: data.slice(i * dim, (i + 1) * dim).map((x) => Math.round(x * 1e6) / 1e6),
-  }));
+  return async (prompts: string[]) => {
+    const inputs = tokenizer(prompts, { padding: true, truncation: true });
+    const { text_embeds } = (await text(inputs)) as { text_embeds: { data: number[]; dims: number[] } };
+    const dim = text_embeds.dims[1];
+    const data = Array.from(text_embeds.data as ArrayLike<number>);
+    const embeddings = prompts.map((_, i) =>
+      // Round to 6 decimals — plenty for cosine ranking, ~halves the JSON size.
+      data.slice(i * dim, (i + 1) * dim).map((x) => Math.round(x * 1e6) / 1e6),
+    );
+    return { embeddings, dim };
+  };
+}
+
+async function computeKeywordEmbeddings(encode: TextEncoder): Promise<{ dim: number; keywords: { label: string; embedding: number[] }[] }> {
+  const { embeddings, dim } = await encode(VOCAB.map((v) => `a photo of ${v.prompt}`));
+  return { dim, keywords: VOCAB.map((v, i) => ({ label: v.label, embedding: embeddings[i] })) };
+}
+
+async function computeAestheticEmbeddings(
+  encode: TextEncoder,
+): Promise<{ dim: number; aspects: { name: string; weight: number; positive: number[]; negative: number[] }[] }> {
+  // One batch: all positive prompts followed by all negative prompts.
+  const prompts = [...ASPECTS.map((a) => a.positive), ...ASPECTS.map((a) => a.negative)];
+  const { embeddings, dim } = await encode(prompts);
+  const n = ASPECTS.length;
+  return {
+    dim,
+    aspects: ASPECTS.map((a, i) => ({
+      name: a.name,
+      weight: a.weight,
+      positive: embeddings[i],
+      negative: embeddings[n + i],
+    })),
+  };
 }
 
 async function sha256(file: string): Promise<string> {
@@ -106,12 +196,22 @@ async function main(): Promise<void> {
   console.error('↓ downloading CLIP image encoder (vision_model_int8.onnx)...');
   await download(`${HF_BASE}/onnx/vision_model_int8.onnx`, path.join(workDir, 'clip-image-encoder.onnx'));
 
-  console.error('· computing keyword text embeddings (offline)...');
-  const keywords = await computeKeywordEmbeddings();
-  const dim = keywords[0].embedding.length;
+  console.error('· loading CLIP text encoder (offline)...');
+  const encode = await loadTextEncoder();
+
+  console.error('· computing keyword text embeddings...');
+  const { dim, keywords } = await computeKeywordEmbeddings(encode);
   await writeFile(
     path.join(workDir, 'keywords.json'),
     JSON.stringify({ model: MODEL_ID, dim, keywords }),
+    'utf8',
+  );
+
+  console.error('· computing aesthetic aspect embeddings...');
+  const aesthetics = await computeAestheticEmbeddings(encode);
+  await writeFile(
+    path.join(workDir, 'aesthetics.json'),
+    JSON.stringify({ model: MODEL_ID, dim: aesthetics.dim, temperature: AESTHETIC_TEMPERATURE, aspects: aesthetics.aspects }),
     'utf8',
   );
 
@@ -120,7 +220,7 @@ async function main(): Promise<void> {
   const outPath = path.join(outDir, ARCHIVE);
   await new Promise<void>((resolve, reject) => {
     const fh = createWriteStream(outPath);
-    const child = spawn('tar', ['-cz', '-C', workDir, 'clip-image-encoder.onnx', 'keywords.json'], {
+    const child = spawn('tar', ['-cz', '-C', workDir, 'clip-image-encoder.onnx', 'keywords.json', 'aesthetics.json'], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const err: Buffer[] = [];

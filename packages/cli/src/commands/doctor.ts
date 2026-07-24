@@ -12,6 +12,7 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { shootsHome } from '@shoots/core';
 import { exiftoolManifest, exiftoolVersion, resolveExiftool, sharpVips } from '@shoots/imaging';
+import { clipModelManifest, resolveClipModel } from '@shoots/inference';
 import { makeIo, printHuman, printJson } from '../io.js';
 
 type CheckStatus = 'ok' | 'warn' | 'fail';
@@ -115,6 +116,17 @@ async function checkSharp(): Promise<CheckResult> {
   return { name: 'sharp', status: 'ok', detail: vips ? `libvips ${vips}` : 'loaded' };
 }
 
+async function checkModel(): Promise<CheckResult> {
+  const m = clipModelManifest();
+  const configured = /^[0-9a-f]{64}$/.test(m.sha256);
+  if (!configured) {
+    return { name: 'inference model', status: 'warn', detail: `mirror not configured (base ${m.url})` };
+  }
+  return resolveClipModel()
+    ? { name: 'inference model', status: 'ok', detail: `${m.version} (${m.installDir})` }
+    : { name: 'inference model', status: 'warn', detail: 'not provisioned — run `shoots setup`' };
+}
+
 const CHECKS: ReadonlyArray<() => Promise<CheckResult>> = [
   checkPlatform,
   checkHome,
@@ -122,6 +134,7 @@ const CHECKS: ReadonlyArray<() => Promise<CheckResult>> = [
   checkPerl,
   checkToolMirror,
   checkExiftool,
+  checkModel,
   checkSharp,
 ];
 

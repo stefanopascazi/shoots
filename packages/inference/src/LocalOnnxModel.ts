@@ -2,10 +2,15 @@
  * ONNX-backed QualityModel (the real backend behind `--model onnx`).
  *
  * - focus:     variance-of-Laplacian (classic, no ML) via @shoots/imaging.
- * - aesthetic: a cheap technical heuristic (exposure / contrast / colorfulness).
+ * - aesthetic: zero-shot CLIP across quality aspects (composition, exposure,
+ *              subject, lighting, sharpness, storytelling) when the model
+ *              archive ships aesthetics.json; otherwise a cheap technical
+ *              heuristic (exposure / contrast / colorfulness) as a fallback.
  * - keywords:  zero-shot CLIP — the ONNX image encoder embeds the photo, then
  *              cosine similarity against precomputed text embeddings shipped in
  *              the model archive.
+ *
+ * A single image embedding feeds both the aesthetic aspects and the keywords.
  *
  * The CLIP model (MIT, openai/clip-vit-base-patch32 in ONNX form) is downloaded
  * on first use into ~/.shoots/models, checksum-verified. The onnxruntime-node
@@ -19,6 +24,7 @@ import {
   laplacianVariance,
   preprocessClip,
   aestheticStats,
+  type AestheticStats,
   DEFAULT_FOCUS_THRESHOLD,
 } from '@shoots/imaging';
 import type { ImageInput, QualityAssessment, QualityModel } from './QualityModel.js';
@@ -30,12 +36,28 @@ import {
   type ResolvedModelManifest,
 } from './models/clipManifest.js';
 import { loadKeywordVocab, matchKeywords, type KeywordVocab } from './models/keywords.js';
+import { loadAestheticModel, scoreAesthetics, type AestheticModel } from './models/aesthetics.js';
 
 /** How many keywords to suggest, and the minimum cosine similarity to keep one. */
 const KEYWORD_TOP_K = 6;
 const KEYWORD_FLOOR = 0.2;
 
 const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
+
+/**
+ * Technical-only aesthetic fallback used when the archive has no aesthetics.json.
+ * Deliberately conservative: a merely well-exposed frame should not score high
+ * on its own — that is the job of the CLIP aspects. Well-exposed, contrasty and
+ * colourful lifts it, but the ceiling here is modest so the strict star mapping
+ * still separates snapshots from keepers.
+ */
+function heuristicAesthetic(stats: AestheticStats): number {
+  const exposure = 1 - Math.min(1, 2 * Math.abs(stats.brightness - 0.5));
+  const contrast = Math.min(1, stats.contrast * 2);
+  const colour = Math.min(1, stats.colorfulness * 1.6);
+  // Weighted, then scaled down: technical cleanliness alone caps around 0.7.
+  return clamp01(0.7 * (0.5 * exposure + 0.3 * contrast + 0.2 * colour));
+}
 
 function l2normalize(v: Float32Array): Float32Array {
   let s = 0;
@@ -52,6 +74,7 @@ export class LocalOnnxModel implements QualityModel {
   private manifest?: ResolvedModelManifest;
   private session?: InferenceSession;
   private vocab?: KeywordVocab;
+  private aesthetics: AestheticModel | null = null;
   private ort?: typeof import('onnxruntime-node');
 
   constructor(private readonly options: EnsureModelOptions = {}) {}
@@ -59,6 +82,8 @@ export class LocalOnnxModel implements QualityModel {
   async init(): Promise<void> {
     this.manifest = await ensureClipModel(this.options);
     this.vocab = await loadKeywordVocab(this.manifest.vocabPath);
+    // Optional: null on archives that predate aesthetics.json → heuristic fallback.
+    this.aesthetics = await loadAestheticModel(this.manifest.aestheticsPath);
     // Lazy import: the onnxruntime native addon loads only when the onnx backend
     // is actually used, keeping startup (and other commands) free of it.
     this.ort = await import('onnxruntime-node');
@@ -97,19 +122,24 @@ export class LocalOnnxModel implements QualityModel {
     const lap = await laplacianVariance(buffer);
     const focus = lap.focusPeak / (lap.focusPeak + DEFAULT_FOCUS_THRESHOLD);
 
-    // Aesthetic: technical heuristic. Well-exposed (mid brightness), with some
-    // contrast and colour, scores higher. Deliberately no ML aesthetic head.
-    const stats = await aestheticStats(buffer);
-    const exposure = 1 - Math.min(1, 2 * Math.abs(stats.brightness - 0.5));
-    const contrast = Math.min(1, stats.contrast * 2.5);
-    const colour = Math.min(1, stats.colorfulness * 2);
-    const aesthetic = 0.45 * exposure + 0.3 * contrast + 0.25 * colour;
-
-    // Keywords: zero-shot CLIP.
+    // One image embedding feeds both the aesthetic aspects and the keywords.
     const embedding = await this.embed(buffer);
     const keywords = matchKeywords(vocab, embedding, KEYWORD_TOP_K, KEYWORD_FLOOR);
 
-    return { focus: clamp01(focus), aesthetic: clamp01(aesthetic), keywords };
+    // Aesthetic: zero-shot CLIP across quality aspects when available, else a
+    // conservative technical heuristic. The CLIP aspects capture composition,
+    // subject and lighting — the dimensions a pure exposure heuristic can't see.
+    let aesthetic: number;
+    let aspects: QualityAssessment['aspects'] = [];
+    if (this.aesthetics) {
+      const scored = scoreAesthetics(this.aesthetics, embedding);
+      aesthetic = scored.aesthetic;
+      aspects = scored.aspects;
+    } else {
+      aesthetic = heuristicAesthetic(await aestheticStats(buffer));
+    }
+
+    return { focus: clamp01(focus), aesthetic: clamp01(aesthetic), aspects, keywords };
   }
 
   async scoreFocus(image: ImageInput): Promise<number> {
@@ -128,5 +158,6 @@ export class LocalOnnxModel implements QualityModel {
     await this.session?.release();
     this.session = undefined;
     this.vocab = undefined;
+    this.aesthetics = null;
   }
 }

@@ -14,7 +14,7 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
 import { writeXmpSidecar } from '@shoots/imaging';
-import { createQualityModel, toStarRating, type ModelKind } from '@shoots/inference';
+import { createQualityModel, toStarRating, type AestheticAspectScore, type ModelKind } from '@shoots/inference';
 import {
   logError,
   logVerbose,
@@ -25,7 +25,7 @@ import {
   printJson,
 } from '../io.js';
 import { startProgress } from '../progress.js';
-import { ensureExiftoolReady } from '../tools.js';
+import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 
 interface RateOptions {
   model: string;
@@ -41,6 +41,7 @@ interface RatingResult {
   stars: number;
   focus: number;
   aesthetic: number;
+  aspects: AestheticAspectScore[];
   keywords: string[];
   sidecar: string | null;
   model: string;
@@ -49,9 +50,9 @@ interface RatingResult {
 export function registerRateCommand(program: Command): void {
   program
     .command('rate')
-    .description('Score images (focus/aesthetic/keywords) via the inference model and write star ratings to sidecars')
+    .description('Score images (focus/aesthetic/keywords) via the ONNX inference model and write star ratings to sidecars')
     .argument('<path>', 'folder (or single file) to rate')
-    .option('--model <kind>', 'inference backend: stub | onnx (onnx not implemented yet)', 'stub')
+    .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
     .option('--write-xmp', 'write XMP sidecars via exiftool instead of JSON sidecars')
     .option('--concurrency <n>', 'max parallel scoring jobs', '4')
     .option('--dry-run', 'score and report, but write no sidecars')
@@ -63,14 +64,13 @@ export function registerRateCommand(program: Command): void {
 async function runRate(targetPath: string, options: RateOptions): Promise<void> {
   const io = makeIo(options);
 
-  let model;
-  try {
-    model = createQualityModel(options.model as ModelKind);
-  } catch (err) {
-    logError(err instanceof Error ? err.message : String(err));
+  const AVAILABLE_MODELS: ModelKind[] = ['onnx'];
+  if (!AVAILABLE_MODELS.includes(options.model as ModelKind)) {
+    logError(`unknown inference model '${options.model}' (available: ${AVAILABLE_MODELS.join(', ')})`);
     process.exitCode = 2;
     return;
   }
+  const model = createQualityModel(options.model as ModelKind);
 
   const files = await scanFiles(targetPath);
   if (files.length === 0) {
@@ -82,6 +82,10 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
 
   // XMP sidecars are written via exiftool; JSON sidecars need nothing extra.
   if (options.writeXmp && !(await ensureExiftoolReady(io))) return;
+
+  // Provision the ONNX model up front (shared download UX with `setup`), so a
+  // missing/unconfigured model fails clearly before scoring begins.
+  if (!(await ensureClipModelReady(io))) return;
 
   await model.init();
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
@@ -116,6 +120,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
                 model: model.name,
                 stars,
                 scores: { focus: assessment.focus, aesthetic: assessment.aesthetic },
+                aspects: assessment.aspects,
                 keywords: assessment.keywords,
                 generatedAt: new Date().toISOString(),
               },
@@ -133,6 +138,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
         stars,
         focus: Math.round(assessment.focus * 1000) / 1000,
         aesthetic: Math.round(assessment.aesthetic * 1000) / 1000,
+        aspects: assessment.aspects,
         keywords: assessment.keywords,
         sidecar,
         model: model.name,
