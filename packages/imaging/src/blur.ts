@@ -38,6 +38,17 @@ const FOCUS_TOP_TILE_FRACTION = 0.05;
 /** Never split into tiles smaller than this many pixels per side. */
 const MIN_TILE_PX = 16;
 
+/**
+ * Per-tile sharpness over the analysed frame, row-major. Lets callers see
+ * *where* the in-focus region sits (e.g. to draw a focus heatmap).
+ */
+export interface FocusMap {
+  cols: number;
+  rows: number;
+  /** Laplacian variance per tile, length `cols * rows`, row-major. */
+  tiles: number[];
+}
+
 export interface LaplacianResult {
   /** Variance of the Laplacian over the whole frame. Higher = sharper overall. */
   score: number;
@@ -48,6 +59,8 @@ export interface LaplacianResult {
    * or missed focus).
    */
   focusPeak: number;
+  /** Spatial sharpness grid (see {@link FocusMap}). */
+  focusMap: FocusMap;
   /** Dimensions actually analyzed (after downscale). */
   width: number;
   height: number;
@@ -108,21 +121,22 @@ export async function laplacianVariance(
   const mean = sum / n;
   const score = sumSq / n - mean * mean;
 
-  // Per-tile variance, then a robust peak over the sharpest tiles.
-  const tileVar: number[] = [];
+  // Per-tile variance (kept in spatial order for the focus map), then a robust
+  // peak over the sharpest tiles.
+  const tiles: number[] = new Array<number>(tileCount).fill(0);
   for (let t = 0; t < tileCount; t++) {
     const tn = tileN[t];
     if (tn === 0) continue;
     const tMean = tileSum[t] / tn;
-    tileVar.push(tileSumSq[t] / tn - tMean * tMean);
+    tiles[t] = tileSumSq[t] / tn - tMean * tMean;
   }
-  tileVar.sort((a, b) => b - a);
-  const topK = Math.max(1, Math.round(tileVar.length * FOCUS_TOP_TILE_FRACTION));
+  const ranked = tiles.filter((_, t) => tileN[t] > 0).sort((a, b) => b - a);
+  const topK = Math.max(1, Math.round(ranked.length * FOCUS_TOP_TILE_FRACTION));
   let peak = 0;
-  for (let k = 0; k < topK; k++) peak += tileVar[k];
+  for (let k = 0; k < topK; k++) peak += ranked[k];
   const focusPeak = peak / topK;
 
-  return { score, focusPeak, width, height };
+  return { score, focusPeak, focusMap: { cols, rows, tiles }, width, height };
 }
 
 export type BlurVerdict = 'sharp' | 'blurry';
@@ -133,6 +147,8 @@ export interface BlurAnalysis {
   score: number;
   /** Robust peak local sharpness — how sharp the sharpest region is. */
   focusPeak: number;
+  /** Spatial sharpness grid — where the in-focus region sits. */
+  focusMap: FocusMap;
   verdict: BlurVerdict;
   threshold: number;
   focusThreshold: number;
@@ -161,7 +177,7 @@ export async function analyzeBlur(
   const focusThreshold = options.focusThreshold ?? DEFAULT_FOCUS_THRESHOLD;
   const focusRescue = options.focusRescue ?? true;
   const { buffer, source } = await loadRenderableImage(filePath);
-  const { score, focusPeak, width, height } = await laplacianVariance(buffer, options);
+  const { score, focusPeak, focusMap, width, height } = await laplacianVariance(buffer, options);
 
   const globallySoft = score < threshold;
   const hasFocusedRegion = focusPeak >= focusThreshold;
@@ -172,6 +188,7 @@ export async function analyzeBlur(
     file: filePath,
     score,
     focusPeak,
+    focusMap,
     verdict,
     threshold,
     focusThreshold,

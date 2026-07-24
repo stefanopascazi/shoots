@@ -159,6 +159,8 @@ shoots cull ./raw --no-focus-rescue                   # classify purely on the g
 
 Strictly non-destructive: originals are never moved or deleted — `--separate` copies.
 
+**Interactive triage (shell only).** Inside the interactive shell, `/triage <path>` runs the same focus-aware analysis but doesn't make you wait: it auto-files the confident verdicts (clear sharp → `sharp/`, clear blurry → `blurry/`) immediately, then hands you *only* the uncertain shallow-DoF rescues one at a time. Each review card shows the scores, aperture, and a focus heatmap (where the sharp region landed); `K` keeps, `D` discards, `P` opens the frame in your system viewer, `S` skips, `Esc` finishes. Still non-destructive — "discard" copies into `blurry/` for you to delete later. (Batch `shoots cull` stays non-interactive for scripting.)
+
 ### `shoots rate <path>`
 
 Scores focus/aesthetics and suggests keywords through the `@shoots/inference` `QualityModel` interface, mapping to a 1–5 star rating.

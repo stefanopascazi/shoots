@@ -45,6 +45,7 @@ export {
   analyzeBlur,
   DEFAULT_BLUR_THRESHOLD,
   DEFAULT_FOCUS_THRESHOLD,
+  type FocusMap,
   type LaplacianResult,
   type LaplacianOptions,
   type BlurAnalysis,
