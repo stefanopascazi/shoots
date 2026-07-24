@@ -279,11 +279,6 @@ export function Shell({ mouse }: ShellProps = {}) {
         setLines(logoLines(columns));
         setScrollOffset(0);
         return;
-      case 'triage': {
-        pushEcho(`/triage ${args.join(' ')}`.trimEnd());
-        startTriage(args);
-        return;
-      }
       case 'mouse': {
         pushEcho('/mouse');
         if (!mouse) {
@@ -324,6 +319,14 @@ export function Shell({ mouse }: ShellProps = {}) {
         }
         return;
       }
+    }
+
+    // ---- cull --review: interactive mode, run in-process (the shell owns the
+    // Ink terminal). Everything else spawns out-of-process below. ----
+    if (name === 'cull' && args.includes('--review')) {
+      pushEcho(line);
+      startTriage(args);
+      return;
     }
 
     // ---- CLI commands, spawned out-of-process ----
@@ -425,7 +428,7 @@ export function Shell({ mouse }: ShellProps = {}) {
       .catch((err: unknown) => {
         setTriageBusy(null);
         pushLines([
-          [span(`  ✗ triage failed: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
+          [span(`  ✗ review failed: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
           BLANK,
         ]);
       });

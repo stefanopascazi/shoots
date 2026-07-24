@@ -42,6 +42,7 @@ interface CullOptions {
   dryRun?: boolean;
   json?: boolean;
   verbose?: boolean;
+  review?: boolean;
 }
 
 export function registerCullCommand(program: Command): void {
@@ -60,6 +61,7 @@ export function registerCullCommand(program: Command): void {
     .option('--dry-run', 'analyze and report, but skip copying and report-file writes')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
+    .option('--review', 'interactively review the uncertain (shallow-DoF) shots — available only inside the `shoots` shell')
     .action(runCull);
 }
 
@@ -70,6 +72,13 @@ interface CullError {
 
 async function runCull(targetPath: string, options: CullOptions): Promise<void> {
   const io = makeIo(options);
+  // --review is an interactive mode that only the shell can host (it owns the
+  // Ink terminal). Reaching runCull with it set means a plain batch invocation.
+  if (options.review) {
+    logError('--review needs the interactive shell: run `shoots`, then `/cull <path> --review`');
+    process.exitCode = 2;
+    return;
+  }
   const threshold = Number.parseFloat(options.threshold);
   if (!Number.isFinite(threshold) || threshold <= 0) {
     logError(`Invalid --threshold: ${options.threshold}`);

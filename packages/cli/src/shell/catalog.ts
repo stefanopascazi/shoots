@@ -29,8 +29,8 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: 'cull',
-    summary: 'Blur detection (Laplacian, focus-aware): report + sharp/blurry split',
-    usage: '/cull <path> [--threshold 100] [--focus-threshold 250] [--no-focus-rescue] [--separate] [--format csv] [--out <report>] [--dry-run]',
+    summary: 'Blur detection (Laplacian, focus-aware): report, split, or review interactively',
+    usage: '/cull <path> [--review] [--threshold 100] [--focus-threshold 250] [--no-focus-rescue] [--separate] [--dest <dir>] [--format csv] [--out <report>] [--dry-run]',
   },
   {
     name: 'rate',
@@ -51,12 +51,6 @@ export const COMMANDS: CommandSpec[] = [
     name: 'update',
     summary: 'Update the standalone binary to the latest release',
     usage: '/update [--check]',
-  },
-  {
-    name: 'triage',
-    builtin: true,
-    summary: 'Interactive cull: auto-file clear shots, review the uncertain (shallow-DoF) ones',
-    usage: '/triage <path> [--dest <dir>] [--threshold 100] [--focus-threshold 250] [--dry-run]',
   },
   { name: 'cd', builtin: true, summary: 'Change the shell working directory', usage: '/cd <path>' },
   { name: 'pwd', builtin: true, summary: 'Print the shell working directory', usage: '/pwd' },
