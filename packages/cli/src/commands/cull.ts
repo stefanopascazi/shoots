@@ -6,6 +6,7 @@
  * JSON/CSV report and can optionally COPY files into sharp/ and blurry/
  * subfolders. Strictly non-destructive: originals are never touched.
  */
+import { statSync } from 'node:fs';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Command } from 'commander';
@@ -86,6 +87,19 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     logError(`Invalid --format: ${options.format} (expected json or csv)`);
     process.exitCode = 2;
     return;
+  }
+  if (options.out) {
+    // --out must name a file. A common slip is pointing it at an existing
+    // directory, which would surface as a raw EISDIR from writeFile.
+    try {
+      if (statSync(path.resolve(options.out)).isDirectory()) {
+        logError(`--out points to a directory, not a file: ${path.resolve(options.out)}`);
+        process.exitCode = 2;
+        return;
+      }
+    } catch {
+      // path doesn't exist yet — writeFile will create it
+    }
   }
 
   // Destination for --separate; resolved up front so we can keep it out of the
@@ -185,8 +199,14 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
       : JSON.stringify(report, null, 2);
 
   if (options.out && !options.dryRun) {
-    await writeFile(options.out, reportText + '\n', 'utf8');
-    logVerbose(io, `Report written to ${options.out}`);
+    try {
+      await writeFile(options.out, reportText + '\n', 'utf8');
+      logVerbose(io, `Report written to ${options.out}`);
+    } catch (err) {
+      logError(`Failed to write --out ${options.out}: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
+      return;
+    }
   }
 
   if (io.json) {
