@@ -4,3 +4,4 @@ dist-bin/
 *.tsbuildinfo
 *.log
 .DS_Store
+test/
