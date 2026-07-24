@@ -13,6 +13,16 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    // Resolve inter-package imports to source, not the built dist/*.d.ts. This
+    // decouples `typecheck` from `build`: a fresh clone or CI (which typechecks
+    // before building) resolves @shoots/* correctly instead of failing TS2307.
+    // baseUrl/paths here resolve relative to this base file (repo root).
+    "baseUrl": ".",
+    "paths": {
+      "@shoots/core": ["packages/core/src/index.ts"],
+      "@shoots/imaging": ["packages/imaging/src/index.ts"],
+      "@shoots/inference": ["packages/inference/src/index.ts"]
+    }
   }
 }
