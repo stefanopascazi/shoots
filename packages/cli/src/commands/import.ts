@@ -22,6 +22,7 @@ import {
 } from '../io.js';
 import { buildNamingPlan, collectNamingInfo } from '../naming.js';
 import { startProgress } from '../progress.js';
+import { ensureExiftoolReady } from '../tools.js';
 
 /** Applied with `--rename` when no explicit `--pattern` is given. */
 export const DEFAULT_RENAME_PATTERN = '{camera}{orig}.{ext}';
@@ -79,6 +80,8 @@ async function runImport(source: string, options: ImportOptions): Promise<void> 
       process.exitCode = 2;
       return;
     }
+    // Renaming reads EXIF (camera/date) — make sure exiftool is available.
+    if (!(await ensureExiftoolReady(io))) return;
   }
 
   const files = await scanFiles(source);

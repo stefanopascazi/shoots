@@ -21,6 +21,7 @@ import {
   printJson,
 } from '../io.js';
 import { startProgress } from '../progress.js';
+import { ensureExiftoolReady } from '../tools.js';
 
 interface CullOptions {
   threshold: string;
@@ -77,6 +78,10 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     return;
   }
   logVerbose(io, `Analyzing ${files.length} files (threshold ${threshold})`);
+
+  // RAW files are analyzed via their embedded JPEG preview, extracted with
+  // exiftool; only provision it when the batch actually contains RAW.
+  if (files.some((f) => f.kind === 'raw') && !(await ensureExiftoolReady(io))) return;
 
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
   const progress = await startProgress(io, files.length, 'Culling');

@@ -19,6 +19,7 @@ import {
   printJson,
 } from '../io.js';
 import { buildNamingPlan, collectNamingInfo } from '../naming.js';
+import { ensureExiftoolReady } from '../tools.js';
 
 interface RenameOptions {
   pattern: string;
@@ -57,6 +58,9 @@ async function runRename(targetPath: string, options: RenameOptions): Promise<vo
     return;
   }
   logVerbose(io, `Found ${files.length} files under ${targetPath}`);
+
+  // Templates resolve EXIF tags (camera/date) — exiftool must be available.
+  if (!(await ensureExiftoolReady(io))) return;
 
   const infos = await collectNamingInfo(io, files);
   // Each file is renamed within its own directory (in-place operation).

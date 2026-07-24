@@ -10,6 +10,7 @@ import { registerRenameCommand } from './commands/rename.js';
 import { registerExifCommand } from './commands/exif.js';
 import { registerCullCommand } from './commands/cull.js';
 import { registerRateCommand } from './commands/rate.js';
+import { registerSetupCommand } from './commands/setup.js';
 
 const program = new Command();
 
@@ -27,6 +28,7 @@ registerRenameCommand(program);
 registerExifCommand(program);
 registerCullCommand(program);
 registerRateCommand(program);
+registerSetupCommand(program);
 
 program
   .command('shell')

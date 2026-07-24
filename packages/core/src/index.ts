@@ -11,6 +11,25 @@ export {
 export { sha256File } from './checksum.js';
 
 export {
+  shootsHome,
+  binDir,
+  toolDir,
+  modelsDir,
+  cacheDir,
+  logsDir,
+  configPath,
+} from './paths.js';
+
+export {
+  downloadFile,
+  DownloadError,
+  ChecksumError,
+  type DownloadOptions,
+} from './net/download.js';
+
+export { extractTarGz, ArchiveError } from './archive.js';
+
+export {
   renderTemplate,
   sanitizeToken,
   validateTemplate,

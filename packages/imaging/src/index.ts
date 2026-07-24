@@ -16,6 +16,21 @@ export {
 } from './exif.js';
 
 export {
+  resolveExiftool,
+  ensureExiftool,
+  ToolMirrorNotConfiguredError,
+  type ExiftoolCommand,
+  type EnsureExiftoolOptions,
+} from './tools/exiftool.js';
+
+export {
+  exiftoolManifest,
+  EXIFTOOL_VERSION,
+  UnsupportedPlatformError,
+  type ResolvedExiftoolManifest,
+} from './tools/exiftoolManifest.js';
+
+export {
   isRawFile,
   loadRenderableImage,
   generateThumbnail,

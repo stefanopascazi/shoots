@@ -8,16 +8,16 @@
  * hit OS command-line length limits (a real concern on Windows).
  */
 import { spawn } from 'node:child_process';
-
-const EXIFTOOL_BIN = process.env.SHOOTS_EXIFTOOL ?? 'exiftool';
+import { resolveExiftool } from './tools/exiftool.js';
 
 export class ExiftoolError extends Error {}
 
 export class ExiftoolNotFoundError extends ExiftoolError {
-  constructor() {
+  constructor(message?: string) {
     super(
-      `exiftool binary not found ('${EXIFTOOL_BIN}'). Install it from https://exiftool.org/ ` +
-        'and make sure it is on PATH, or point SHOOTS_EXIFTOOL at the binary.',
+      message ??
+        'exiftool is not available. Run `shoots setup` to download it, or point ' +
+          'SHOOTS_EXIFTOOL at an existing exiftool binary.',
     );
   }
 }
@@ -34,7 +34,14 @@ export interface RunExiftoolOptions {
 /** Low-level runner. Returns raw stdout as a Buffer (metadata may be binary). */
 export function runExiftool(args: string[], options: RunExiftoolOptions = {}): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const child = spawn(EXIFTOOL_BIN, ['-@', '-'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    const resolved = resolveExiftool();
+    if (!resolved) {
+      reject(new ExiftoolNotFoundError());
+      return;
+    }
+    const child = spawn(resolved.command, [...resolved.prefixArgs, '-@', '-'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     const out: Buffer[] = [];
     const err: Buffer[] = [];
 

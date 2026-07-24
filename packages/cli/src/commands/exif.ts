@@ -20,6 +20,7 @@ import {
   printHuman,
   printJson,
 } from '../io.js';
+import { ensureExiftoolReady } from '../tools.js';
 
 interface ExifOptions {
   tags?: string;
@@ -118,6 +119,9 @@ async function runExif(targetPath: string, options: ExifOptions): Promise<void> 
   }
   const paths = files.map((f) => f.path);
   logVerbose(io, `Found ${paths.length} files under ${targetPath}`);
+
+  // Every exif operation shells out to exiftool.
+  if (!(await ensureExiftoolReady(io))) return;
 
   let writeTags: Record<string, string | string[]> | null;
   try {

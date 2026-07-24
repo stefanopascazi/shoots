@@ -1,0 +1,84 @@
+/**
+ * Per-platform manifest describing which exiftool build to fetch and how to run
+ * it. Archives are repackaged (see scripts/prepare-tool-mirror.ts) into a
+ * normalized `.tar.gz` and hosted on our own GitHub release, so URLs are stable
+ * and every payload is pinned to a verified SHA-256.
+ *
+ *   - Windows: the official standalone (`exiftool.exe` + `exiftool_files/`),
+ *     self-contained, no Perl required.
+ *   - macOS / Linux: the ExifTool Perl distribution (`exiftool` + `lib/`),
+ *     invoked through the system Perl interpreter.
+ */
+import path from 'node:path';
+import { toolDir } from '@shoots/core';
+
+export const EXIFTOOL_VERSION = '13.10';
+
+/** GitHub release tag that hosts the repackaged tool archives. */
+export const TOOLS_RELEASE = 'tools-v1';
+
+/** Override the mirror base URL (CI, private mirror, local testing). */
+const MIRROR_BASE =
+  process.env.SHOOTS_TOOLS_BASEURL ??
+  `https://github.com/OWNER/REPO/releases/download/${TOOLS_RELEASE}`;
+
+export interface ExiftoolPlatformSpec {
+  /** Archive file name on the mirror. */
+  archive: string;
+  /** Lowercase hex SHA-256 of the archive. Empty until the mirror is built. */
+  sha256: string;
+  /** Runnable path relative to the extracted install dir. */
+  bin: string;
+  /** Whether `bin` must be invoked through the system Perl interpreter. */
+  viaPerl: boolean;
+}
+
+// TODO: fill sha256 from `bun scripts/prepare-tool-mirror.ts` output once the
+// mirror archives are uploaded, and replace OWNER/REPO above.
+const SPECS: Record<string, ExiftoolPlatformSpec | undefined> = {
+  win32: {
+    archive: `exiftool-${EXIFTOOL_VERSION}-win32.tar.gz`,
+    sha256: '',
+    bin: 'exiftool.exe',
+    viaPerl: false,
+  },
+  darwin: {
+    archive: `exiftool-${EXIFTOOL_VERSION}-unix.tar.gz`,
+    sha256: '',
+    bin: 'exiftool',
+    viaPerl: true,
+  },
+  linux: {
+    archive: `exiftool-${EXIFTOOL_VERSION}-unix.tar.gz`,
+    sha256: '',
+    bin: 'exiftool',
+    viaPerl: true,
+  },
+};
+
+export interface ResolvedExiftoolManifest {
+  version: string;
+  url: string;
+  sha256: string;
+  installDir: string;
+  binPath: string;
+  viaPerl: boolean;
+}
+
+export class UnsupportedPlatformError extends Error {}
+
+export function exiftoolManifest(platform: string = process.platform): ResolvedExiftoolManifest {
+  const spec = SPECS[platform];
+  if (!spec) {
+    throw new UnsupportedPlatformError(`No exiftool build is configured for platform "${platform}"`);
+  }
+  const installDir = toolDir('exiftool', EXIFTOOL_VERSION);
+  return {
+    version: EXIFTOOL_VERSION,
+    url: `${MIRROR_BASE}/${spec.archive}`,
+    sha256: spec.sha256,
+    installDir,
+    binPath: path.join(installDir, spec.bin),
+    viaPerl: spec.viaPerl,
+  };
+}

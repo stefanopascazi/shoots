@@ -25,6 +25,7 @@ import {
   printJson,
 } from '../io.js';
 import { startProgress } from '../progress.js';
+import { ensureExiftoolReady } from '../tools.js';
 
 interface RateOptions {
   model: string;
@@ -78,6 +79,9 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     return;
   }
   logVerbose(io, `Rating ${files.length} files with model ${model.name}`);
+
+  // XMP sidecars are written via exiftool; JSON sidecars need nothing extra.
+  if (options.writeXmp && !(await ensureExiftoolReady(io))) return;
 
   await model.init();
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });

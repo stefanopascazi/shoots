@@ -14,6 +14,11 @@ Questo file e' il contesto operativo rapido per agenti AI che lavorano su Shoots
 ## Convenzioni di lavoro
 
 - Best Practice deve essere un mantra: evitare file monolitici, separare componenti UI, servizi wiring e logiche riusabili in moduli/cartelle dedicati.
+- Le dipendenze esterne (exiftool, e in futuro i modelli) NON sono bundlate nel binario:
+  vengono scaricate a runtime in `~/.shoots` (uniforme su tutti gli OS, override con
+  SHOOTS_HOME), verificate via SHA-256 pinnato, da un mirror su GitHub Releases. Provisioning
+  esplicito con `shoots setup`, fallback lazy al primo comando che le richiede. Vedi
+  `packages/imaging/src/tools/` e `scripts/prepare-tool-mirror.ts`.
 - Nei renderer React, preferire componenti separati e hook/servizi riusabili invece di accumulare JSX/TSX, state management e utility nello stesso file.
 - Aggiungere commenti in inglese solo dove aiutano a chiarire logica non ovvia.
 - NON CREARE MAI NUOVI BRANCH

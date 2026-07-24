@@ -1,6 +1,7 @@
 node_modules/
 dist/
 dist-bin/
+dist-tools/
 *.tsbuildinfo
 *.log
 .DS_Store
