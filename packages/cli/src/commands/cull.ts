@@ -7,7 +7,7 @@
  * subfolders. Strictly non-destructive: originals are never touched.
  */
 import { statSync } from 'node:fs';
-import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
@@ -28,14 +28,15 @@ import {
   printJson,
 } from '../io.js';
 import { startProgress } from '../progress.js';
+import { relocate } from '../relocate.js';
 import { ensureExiftoolReady } from '../tools.js';
 
 interface CullOptions {
   threshold: string;
   focusThreshold: string;
   focusRescue?: boolean;
-  separate?: boolean;
   dest?: string;
+  copy?: boolean;
   format: string;
   out?: string;
   concurrency: string;
@@ -48,13 +49,13 @@ interface CullOptions {
 export function registerCullCommand(program: Command): void {
   program
     .command('cull')
-    .description('Detect blurry shots via Laplacian variance, focus-aware to spare shallow-DoF keepers; report and optionally separate sharp/blurry (never deletes)')
+    .description('Detect blurry shots via Laplacian variance, focus-aware to spare shallow-DoF keepers; keepers stay put, rejects go to --dest mirroring the source structure')
     .argument('<path>', 'folder (or single file) to analyze')
     .option('--threshold <n>', 'global Laplacian variance below this = blurry', String(DEFAULT_BLUR_THRESHOLD))
     .option('--focus-threshold <n>', 'keep a globally-soft frame if its sharpest region scores above this (rescues shallow depth of field)', String(DEFAULT_FOCUS_THRESHOLD))
     .option('--no-focus-rescue', 'disable the shallow-DoF rescue and classify purely on the global score')
-    .option('--separate', 'copy files into sharp/ and blurry/ subfolders of --dest')
-    .option('--dest <dir>', 'destination for --separate (default: <path>/_culled)')
+    .option('--dest <dir>', 'move blurry rejects here, mirroring the source folder structure (keepers are never touched)')
+    .option('--copy', 'copy rejects to --dest instead of moving them (leaves the originals in place)')
     .option('--format <fmt>', 'report format: json | csv', 'json')
     .option('--out <file>', 'write the report to a file instead of stdout')
     .option('--concurrency <n>', 'max parallel analyses', '4')
@@ -111,14 +112,17 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     }
   }
 
-  // Destination for --separate; resolved up front so we can keep it out of the
-  // scan. scanFiles recurses and the default dest lives inside the target, so
-  // re-running --separate would otherwise re-analyze the sharp/ and blurry/ copies.
-  const destRoot = path.resolve(options.dest ?? path.join(targetPath, '_culled'));
-  const destPrefix = destRoot + path.sep;
+  // Rejects go here (mirroring the source structure); keepers are never moved.
+  // Resolve up front and keep it out of the scan: scanFiles recurses, so if
+  // --dest sits inside the target a second run would re-analyze relocated files.
+  const destRoot = options.dest ? path.resolve(options.dest) : undefined;
+  // Root the mirror at the scanned folder; a single-file target mirrors by basename.
+  const scanRoot = statSync(targetPath).isDirectory()
+    ? path.resolve(targetPath)
+    : path.dirname(path.resolve(targetPath));
   const scanned = await scanFiles(targetPath);
-  const files = options.separate
-    ? scanned.filter((f) => f.path !== destRoot && !f.path.startsWith(destPrefix))
+  const files = destRoot
+    ? scanned.filter((f) => f.path !== destRoot && !f.path.startsWith(destRoot + path.sep))
     : scanned;
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
@@ -163,21 +167,21 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   // available we simply omit the column rather than failing the cull.
   const apertureByFile = await readApertures(io, files.map((f) => f.path));
 
-  // ---- optional separation (copies only, originals untouched) ----
-  const copied: { source: string; dest: string }[] = [];
-  if (options.separate && !options.dryRun) {
-    await mkdir(path.join(destRoot, 'sharp'), { recursive: true });
-    await mkdir(path.join(destRoot, 'blurry'), { recursive: true });
-    for (const result of results) {
-      const dest = path.join(destRoot, result.verdict, path.basename(result.file));
+  // ---- relocate rejects (blurry) to --dest, mirroring the source structure ----
+  // Keepers (sharp, incl. shallow-DoF rescues) are never touched. Move by
+  // default; --copy leaves the originals in place. Requires --dest.
+  const move = !options.copy;
+  const relocated: { source: string; dest: string }[] = [];
+  if (destRoot && !options.dryRun) {
+    for (const result of blurry) {
       try {
-        await copyFile(result.file, dest);
-        copied.push({ source: result.file, dest });
+        const to = await relocate(scanRoot, result.file, destRoot, { move });
+        relocated.push({ source: result.file, dest: to });
       } catch (err) {
-        errors.push({ file: result.file, error: `copy failed: ${err instanceof Error ? err.message : String(err)}` });
+        errors.push({ file: result.file, error: `${move ? 'move' : 'copy'} failed: ${err instanceof Error ? err.message : String(err)}` });
       }
     }
-    logVerbose(io, `Copied ${copied.length} files under ${destRoot}`);
+    logVerbose(io, `${move ? 'Moved' : 'Copied'} ${relocated.length} rejects under ${destRoot}`);
   }
 
   // ---- report ----
@@ -198,7 +202,14 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
       pixelSource: r.pixelSource,
     })),
     errors,
-    separated: options.separate ? { dest: destRoot, copied: copied.length, planned: options.dryRun ? results.length : undefined } : undefined,
+    relocated: destRoot
+      ? {
+          dest: destRoot,
+          mode: move ? 'move' : 'copy',
+          count: options.dryRun ? blurry.length : relocated.length,
+          planned: options.dryRun,
+        }
+      : undefined,
     summary: { total: files.length, sharp: sharp.length, blurry: blurry.length, rescued: rescued.length, failed: errors.length },
   };
 
@@ -239,10 +250,14 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     if (rescued.length > 0) {
       printHuman(io, `  sharp* = subject in focus despite a soft frame (shallow DoF), kept via --focus-threshold ${focusThreshold}`);
     }
-    if (options.separate && options.dryRun) {
-      printHuman(io, `(dry run) files would be copied into ${destRoot}\\sharp and \\blurry`);
-    } else if (options.separate) {
-      printHuman(io, `Copied ${copied.length} files into ${destRoot}`);
+    if (destRoot) {
+      const verb = move ? 'moved' : 'copied';
+      printHuman(
+        io,
+        options.dryRun
+          ? `(dry run) ${blurry.length} rejects would be ${verb} into ${destRoot} (mirroring structure); keepers stay put`
+          : `${verb} ${relocated.length} rejects into ${destRoot} (mirroring structure); keepers left in place`,
+      );
     }
   }
 

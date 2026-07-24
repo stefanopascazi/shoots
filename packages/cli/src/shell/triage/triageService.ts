@@ -1,16 +1,18 @@
 /**
  * Interactive-cull orchestration, in-process (the batch `shoots cull` stays
- * non-interactive). Analyses a folder, auto-sorts the confident verdicts into
- * sharp/ and blurry/ copies, and hands back the uncertain frames (the
- * focus-peak "rescued" shots) for the shell to review one by one.
+ * non-interactive). Analyses a folder, auto-relocates the confident rejects to
+ * --dest (mirroring the source structure), leaves the keepers in place, and
+ * hands back the uncertain frames (the focus-peak "rescued" shots) for the
+ * shell to review one by one.
  *
- * Strictly non-destructive, like cull: everything is a copy. "Discard" during
- * review copies into blurry/ for the user to delete later — never unlinks.
+ * Keepers are never touched. Rejects (auto-blurry + review "discard") move to
+ * --dest by default; `copy` leaves the originals in place. Nothing is deleted.
  */
-import { copyFile, mkdir } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import path from 'node:path';
 import { JobQueue, scanFiles } from '@shoots/core';
 import { analyzeBlur, readMetadata, type FocusMap } from '@shoots/imaging';
+import { relocate } from '../../relocate.js';
 
 export interface ReviewItem {
   file: string;
@@ -25,11 +27,15 @@ export type ReviewDecision = 'keep' | 'discard';
 
 export interface TriageResult {
   dest: string;
-  /** Whether this was a dry run (nothing copied; counts are what *would* happen). */
+  /** Scan root the rejects mirror under (needed to relocate review decisions). */
+  root: string;
+  /** Move rejects (default) or copy them. */
+  move: boolean;
+  /** Whether this was a dry run (nothing relocated; counts are what *would* happen). */
   dryRun: boolean;
-  /** Confident keepers copied into dest/sharp (or that would be, in a dry run). */
+  /** Confident keepers left in place. */
   autoSharp: number;
-  /** Confident rejects copied into dest/blurry (or that would be, in a dry run). */
+  /** Confident rejects relocated to --dest (or that would be, in a dry run). */
   autoBlurry: number;
   /** Uncertain (rescued) frames awaiting a decision. */
   review: ReviewItem[];
@@ -38,35 +44,30 @@ export interface TriageResult {
 }
 
 export interface TriageOptions {
-  dest?: string;
+  /** Reject destination (required). Rejects mirror the source structure under it. */
+  dest: string;
   threshold?: number;
   focusThreshold?: number;
   concurrency?: number;
-  /** Analyse and queue for review, but copy nothing. */
+  /** Copy rejects instead of moving them. */
+  copy?: boolean;
+  /** Analyse and queue for review, but relocate nothing. */
   dryRun?: boolean;
   onProgress?: (done: number, total: number) => void;
 }
 
 const normalizePath = (p: string): string => p.replace(/\\/g, '/');
 
-/** Copy `file` into `dest/<bucket>/`, returning the written path. */
-async function copyInto(dest: string, bucket: 'sharp' | 'blurry', file: string): Promise<string> {
-  const dir = path.join(dest, bucket);
-  await mkdir(dir, { recursive: true });
-  const target = path.join(dir, path.basename(file));
-  await copyFile(file, target);
-  return target;
-}
-
-const bucketOf = (decision: ReviewDecision): 'sharp' | 'blurry' =>
-  decision === 'keep' ? 'sharp' : 'blurry';
-
-/** Analyse a folder, auto-file the confident verdicts, queue the rest. */
-export async function runTriage(targetPath: string, options: TriageOptions = {}): Promise<TriageResult> {
+/** Analyse a folder, auto-relocate the confident rejects, queue the rest. */
+export async function runTriage(targetPath: string, options: TriageOptions): Promise<TriageResult> {
   const dryRun = options.dryRun ?? false;
-  const dest = path.resolve(options.dest ?? path.join(targetPath, '_culled'));
-  // Never re-scan our own output: the default dest lives inside the target, so
-  // a second run would otherwise pick up the sharp/ and blurry/ copies.
+  const move = !options.copy;
+  const dest = path.resolve(options.dest);
+  // Root the mirror at the scanned folder; a single-file target mirrors by basename.
+  const root = statSync(targetPath).isDirectory()
+    ? path.resolve(targetPath)
+    : path.dirname(path.resolve(targetPath));
+  // Never re-scan our own output if --dest sits inside the target.
   const destPrefix = dest + path.sep;
   const files = (await scanFiles(targetPath)).filter(
     (f) => f.path !== dest && !f.path.startsWith(destPrefix),
@@ -120,18 +121,27 @@ export async function runTriage(targetPath: string, options: TriageOptions = {})
         focusMap: r.focusMap,
       });
     } else if (r.verdict === 'sharp') {
-      if (!dryRun) await copyInto(dest, 'sharp', r.file);
-      autoSharp++;
+      autoSharp++; // keeper — left exactly where it is
     } else {
-      if (!dryRun) await copyInto(dest, 'blurry', r.file);
+      if (!dryRun) await relocate(root, r.file, dest, { move });
       autoBlurry++;
     }
   }
 
-  return { dest, dryRun, autoSharp, autoBlurry, review, failed, total };
+  return { dest, root, move, dryRun, autoSharp, autoBlurry, review, failed, total };
 }
 
-/** Apply a review decision: copy the frame into its chosen bucket. */
-export function commitDecision(dest: string, file: string, decision: ReviewDecision): Promise<string> {
-  return copyInto(dest, bucketOf(decision), file);
+/**
+ * Apply a review decision. "keep" leaves the frame in place; "discard" relocates
+ * it into --dest, mirroring the source structure. Returns the file's resting path.
+ */
+export function commitDecision(
+  root: string,
+  dest: string,
+  file: string,
+  decision: ReviewDecision,
+  options: { move: boolean },
+): Promise<string> {
+  if (decision === 'keep') return Promise.resolve(file);
+  return relocate(root, file, dest, { move: options.move });
 }

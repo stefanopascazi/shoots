@@ -149,17 +149,18 @@ Writes keep exiftool's `*_original` backups unless you pass `--overwrite-origina
 Classic (non-ML) Laplacian-variance blur detection. RAW files are scored from their embedded JPEG preview — no demosaicing.
 
 ```sh
-shoots cull ./raw --threshold 100 --format csv --out report.csv
-shoots cull ./raw --separate --dest ./culled          # copies into culled/sharp + culled/blurry
-shoots cull ./raw --focus-threshold 250               # tune the shallow-DoF rescue (default 250)
-shoots cull ./raw --no-focus-rescue                   # classify purely on the global score
+shoots cull ./raw --threshold 100 --format csv --out report.csv    # report only, nothing moved
+shoots cull ./catalog --dest ./rejects                             # move blurry rejects out, mirroring structure
+shoots cull ./catalog --dest ./rejects --copy                      # copy them instead (leave originals)
+shoots cull ./raw --focus-threshold 250                            # tune the shallow-DoF rescue (default 250)
+shoots cull ./raw --no-focus-rescue                                # classify purely on the global score
 ```
 
 **Focus-aware.** A single global sharpness score misjudges wide-aperture work: a shallow-depth-of-field portrait is mostly bokeh, so the global score is low even though the subject is tack-sharp. Alongside the global score, `cull` builds a focus map over a tile grid and takes a robust peak — the sharpness of the sharpest region. A frame whose global score is below `--threshold` is still kept as **sharp** (marked `sharp*`, `rescued: true`) when that peak clears `--focus-threshold`, since a motion-blurred or missed-focus frame is soft *everywhere*. The rescue only ever moves a frame from blurry → sharp; disable it with `--no-focus-rescue`.
 
-Strictly non-destructive: originals are never moved or deleted — `--separate` copies.
+**Keepers stay put; rejects go to `--dest`.** With no `--dest`, `cull` only reports. Give `--dest <dir>` and the blurry rejects are relocated there **mirroring the source folder structure** — `<catalog>/2026-07-19/x.cr3` → `<dest>/2026-07-19/x.cr3` — so a catalog/date layout survives into the rejects pile instead of being flattened. Sharp keepers (including `sharp*` rescues) are never touched. Rejects **move** by default (the source catalog ends up clean); pass `--copy` to leave the originals in place. Nothing is ever deleted.
 
-**Interactive review (`--review`, shell only).** The same command gains a human-in-the-loop mode inside the interactive shell: `/cull <path> --review` runs the focus-aware analysis but doesn't make you wait — it auto-files the confident verdicts (clear sharp → `sharp/`, clear blurry → `blurry/`) immediately, then hands you *only* the uncertain shallow-DoF rescues one at a time. Each review card shows the scores, aperture, and a focus heatmap with a legend (soft → sharp) marking where focus landed; `K` keeps, `D` discards, `P` opens the frame in your system viewer, `S` skips, `Esc` finishes. Combine with `--dry-run` to walk the whole flow — analysis, review, decisions — without copying a single file. Still non-destructive — "discard" copies into `blurry/` for you to delete later. `--review` needs the interactive shell (it drives a live UI); every other flag works the same in batch, so `shoots cull` stays fully scriptable.
+**Interactive review (`--review`, shell only).** The same command gains a human-in-the-loop mode inside the interactive shell: `/cull <path> --review --dest <dir>` runs the focus-aware analysis but doesn't make you wait — it relocates the confident rejects immediately (leaving keepers in place), then hands you *only* the uncertain shallow-DoF rescues one at a time. Each review card shows the scores, aperture, and a focus heatmap with a legend (soft → sharp) marking where focus landed; `K` keeps (stays put), `D` discards (relocates to `--dest`), `P` opens the frame in your system viewer, `S` skips, `Esc` finishes. `--dest` is required (that's where discards go); add `--copy` to copy instead of move, or `--dry-run` to walk the whole flow without touching a file. `--review` needs the interactive shell (it drives a live UI); every other flag works the same in batch, so `shoots cull` stays fully scriptable.
 
 ### `shoots rate <path>`
 

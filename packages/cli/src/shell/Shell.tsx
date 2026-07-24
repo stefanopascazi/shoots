@@ -144,6 +144,8 @@ export interface ShellProps {
 /** Live state of an interactive triage review. */
 interface TriageSession {
   dest: string;
+  root: string;
+  move: boolean;
   dryRun: boolean;
   items: ReviewItem[];
   index: number;
@@ -388,11 +390,20 @@ export function Shell({ mouse }: ShellProps = {}) {
       return i >= 0 ? args[i + 1] : undefined;
     };
     const dest = flag('--dest');
+    if (!dest) {
+      pushLines([
+        [span('  ✗ --review needs --dest for the rejects (keepers stay put): ', { color: 'red' }), span('/cull <path> --review --dest <dir>', { color: 'cyan' })],
+        BLANK,
+      ]);
+      return;
+    }
     const dryRun = args.includes('--dry-run');
+    const copy = args.includes('--copy');
     const abs = path.resolve(cwd, positional[0] ?? '.');
     setTriageBusy({ done: 0, total: 0 });
     runTriage(abs, {
-      dest: dest ? path.resolve(cwd, dest) : undefined,
+      dest: path.resolve(cwd, dest),
+      copy,
       threshold: numOrUndef(flag('--threshold')),
       focusThreshold: numOrUndef(flag('--focus-threshold')),
       dryRun,
@@ -400,13 +411,12 @@ export function Shell({ mouse }: ShellProps = {}) {
     })
       .then((res) => {
         setTriageBusy(null);
-        const filed = res.dryRun ? 'would file' : 'auto-filed';
+        const verb = res.dryRun ? (res.move ? 'would move' : 'would copy') : res.move ? 'moved' : 'copied';
         const lines: Line[] = [
           [
-            span(`  ${filed} `, { dim: true }),
-            span(`${res.autoSharp} sharp`, { color: 'green' }),
+            span(`  ${res.autoSharp} kept in place`, { color: 'green' }),
             span(' · ', { dim: true }),
-            span(`${res.autoBlurry} blurry`, { color: 'yellow' }),
+            span(`${verb} ${res.autoBlurry} rejects`, { color: 'yellow' }),
             span(` → ${res.dest}`, { dim: true }),
             res.dryRun ? span('  (dry run)', { color: 'cyan' }) : span(''),
           ],
@@ -423,7 +433,16 @@ export function Shell({ mouse }: ShellProps = {}) {
         ]);
         pushLines(lines);
         setScrollOffset(0);
-        setTriage({ dest: res.dest, dryRun: res.dryRun, items: res.review, index: 0, kept: 0, discarded: 0 });
+        setTriage({
+          dest: res.dest,
+          root: res.root,
+          move: res.move,
+          dryRun: res.dryRun,
+          items: res.review,
+          index: 0,
+          kept: 0,
+          discarded: 0,
+        });
       })
       .catch((err: unknown) => {
         setTriageBusy(null);
@@ -438,13 +457,14 @@ export function Shell({ mouse }: ShellProps = {}) {
     const kept = session.kept + deltaKept;
     const discarded = session.discarded + deltaDiscarded;
     const nextIndex = session.index + 1;
-    const suffix = session.dryRun ? span('  (dry run — nothing copied)', { color: 'cyan' }) : span('');
+    const relocVerb = session.move ? 'moved' : 'copied';
+    const suffix = session.dryRun ? span(`  (dry run — nothing ${session.move ? 'moved' : 'copied'})`, { color: 'cyan' }) : span('');
     if (nextIndex >= session.items.length) {
       setTriage(null);
       pushLines([
         [
           span('  review complete', { color: 'magenta', bold: true }),
-          span(` — ${kept} kept, ${discarded} discarded → ${session.dest}`, { dim: true }),
+          span(` — ${kept} kept in place, ${discarded} ${relocVerb} → ${session.dest}`, { dim: true }),
           suffix,
         ],
         BLANK,
@@ -458,9 +478,9 @@ export function Shell({ mouse }: ShellProps = {}) {
     if (!triage) return;
     const item = triage.items[triage.index];
     if (!triage.dryRun) {
-      commitDecision(triage.dest, item.file, decision).catch((err: unknown) => {
+      commitDecision(triage.root, triage.dest, item.file, decision, { move: triage.move }).catch((err: unknown) => {
         pushLines([
-          [span(`  ✗ copy failed: ${item.name}: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
+          [span(`  ✗ ${triage.move ? 'move' : 'copy'} failed: ${item.name}: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
         ]);
       });
     }
@@ -475,7 +495,7 @@ export function Shell({ mouse }: ShellProps = {}) {
       [
         span('  review ended', { color: 'magenta' }),
         span(
-          ` — ${triage.kept} kept, ${triage.discarded} discarded, ${remaining} left undecided → ${triage.dest}`,
+          ` — ${triage.kept} kept in place, ${triage.discarded} ${triage.move ? 'moved' : 'copied'}, ${remaining} left undecided → ${triage.dest}`,
           { dim: true },
         ),
         triage.dryRun ? span('  (dry run)', { color: 'cyan' }) : span(''),

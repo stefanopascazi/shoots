@@ -29,8 +29,8 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: 'cull',
-    summary: 'Blur detection (Laplacian, focus-aware): report, split, or review interactively',
-    usage: '/cull <path> [--review] [--threshold 100] [--focus-threshold 250] [--no-focus-rescue] [--separate] [--dest <dir>] [--format csv] [--out <report>] [--dry-run]',
+    summary: 'Blur detection (Laplacian, focus-aware): report, relocate rejects, or review interactively',
+    usage: '/cull <path> [--review] [--dest <dir>] [--copy] [--threshold 100] [--focus-threshold 250] [--no-focus-rescue] [--format csv] [--out <report>] [--dry-run]',
   },
   {
     name: 'rate',
