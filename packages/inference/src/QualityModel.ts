@@ -76,40 +76,52 @@ export type StarRating = 0 | 1 | 2 | 3 | 4 | 5;
  */
 const FOCUS_REJECT = 0.3;
 /**
- * Focus below this means no region is truly in focus (soft / missed focus).
- * Such frames are capped low no matter how pleasant their exposure/colour.
+ * Focus below this means no region is truly in focus (soft / missed focus). To a
+ * professional eye such a frame is not a keeper, so it is capped at 1 star no
+ * matter how strong its content.
  */
-const FOCUS_SOFT = 0.5;
-/** Star cut-offs on the combined score. Deliberately demanding (see below). */
-const STAR_THRESHOLDS: readonly { min: number; stars: StarRating }[] = [
-  { min: 0.86, stars: 5 },
-  { min: 0.72, stars: 4 },
-  { min: 0.56, stars: 3 },
-  { min: 0.4, stars: 2 },
-  { min: 0.24, stars: 1 },
+const FOCUS_SOFT = 0.55;
+
+/**
+ * Demanding absolute cut-offs on the *aesthetic* score (0..1). Focus does not
+ * add stars here — for a competent shooter it is ~constant and near the top on
+ * essentially every frame, so it only ever gates (reject / soft-cap). What earns
+ * stars is the aesthetic signal, judged against a professional bar:
+ *   0 = the default (competent but ordinary — fine for an amateur, not a pro)
+ *   1–2 = decent, not yet good
+ *   3 = a genuinely good shot (already uncommon)
+ *   4 = exhibition-grade (rare)
+ *   5 = an image that carries a story on its own, beyond time and viewer (almost never)
+ *
+ * The aesthetic is zero-shot CLIP, whose scores sit in a compressed band, so the
+ * upper cut-offs are close together and 5 is effectively unreachable without a
+ * stronger aesthetic model — an intentional, honest ceiling. Calibrated against
+ * real professional shoots to put the mass of frames at 0.
+ */
+const AESTHETIC_STARS: readonly { min: number; stars: StarRating }[] = [
+  { min: 0.65, stars: 5 },
+  { min: 0.61, stars: 4 },
+  { min: 0.57, stars: 3 },
+  { min: 0.53, stars: 2 },
+  { min: 0.48, stars: 1 },
 ];
 
 /**
- * Map an assessment to a strict 0–5 star rating.
- *
- * Philosophy (per product direction): be *unforgiving*. A meaningless 1-star is
- * worse than an honest 0, so technically failed frames score 0, most frames land
- * at 2–3, and 5 is reserved for images that are both technically clean and
- * strong across the aesthetic aspects. Focus gates the ceiling — a soft frame
- * cannot be a keeper regardless of how nice its light and colour are.
+ * Map an assessment to a strict, professional-grade 0–5 star rating. Be
+ * *unforgiving*: most frames are an honest 0, and 3+ is reserved for images that
+ * genuinely stand out. See {@link AESTHETIC_STARS}.
  */
 export function toStarRating(assessment: QualityAssessment): StarRating {
   if (assessment.focus < FOCUS_REJECT) return 0;
 
-  const combined = 0.5 * assessment.focus + 0.5 * assessment.aesthetic;
-  const ceiling: StarRating = assessment.focus < FOCUS_SOFT ? 2 : 5;
-
   let stars: StarRating = 0;
-  for (const t of STAR_THRESHOLDS) {
-    if (combined >= t.min) {
+  for (const t of AESTHETIC_STARS) {
+    if (assessment.aesthetic >= t.min) {
       stars = t.stars;
       break;
     }
   }
-  return (stars < ceiling ? stars : ceiling) as StarRating;
+  // Soft / missed-focus frames are not professional keepers: cap at 1 star.
+  if (assessment.focus < FOCUS_SOFT && stars > 1) stars = 1;
+  return stars;
 }
