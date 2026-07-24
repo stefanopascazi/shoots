@@ -61,6 +61,8 @@ export interface RateStep extends BaseStep {
   type: 'rate';
   /** Inference backend. Only 'onnx' today; kept open for future backends. */
   model?: 'onnx';
+  /** Rating profile (street, generic, portrait, wildlife, wedding). Default: the built-in default. */
+  profile?: string;
   /** Where ratings are written. Default: sidecar. */
   output?: 'sidecar' | 'xmp';
 }

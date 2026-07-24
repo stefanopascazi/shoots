@@ -37,6 +37,7 @@ import {
 } from './models/clipManifest.js';
 import { loadKeywordVocab, matchKeywords, type KeywordVocab } from './models/keywords.js';
 import { loadAestheticModel, scoreAesthetics, type AestheticModel } from './models/aesthetics.js';
+import type { RatingProfile } from './profiles.js';
 
 /** How many keywords to suggest, and the minimum cosine similarity to keep one. */
 const KEYWORD_TOP_K = 6;
@@ -77,7 +78,10 @@ export class LocalOnnxModel implements QualityModel {
   private aesthetics: AestheticModel | null = null;
   private ort?: typeof import('onnxruntime-node');
 
-  constructor(private readonly options: EnsureModelOptions = {}) {}
+  constructor(
+    private readonly profile: RatingProfile,
+    private readonly options: EnsureModelOptions = {},
+  ) {}
 
   async init(): Promise<void> {
     this.manifest = await ensureClipModel(this.options);
@@ -132,7 +136,7 @@ export class LocalOnnxModel implements QualityModel {
     let aesthetic: number;
     let aspects: QualityAssessment['aspects'] = [];
     if (this.aesthetics) {
-      const scored = scoreAesthetics(this.aesthetics, embedding);
+      const scored = scoreAesthetics(this.aesthetics, embedding, this.profile.meritWeights);
       aesthetic = scored.aesthetic;
       aspects = scored.aspects;
     } else {

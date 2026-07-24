@@ -10,6 +10,7 @@
  *   can choose their own decode strategy (e.g. the ONNX backend will want to
  *   preprocess to a fixed tensor size itself).
  */
+import type { RatingProfile } from './profiles.js';
 
 export interface ImageInput {
   /** Absolute path to the image file (RAW or processed). */
@@ -70,61 +71,26 @@ export interface QualityModel {
 export type StarRating = 0 | 1 | 2 | 3 | 4 | 5;
 
 /**
- * Focus below this is a technical reject: nothing worth keeping is in focus.
- * At the ONNX backend's focus normalization this is ~1/3 of the cull
- * focus-threshold — a frame no region is sharp in.
- */
-const FOCUS_REJECT = 0.3;
-/**
- * Focus below this means no region is truly in focus (soft / missed focus). To a
- * professional eye such a frame is not a keeper, so it is capped at 1 star no
- * matter how strong its content.
- */
-const FOCUS_SOFT = 0.55;
-
-/**
- * Demanding absolute cut-offs on the *aesthetic* score (0..1). Focus does not
- * add stars here — for a competent shooter it is ~constant and near the top on
- * essentially every frame, so it only ever gates (reject / soft-cap). What earns
- * stars is the aesthetic signal, judged against a professional bar:
- *   0 = the default (competent but ordinary — fine for an amateur, not a pro)
- *   1–2 = decent, not yet good
- *   3 = a genuinely good shot (already uncommon)
- *   4 = exhibition-grade (rare)
- *   5 = an image that carries a story on its own, beyond time and viewer (almost never)
+ * Map an assessment to a 0–5 star rating under a {@link RatingProfile}.
  *
- * The aesthetic is zero-shot CLIP merit (artistic aspects only — see
- * MERIT_WEIGHTS in models/aesthetics.ts), whose scores sit in a compressed band,
- * so the upper cut-offs are close together and 5 is effectively unreachable
- * without a stronger aesthetic model — an intentional, honest ceiling. Anchored
- * on real professional judgement of a documentary shoot (an ordinary, technically
- * clean frame the photographer rejects lands at 0), which puts ~85% of frames at
- * 0 and promotes only a handful.
+ * Focus never adds stars — for a competent shooter it is ~constant near the top,
+ * so it only ever gates (reject below `focusReject`, cap soft frames at
+ * `focusSoftCap`). Stars are driven by the aesthetic merit, which the profile
+ * has already aggregated from the aspects it cares about, against the profile's
+ * cut-offs. Different profiles = different "what matters" and "how strict".
  */
-const AESTHETIC_STARS: readonly { min: number; stars: StarRating }[] = [
-  { min: 0.63, stars: 5 },
-  { min: 0.58, stars: 4 },
-  { min: 0.55, stars: 3 },
-  { min: 0.525, stars: 2 },
-  { min: 0.5, stars: 1 },
-];
-
-/**
- * Map an assessment to a strict, professional-grade 0–5 star rating. Be
- * *unforgiving*: most frames are an honest 0, and 3+ is reserved for images that
- * genuinely stand out. See {@link AESTHETIC_STARS}.
- */
-export function toStarRating(assessment: QualityAssessment): StarRating {
-  if (assessment.focus < FOCUS_REJECT) return 0;
+export function toStarRating(assessment: QualityAssessment, profile: RatingProfile): StarRating {
+  if (assessment.focus < profile.focusReject) return 0;
 
   let stars: StarRating = 0;
-  for (const t of AESTHETIC_STARS) {
+  for (const t of profile.aestheticStars) {
     if (assessment.aesthetic >= t.min) {
       stars = t.stars;
       break;
     }
   }
-  // Soft / missed-focus frames are not professional keepers: cap at 1 star.
-  if (assessment.focus < FOCUS_SOFT && stars > 1) stars = 1;
+  if (assessment.focus < profile.focusSoft && stars > profile.focusSoftCap) {
+    stars = profile.focusSoftCap;
+  }
   return stars;
 }

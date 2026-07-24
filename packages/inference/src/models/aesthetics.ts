@@ -106,36 +106,23 @@ export interface AestheticScoreResult {
 }
 
 /**
- * Aggregation weights for the aesthetic *merit* score, defined here rather than
- * taken from the archive so they can be tuned without rebuilding the model.
- *
- * The key insight (validated on real professional shoots): the technical aspects
- * — exposure, sharpness and CLIP's notion of "composition" — are near-constant-
- * high for a competent shooter, so folding them into merit only inflates every
- * frame and drowns out real signal (a flat-light record shot with clean exposure
- * would out-score an intentional, well-lit one). They are technical *hygiene*,
- * handled by the focus gate, so they get zero weight in merit. Merit is driven
- * by the aspects that actually separate a keeper from a snapshot: storytelling,
- * overall impression, subject and light. Aspects absent from this map contribute
- * nothing, keeping the merit signal explicit and controlled.
- */
-const MERIT_WEIGHTS: Record<string, number> = {
-  storytelling: 1.5,
-  overall: 1.2,
-  subject: 1.0,
-  lighting: 1.0,
-  composition: 0,
-  exposure: 0,
-  sharpness: 0,
-};
-
-/**
  * Score a single (L2-normalized) image embedding against every aspect pair.
  * For each aspect, P(positive) = sigmoid(temperature · (cosPos − cosNeg)),
  * i.e. a two-class softmax over the pos/neg prompts. All aspects are reported;
- * the aggregate `aesthetic` merit uses {@link MERIT_WEIGHTS}.
+ * the aggregate `aesthetic` merit is a weighted mean over `meritWeights`.
+ *
+ * The weights come from the active {@link RatingProfile}, not from the archive,
+ * so "what matters" is a per-profile decision tunable without rebuilding the
+ * model. Aspects absent from `meritWeights` contribute nothing — the key lesson
+ * being that technical aspects (exposure/sharpness/composition) are near-constant
+ * for a competent shooter and, if weighted, only inflate every frame; a pro
+ * profile zeroes them and lets content decide, a beginner profile keeps them.
  */
-export function scoreAesthetics(model: AestheticModel, imageEmbedding: Float32Array): AestheticScoreResult {
+export function scoreAesthetics(
+  model: AestheticModel,
+  imageEmbedding: Float32Array,
+  meritWeights: Record<string, number>,
+): AestheticScoreResult {
   const perAspect: AestheticAspectScore[] = [];
   let weighted = 0;
   let weightSum = 0;
@@ -143,7 +130,7 @@ export function scoreAesthetics(model: AestheticModel, imageEmbedding: Float32Ar
     const diff = dot(aspect.positive, imageEmbedding) - dot(aspect.negative, imageEmbedding);
     const prob = 1 / (1 + Math.exp(-model.temperature * diff));
     perAspect.push({ name: aspect.name, score: Math.round(prob * 1000) / 1000 });
-    const w = MERIT_WEIGHTS[aspect.name] ?? 0;
+    const w = meritWeights[aspect.name] ?? 0;
     weighted += w * prob;
     weightSum += w;
   }

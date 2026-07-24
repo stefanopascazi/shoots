@@ -14,7 +14,15 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
 import { writeXmpSidecar } from '@shoots/imaging';
-import { createQualityModel, toStarRating, type AestheticAspectScore, type ModelKind } from '@shoots/inference';
+import {
+  createQualityModel,
+  toStarRating,
+  getProfile,
+  PROFILE_NAMES,
+  DEFAULT_PROFILE_NAME,
+  type AestheticAspectScore,
+  type ModelKind,
+} from '@shoots/inference';
 import {
   logError,
   logVerbose,
@@ -29,6 +37,7 @@ import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 
 interface RateOptions {
   model: string;
+  profile: string;
   writeXmp?: boolean;
   concurrency: string;
   dryRun?: boolean;
@@ -53,6 +62,7 @@ export function registerRateCommand(program: Command): void {
     .description('Score images (focus/aesthetic/keywords) via the ONNX inference model and write star ratings to sidecars')
     .argument('<path>', 'folder (or single file) to rate')
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
+    .option('--profile <name>', `rating profile: ${PROFILE_NAMES.join(' | ')}`, DEFAULT_PROFILE_NAME)
     .option('--write-xmp', 'write XMP sidecars via exiftool instead of JSON sidecars')
     .option('--concurrency <n>', 'max parallel scoring jobs', '4')
     .option('--dry-run', 'score and report, but write no sidecars')
@@ -70,7 +80,13 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     process.exitCode = 2;
     return;
   }
-  const model = createQualityModel(options.model as ModelKind);
+  const profile = getProfile(options.profile);
+  if (!profile) {
+    logError(`unknown rating profile '${options.profile}' (available: ${PROFILE_NAMES.join(', ')})`);
+    process.exitCode = 2;
+    return;
+  }
+  const model = createQualityModel(options.model as ModelKind, { profile });
 
   const files = await scanFiles(targetPath);
   if (files.length === 0) {
@@ -95,7 +111,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     files,
     async (file): Promise<RatingResult> => {
       const assessment = await model.assess({ path: file.path });
-      const stars = toStarRating(assessment);
+      const stars = toStarRating(assessment, profile);
 
       let sidecar: string | null = null;
       if (!options.dryRun) {
@@ -118,6 +134,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
               {
                 file: file.path,
                 model: model.name,
+                profile: profile.name,
                 stars,
                 scores: { focus: assessment.focus, aesthetic: assessment.aesthetic },
                 aspects: assessment.aspects,
@@ -160,6 +177,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     printJson({
       command: 'rate',
       model: model.name,
+      profile: profile.name,
       dryRun: !!options.dryRun,
       results: rated,
       errors,
@@ -170,7 +188,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
       const starsBar = '★'.repeat(r.stars) + '☆'.repeat(5 - r.stars);
       printHuman(io, `${starsBar}  ${path.basename(r.file)}  focus=${r.focus} aesthetic=${r.aesthetic}  [${r.keywords.join(', ')}]`);
     }
-    printHuman(io, `\n${rated.length}/${files.length} rated with ${model.name}${options.dryRun ? ' (dry run, no sidecars written)' : ''}`);
+    printHuman(io, `\n${rated.length}/${files.length} rated with ${model.name} (profile: ${profile.name})${options.dryRun ? ' (dry run, no sidecars written)' : ''}`);
   }
   for (const e of errors) logError(`${e.file}: ${e.error}`);
   if (errors.length > 0) markFailure();

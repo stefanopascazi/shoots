@@ -35,7 +35,7 @@ export const COMMANDS: CommandSpec[] = [
   {
     name: 'rate',
     summary: 'Strict 0–5 star ratings + keyword suggestions via the ONNX model',
-    usage: '/rate <path> [--model onnx] [--write-xmp] [--dry-run] [--json]',
+    usage: '/rate <path> [--profile street|generic|portrait|wildlife|wedding] [--write-xmp] [--dry-run] [--json]',
   },
   {
     name: 'setup',
