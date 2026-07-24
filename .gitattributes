@@ -1,0 +1,4 @@
+# The POSIX installer is piped to `bash` from raw.githubusercontent.com; it must
+# stay LF regardless of the contributor's platform / autocrlf settings.
+*.sh text eol=lf
+install.sh text eol=lf

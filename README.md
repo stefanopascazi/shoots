@@ -10,6 +10,34 @@ Scriptable batch automation for professional photography workflows.
 - **Pipeline-as-code** — declarative YAML pipelines you can version and share across a studio (see `examples/wedding-pipeline.yaml`).
 - **Extensible toward ML** — a clean inference seam (`@shoots/inference`) designed for a future local ONNX backend without touching the rest of the code.
 
+## Install
+
+Standalone binary for your platform — no Node.js required.
+
+**macOS / Linux**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.sh | bash
+```
+
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.ps1 | iex
+```
+
+The installer downloads the latest release for your OS/arch, verifies its SHA-256, installs it to `~/.shoots/bin` (`%USERPROFILE%\.shoots\bin` on Windows) and adds it to your `PATH`. Override the target with `SHOOTS_INSTALL_DIR`.
+
+Then finish setup and self-manage from the CLI:
+
+```sh
+shoots setup     # download & verify external tools (exiftool) into ~/.shoots
+shoots doctor    # environment health check
+shoots update    # update the binary to the latest release
+```
+
+Prefer building from source? See [Setup](#setup).
+
 ## Non-goals
 
 No RAW editing engine, no demosaicing, no GUI, no cloud backend (yet — the seams are there).
@@ -29,8 +57,7 @@ Dependency direction: `cli → core/imaging/inference`, `imaging → core`. `cor
 ## Prerequisites
 
 - **Node.js ≥ 18.17** (developed on Node 26)
-- **exiftool** on `PATH` ([exiftool.org](https://exiftool.org/)) — or set `SHOOTS_EXIFTOOL=/path/to/exiftool`.
-  Without it, `import`/`rename` fall back to file mtimes (no `{camera}`/`{lens}`), and `exif`, RAW culling, and `--write-xmp` are unavailable.
+- **exiftool** — provisioned automatically into `~/.shoots` by `shoots setup` (or on first use of a command that needs it); no system install required. For development you can instead point `SHOOTS_EXIFTOOL=/path/to/exiftool` at an existing binary. Without any of these, `import` still works (original names, dates from file mtime) but `{camera}`/`{lens}`, `exif`, RAW culling, and `--write-xmp` are unavailable. On macOS/Linux exiftool runs via the system Perl.
 - `sharp` installs prebuilt libvips binaries automatically via npm.
 
 ## Setup
