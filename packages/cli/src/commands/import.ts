@@ -10,7 +10,14 @@ import { copyFile, mkdir, unlink } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Command } from 'commander';
-import { JobQueue, scanFiles, sha256File, validateTemplate } from '@shoots/core';
+import {
+  JobQueue,
+  renderTemplate,
+  scanFiles,
+  sha256File,
+  templateNeedsCaptureMetadata,
+  validateTemplate,
+} from '@shoots/core';
 import {
   logError,
   logVerbose,
@@ -20,19 +27,23 @@ import {
   printHuman,
   printJson,
 } from '../io.js';
-import { buildNamingPlan, collectNamingInfo } from '../naming.js';
+import { buildNamingPlan, collectNamingInfo, type FileNamingInfo } from '../naming.js';
 import { startProgress } from '../progress.js';
-import { ensureExiftoolReady } from '../tools.js';
+import { tryEnsureExiftool } from '../tools.js';
 
 /** Applied with `--rename` when no explicit `--pattern` is given. */
 export const DEFAULT_RENAME_PATTERN = '{camera}{orig}.{ext}';
 /** Default behaviour: keep the original file name untouched. */
 export const KEEP_ORIGINAL_PATTERN = '{orig}.{ext}';
+/** Default catalog layout: year/date subfolders, like Lightroom. */
+export const DEFAULT_DIR_TEMPLATE = '{year}/{year}-{month}-{day}';
 
 interface ImportOptions {
   dest: string;
   pattern?: string;
   rename?: boolean;
+  dir?: string;
+  flat?: boolean;
   move?: boolean;
   dryRun?: boolean;
   json?: boolean;
@@ -57,6 +68,8 @@ export function registerImportCommand(program: Command): void {
     .requiredOption('--dest <path>', 'destination directory')
     .option('--rename', `rename files using the default template "${DEFAULT_RENAME_PATTERN}" (default: keep original names)`)
     .option('--pattern <template>', 'rename files using a custom filename template (implies --rename)')
+    .option('--dir <template>', `subfolder template under --dest (default: "${DEFAULT_DIR_TEMPLATE}")`, DEFAULT_DIR_TEMPLATE)
+    .option('--flat', 'copy straight into --dest with no date subfolders')
     .option('--move', 'delete each source file after its copy is checksum-verified (default: copy only)')
     .option('--dry-run', 'show planned actions without executing them')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -68,20 +81,24 @@ export function registerImportCommand(program: Command): void {
 async function runImport(source: string, options: ImportOptions): Promise<void> {
   const io = makeIo(options);
 
-  // Renaming is opt-in: --pattern (custom) or --rename (default template).
+  // Naming is opt-in: --pattern (custom) or --rename (default template).
   // Without either, files keep their original names.
   const wantsRename = options.pattern !== undefined || !!options.rename;
   const pattern = options.pattern ?? (options.rename ? DEFAULT_RENAME_PATTERN : KEEP_ORIGINAL_PATTERN);
+  // Folder layout: date subfolders by default; --flat disables, --dir customizes.
+  const dirTemplate = options.flat ? null : options.dir ?? DEFAULT_DIR_TEMPLATE;
 
-  if (wantsRename) {
-    const templateError = validateTemplate(pattern);
+  for (const [label, tpl] of [
+    ['--pattern', wantsRename ? pattern : null],
+    ['--dir', dirTemplate],
+  ] as const) {
+    if (tpl === null) continue;
+    const templateError = validateTemplate(tpl);
     if (templateError) {
-      logError(`Invalid --pattern: ${templateError}`);
+      logError(`Invalid ${label}: ${templateError}`);
       process.exitCode = 2;
       return;
     }
-    // Renaming reads EXIF (camera/date) — make sure exiftool is available.
-    if (!(await ensureExiftoolReady(io))) return;
   }
 
   const files = await scanFiles(source);
@@ -93,18 +110,35 @@ async function runImport(source: string, options: ImportOptions): Promise<void> 
   logVerbose(io, `Found ${files.length} files under ${source}`);
 
   const destRoot = path.resolve(options.dest);
-  // Only read EXIF when a template needs it; keeping original names must not
-  // depend on exiftool being installed.
-  const infos = wantsRename
+
+  // Read EXIF only when a name/dir template references capture metadata. This
+  // is best-effort: if exiftool can't be provisioned we degrade to file mtime
+  // (date folders still work; {camera}/{lens} become "unknown") rather than
+  // aborting the import.
+  const needsExif =
+    (wantsRename && templateNeedsCaptureMetadata(pattern)) ||
+    (dirTemplate !== null && templateNeedsCaptureMetadata(dirTemplate));
+  const haveExif = needsExif ? await tryEnsureExiftool(io) : false;
+  const infos: FileNamingInfo[] = haveExif
     ? await collectNamingInfo(io, files)
-    : files.map((file) => ({
-        file,
-        date: file.mtime,
-        dateSource: 'mtime' as const,
-        camera: null,
-        lens: null,
-      }));
-  const plan = buildNamingPlan(infos, pattern, () => destRoot);
+    : files.map((file) => ({ file, date: file.mtime, dateSource: 'mtime' as const, camera: null, lens: null }));
+
+  const destDirFor =
+    dirTemplate === null
+      ? () => destRoot
+      : (info: FileNamingInfo): string =>
+          path.join(
+            destRoot,
+            renderTemplate(dirTemplate, {
+              date: info.date,
+              camera: info.camera,
+              lens: info.lens,
+              ext: info.file.ext,
+              originalName: path.parse(info.file.name).name,
+              seq: 0,
+            }),
+          );
+  const plan = buildNamingPlan(infos, pattern, destDirFor);
 
   if (options.dryRun) {
     if (io.json) {
@@ -135,6 +169,7 @@ async function runImport(source: string, options: ImportOptions): Promise<void> 
         // buildNamingPlan avoids this, but a concurrent writer could race us.
         throw new Error(`Destination already exists, refusing to overwrite: ${entry.dest}`);
       }
+      await mkdir(path.dirname(entry.dest), { recursive: true });
       await copyFile(entry.source, entry.dest);
       const [srcHash, dstHash] = await Promise.all([sha256File(entry.source), sha256File(entry.dest)]);
       if (srcHash !== dstHash) {

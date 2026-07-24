@@ -30,6 +30,8 @@ export {
   type ResolvedExiftoolManifest,
 } from './tools/exiftoolManifest.js';
 
+export { sharpVips } from './health.js';
+
 export {
   isRawFile,
   loadRenderableImage,

@@ -69,6 +69,31 @@ export function renderTemplate(pattern: string, ctx: TemplateContext): string {
   });
 }
 
+/** Tokens whose values come from capture metadata (EXIF), needing exiftool. */
+const CAPTURE_TOKENS: ReadonlySet<string> = new Set([
+  'date',
+  'time',
+  'year',
+  'month',
+  'day',
+  'camera',
+  'lens',
+]);
+
+/**
+ * True when the template references any capture-metadata token, i.e. rendering
+ * it accurately requires reading EXIF. Date-derived tokens fall back to file
+ * mtime when EXIF is unavailable, but they still signal "read EXIF if you can".
+ */
+export function templateNeedsCaptureMetadata(pattern: string): boolean {
+  TOKEN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TOKEN_RE.exec(pattern)) !== null) {
+    if (CAPTURE_TOKENS.has(match[1])) return true;
+  }
+  return false;
+}
+
 /**
  * Validate a template pattern against a dummy context.
  * Returns null when valid, otherwise a human-readable error message.

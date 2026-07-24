@@ -33,6 +33,7 @@ export {
   renderTemplate,
   sanitizeToken,
   validateTemplate,
+  templateNeedsCaptureMetadata,
   TemplateError,
   type TemplateContext,
 } from './template.js';

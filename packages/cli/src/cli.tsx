@@ -11,6 +11,7 @@ import { registerExifCommand } from './commands/exif.js';
 import { registerCullCommand } from './commands/cull.js';
 import { registerRateCommand } from './commands/rate.js';
 import { registerSetupCommand } from './commands/setup.js';
+import { registerDoctorCommand } from './commands/doctor.js';
 
 const program = new Command();
 
@@ -29,6 +30,7 @@ registerExifCommand(program);
 registerCullCommand(program);
 registerRateCommand(program);
 registerSetupCommand(program);
+registerDoctorCommand(program);
 
 program
   .command('shell')
