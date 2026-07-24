@@ -52,3 +52,10 @@ export {
   type BlurVerdict,
   type AnalyzeBlurOptions,
 } from './blur.js';
+
+export {
+  preprocessClip,
+  aestheticStats,
+  type ClipPreprocessOptions,
+  type AestheticStats,
+} from './quality.js';

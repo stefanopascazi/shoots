@@ -1,74 +1,132 @@
 /**
  * ONNX-backed QualityModel (the real backend behind `--model onnx`).
  *
- * Scope today: this wires provisioning and runtime end to end — it downloads the
- * CLIP model on first use (into ~/.shoots/models, checksum-verified) and opens
- * the ONNX image encoder via onnxruntime-node. The scoring itself is not wired
- * yet: the aesthetic head and the zero-shot keyword vocabulary depend on choices
- * still open (a commercially-clean aesthetic approach — training data, not just
- * code license). Until then, scoring throws a clear error rather than returning
- * fabricated numbers.
+ * - focus:     variance-of-Laplacian (classic, no ML) via @shoots/imaging.
+ * - aesthetic: a cheap technical heuristic (exposure / contrast / colorfulness).
+ * - keywords:  zero-shot CLIP — the ONNX image encoder embeds the photo, then
+ *              cosine similarity against precomputed text embeddings shipped in
+ *              the model archive.
  *
+ * The CLIP model (MIT, openai/clip-vit-base-patch32 in ONNX form) is downloaded
+ * on first use into ~/.shoots/models, checksum-verified. The onnxruntime-node
+ * runtime is imported lazily so nothing loads it until the backend is used.
  * In production `--model onnx` fails cleanly at init() with
  * ModelMirrorNotConfiguredError until the model mirror is built and pinned.
  */
-// Type-only import: erased at compile time, so it never loads the native addon.
-import type { InferenceSession } from 'onnxruntime-node';
+import type { InferenceSession, Tensor } from 'onnxruntime-node';
+import {
+  loadRenderableImage,
+  laplacianVariance,
+  preprocessClip,
+  aestheticStats,
+  DEFAULT_FOCUS_THRESHOLD,
+} from '@shoots/imaging';
 import type { ImageInput, QualityAssessment, QualityModel } from './QualityModel.js';
 import {
+  CLIP_INPUT,
   CLIP_MODEL_VERSION,
   ensureClipModel,
   type EnsureModelOptions,
   type ResolvedModelManifest,
 } from './models/clipManifest.js';
+import { loadKeywordVocab, matchKeywords, type KeywordVocab } from './models/keywords.js';
+
+/** How many keywords to suggest, and the minimum cosine similarity to keep one. */
+const KEYWORD_TOP_K = 6;
+const KEYWORD_FLOOR = 0.2;
+
+const clamp01 = (x: number): number => (x < 0 ? 0 : x > 1 ? 1 : x);
+
+function l2normalize(v: Float32Array): Float32Array {
+  let s = 0;
+  for (const x of v) s += x * x;
+  const inv = 1 / (Math.sqrt(s) || 1);
+  const out = new Float32Array(v.length);
+  for (let i = 0; i < v.length; i++) out[i] = v[i] * inv;
+  return out;
+}
 
 export class LocalOnnxModel implements QualityModel {
   readonly name = `onnx-clip/${CLIP_MODEL_VERSION}`;
 
   private manifest?: ResolvedModelManifest;
   private session?: InferenceSession;
+  private vocab?: KeywordVocab;
+  private ort?: typeof import('onnxruntime-node');
 
   constructor(private readonly options: EnsureModelOptions = {}) {}
 
   async init(): Promise<void> {
     this.manifest = await ensureClipModel(this.options);
+    this.vocab = await loadKeywordVocab(this.manifest.vocabPath);
     // Lazy import: the onnxruntime native addon loads only when the onnx backend
     // is actually used, keeping startup (and other commands) free of it.
-    const ort = await import('onnxruntime-node');
-    // Loading the encoder validates the provisioned model end to end; the
-    // session will drive image embedding once scoring is wired.
-    this.session = await ort.InferenceSession.create(this.manifest.imageEncoderPath);
+    this.ort = await import('onnxruntime-node');
+    this.session = await this.ort.InferenceSession.create(this.manifest.imageEncoderPath);
   }
 
-  private notWired(): never {
-    throw new Error(
-      `${this.name}: image encoder loads, but aesthetic/keyword scoring is not wired yet ` +
-        `(pending a commercially-clean model). See clipManifest.ts.`,
-    );
+  private ready(): { session: InferenceSession; vocab: KeywordVocab; ort: typeof import('onnxruntime-node') } {
+    if (!this.session || !this.vocab || !this.ort) {
+      throw new Error(`${this.name}: init() must be called before scoring`);
+    }
+    return { session: this.session, vocab: this.vocab, ort: this.ort };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async scoreFocus(_image: ImageInput): Promise<number> {
-    return this.notWired();
+  /** Embed an image into the shared CLIP space (L2-normalized). */
+  private async embed(buffer: Buffer): Promise<Float32Array> {
+    const { session, ort } = this.ready();
+    const pixels = await preprocessClip(buffer, CLIP_INPUT);
+    const feeds: Record<string, Tensor> = {
+      pixel_values: new ort.Tensor('float32', pixels, [1, 3, CLIP_INPUT.size, CLIP_INPUT.size]),
+    };
+    const results = await session.run(feeds);
+    return l2normalize(results.image_embeds.data as Float32Array);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async scoreAesthetic(_image: ImageInput): Promise<number> {
-    return this.notWired();
+  /**
+   * Single efficient pass — decode once, then derive all three signals. The
+   * granular methods delegate here (they are not on the hot path; `rate` calls
+   * assess()).
+   */
+  async assess(image: ImageInput): Promise<QualityAssessment> {
+    const { vocab } = this.ready();
+    const { buffer } = await loadRenderableImage(image.path);
+
+    // Focus: robust local sharpness peak, mapped to [0,1] (half at the default
+    // focus threshold), which keeps shallow-depth-of-field keepers scoring high.
+    const lap = await laplacianVariance(buffer);
+    const focus = lap.focusPeak / (lap.focusPeak + DEFAULT_FOCUS_THRESHOLD);
+
+    // Aesthetic: technical heuristic. Well-exposed (mid brightness), with some
+    // contrast and colour, scores higher. Deliberately no ML aesthetic head.
+    const stats = await aestheticStats(buffer);
+    const exposure = 1 - Math.min(1, 2 * Math.abs(stats.brightness - 0.5));
+    const contrast = Math.min(1, stats.contrast * 2.5);
+    const colour = Math.min(1, stats.colorfulness * 2);
+    const aesthetic = 0.45 * exposure + 0.3 * contrast + 0.25 * colour;
+
+    // Keywords: zero-shot CLIP.
+    const embedding = await this.embed(buffer);
+    const keywords = matchKeywords(vocab, embedding, KEYWORD_TOP_K, KEYWORD_FLOOR);
+
+    return { focus: clamp01(focus), aesthetic: clamp01(aesthetic), keywords };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async suggestKeywords(_image: ImageInput): Promise<string[]> {
-    return this.notWired();
+  async scoreFocus(image: ImageInput): Promise<number> {
+    return (await this.assess(image)).focus;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async assess(_image: ImageInput): Promise<QualityAssessment> {
-    return this.notWired();
+  async scoreAesthetic(image: ImageInput): Promise<number> {
+    return (await this.assess(image)).aesthetic;
+  }
+
+  async suggestKeywords(image: ImageInput): Promise<string[]> {
+    return (await this.assess(image)).keywords;
   }
 
   async dispose(): Promise<void> {
     await this.session?.release();
     this.session = undefined;
+    this.vocab = undefined;
   }
 }

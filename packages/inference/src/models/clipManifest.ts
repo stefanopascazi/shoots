@@ -19,6 +19,15 @@ import { modelDir, provisionArchive, isProvisioned } from '@shoots/core';
  */
 export const CLIP_MODEL_VERSION = 'vit-b32-int8-1';
 
+/** CLIP ViT-B/32 image preprocessing parameters (from preprocessor_config.json). */
+export const CLIP_INPUT = {
+  size: 224,
+  mean: [0.48145466, 0.4578275, 0.40821073] as [number, number, number],
+  std: [0.26862954, 0.26130258, 0.27577711] as [number, number, number],
+  /** Projected embedding dimension. */
+  dim: 512,
+} as const;
+
 /** GitHub release tag that hosts the repackaged model archives. */
 export const MODELS_RELEASE = 'models-v1';
 
@@ -33,9 +42,10 @@ const MIRROR_BASE =
 
 const ARCHIVE = `clip-${CLIP_MODEL_VERSION}.tar.gz`;
 
-// SHA-256 of the repackaged archive produced by scripts/prepare-model-mirror.ts.
-// Empty until the model mirror is built and uploaded to the `models-v1` release.
-const SHA256 = '';
+// SHA-256 of the archive produced by scripts/prepare-model-mirror.ts. gzip is
+// not deterministic across rebuilds, so upload the built dist-models/ file as-is
+// to the `models-v1` release rather than regenerating it.
+const SHA256 = '49fbd5d7dd24a18c4588aa1388c2c65fb1bb2908065622059616dcc5cf5497b0';
 
 /** File names inside the extracted archive. */
 const IMAGE_ENCODER = 'clip-image-encoder.onnx';

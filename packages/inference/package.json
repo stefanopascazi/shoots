@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@shoots/core": "^0.1.0",
+    "@shoots/imaging": "^0.1.0",
     "onnxruntime-node": "1.27.0"
   }
 }
