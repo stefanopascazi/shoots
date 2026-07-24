@@ -46,7 +46,11 @@ async function launchShell(): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  const [{ render }, { Shell }] = await Promise.all([import('ink'), import('./shell/Shell.js')]);
+  const [{ render }, { Shell }, { createMouseWheel }] = await Promise.all([
+    import('ink'),
+    import('./shell/Shell.js'),
+    import('./shell/mouse.js'),
+  ]);
 
   // Enter the terminal's alternate screen buffer (the vim/less mechanism):
   // the shell takes over a clean fullscreen, and on exit the user's previous
@@ -62,13 +66,21 @@ async function launchShell(): Promise<void> {
       inAltScreen = false;
     }
   };
-  // Safety net: never leave the terminal stuck in the alt buffer.
-  process.on('exit', leaveAltScreen);
+
+  // Route the mouse wheel to scrollback (the alt buffer disables native scroll).
+  const mouse = createMouseWheel(process.stdin);
+  const cleanup = (): void => {
+    mouse.disable();
+    leaveAltScreen();
+  };
+  // Safety net: never leave the terminal stuck in the alt buffer or mouse mode.
+  process.on('exit', cleanup);
 
   enterAltScreen();
-  const app = render(<Shell />);
+  mouse.enable();
+  const app = render(<Shell wheel={mouse.events} />, { stdin: mouse.stdin });
   await app.waitUntilExit();
-  leaveAltScreen();
+  cleanup();
   process.stdout.write('◉ shoots — session closed. See you at the next shoot.\n');
 }
 

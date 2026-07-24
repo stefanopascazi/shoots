@@ -14,6 +14,7 @@
  *   Tab      accept the highlighted suggestion
  *   Enter    run · Esc clears input / cancels a running command
  */
+import type { EventEmitter } from 'node:events';
 import { statSync } from 'node:fs';
 import path from 'node:path';
 import { Box, Text, useApp, useInput } from 'ink';
@@ -129,7 +130,12 @@ function useTerminalSize(): { rows: number; columns: number } {
 
 // ---------------------------------------------------------------------------
 
-export function Shell() {
+/** Emits `'scroll'` with a signed line delta (negative = up/back). */
+export interface ShellProps {
+  wheel?: EventEmitter;
+}
+
+export function Shell({ wheel }: ShellProps = {}) {
   const { exit } = useApp();
   const { rows, columns } = useTerminalSize();
 
@@ -171,6 +177,17 @@ export function Shell() {
 
   // ---- kill a stray child if the shell unmounts ----
   useEffect(() => () => runningRef.current?.kill(), []);
+
+  // ---- mouse wheel → scrollback (negative delta = scroll up/back) ----
+  useEffect(() => {
+    if (!wheel) return;
+    const onScroll = (delta: number): void =>
+      setScrollOffset((o) => Math.min(MAX_HISTORY_LINES, Math.max(0, o - delta)));
+    wheel.on('scroll', onScroll);
+    return () => {
+      wheel.off('scroll', onScroll);
+    };
+  }, [wheel]);
 
   // ---- spinner / elapsed ticker while a command runs ----
   useEffect(() => {
