@@ -17,10 +17,14 @@ export const EXIFTOOL_VERSION = '13.10';
 /** GitHub release tag that hosts the repackaged tool archives. */
 export const TOOLS_RELEASE = 'tools-v1';
 
-/** Override the mirror base URL (CI, private mirror, local testing). */
+/**
+ * Base URL for the tool archives. Override with SHOOTS_TOOLS_BASEURL for CI, a
+ * private mirror, or local testing — including a `file://` URL pointing at a
+ * local `dist-tools/` build, so provisioning can be exercised without a release.
+ */
 const MIRROR_BASE =
   process.env.SHOOTS_TOOLS_BASEURL ??
-  `https://github.com/OWNER/REPO/releases/download/${TOOLS_RELEASE}`;
+  `https://github.com/stefanopascazi/shoots/releases/download/${TOOLS_RELEASE}`;
 
 export interface ExiftoolPlatformSpec {
   /** Archive file name on the mirror. */

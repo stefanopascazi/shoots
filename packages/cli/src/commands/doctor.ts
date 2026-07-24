@@ -101,10 +101,10 @@ async function checkExiftool(): Promise<CheckResult> {
 async function checkToolMirror(): Promise<CheckResult> {
   try {
     const m = exiftoolManifest();
-    const configured = /^[0-9a-f]{64}$/.test(m.sha256) && !m.url.includes('OWNER/REPO');
+    const configured = /^[0-9a-f]{64}$/.test(m.sha256);
     return configured
       ? { name: 'tool mirror', status: 'ok', detail: m.url }
-      : { name: 'tool mirror', status: 'warn', detail: 'not configured yet (see scripts/prepare-tool-mirror.ts)' };
+      : { name: 'tool mirror', status: 'warn', detail: `no pinned checksum (base ${m.url})` };
   } catch (err) {
     return { name: 'tool mirror', status: 'warn', detail: err instanceof Error ? err.message : String(err) };
   }
