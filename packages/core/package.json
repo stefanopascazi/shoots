@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "shoots pipeline engine: file discovery, templating, job orchestration, declarative pipeline config. Zero UI dependencies.",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

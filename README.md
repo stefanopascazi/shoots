@@ -195,3 +195,15 @@ shoots import E:/DCIM --dest ./raw --json || notify-failure
 - `npm run build` — builds all packages in dependency order (tsup/esbuild, ESM, Node ≥ 18).
 - `npm run typecheck` — `tsc --noEmit` per package (build first so cross-package `.d.ts` files exist).
 - Output conventions: stdout carries the command result (human or `--json`); all logs, warnings, and progress go to stderr.
+
+## License
+
+**Source-available, not open source.** `shoots` is licensed under the
+[PolyForm Noncommercial License 1.0.0](./LICENSE).
+
+You are free to read, use, modify, and share the source code — but **only for
+noncommercial purposes**. Any commercial use of the software, in whole or in
+part, is not permitted under this license.
+
+Copyright © 2026 Stefano Pascazi. All commercial rights are reserved by the
+copyright holder. For a commercial license, contact stefanopascazi@gmail.com.

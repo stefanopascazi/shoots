@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "shoots — scriptable batch automation CLI for photography workflows",
+  "license": "PolyForm-Noncommercial-1.0.0",
   "bin": {
     "shoots": "./dist/cli.js"
   },
