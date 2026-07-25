@@ -5,7 +5,7 @@
  * re-importing an updated dataset refreshes embeddings without duplicating rows.
  */
 import { readFile } from 'node:fs/promises';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { openDatabase } from '../db/database.js';
 import { upsertPhoto, countPhotos } from '../db/photos.js';
@@ -33,6 +33,9 @@ export async function runImport(args: ImportArgs): Promise<void> {
     throw new Error(`${args.data} is not a 'shoots embeddings' dataset`);
   }
 
+  // Bundle previews are stored relative to the dataset file; resolve against it.
+  const datasetDir = dirname(resolve(args.data));
+
   const db = openDatabase(args.db);
   const before = countPhotos(db);
 
@@ -43,8 +46,10 @@ export async function runImport(args: ImportArgs): Promise<void> {
       if (!Array.isArray(r.embedding) || r.embedding.length !== raw.dim) {
         throw new Error(`bad embedding for ${r.file} (expected dim ${raw.dim})`);
       }
+      const previewPath = r.preview ? resolve(datasetDir, r.preview) : null;
       upsertPhoto(db, {
         path: resolvePath(r.file, args.images),
+        previewPath,
         model: raw.model,
         embedding: r.embedding,
         clipScore: r.aestheticSeed,

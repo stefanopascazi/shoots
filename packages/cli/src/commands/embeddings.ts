@@ -8,15 +8,20 @@
  * trainer can learn *your* eye "in general" from pairwise duels rather than
  * inheriting any preset's bias.
  *
- * Output is a single consolidated JSON dataset on stdout (`--json`); no per-file
- * sidecars are ever written — the learning tool consumes the one dataset, and
- * the source folders stay untouched. The `model` name pins the embedding space
- * so a learned profile can guard it later.
+ * Two output modes:
+ *   --json (stdout)  → the consolidated dataset only (embeddings, no previews).
+ *   --out <dir>      → a self-contained BUNDLE: <dir>/embeddings.json plus
+ *                      <dir>/previews/*.jpg. RAW originals aren't browser-viewable,
+ *                      so the bundle carries JPEG previews (embedded RAW preview
+ *                      via exiftool, resized with sharp) for the duel UI; each
+ *                      result gains a `preview` path relative to the dataset.
+ * The `model` name pins the embedding space so a learned profile can guard it.
  */
 import path from 'node:path';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import type { Command } from 'commander';
-import { JobQueue, scanFiles } from '@shoots/core';
+import { JobQueue, scanFiles, type ScannedFile } from '@shoots/core';
+import { generateThumbnail } from '@shoots/imaging';
 import {
   createQualityModel,
   getProfile,
@@ -34,12 +39,14 @@ import {
   printJson,
 } from '../io.js';
 import { startProgress } from '../progress.js';
-import { ensureClipModelReady } from '../tools.js';
+import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 
 interface EmbeddingsOptions {
   model: string;
   concurrency: string;
   out?: string;
+  previewSize: string;
+  previewQuality: string;
   json?: boolean;
   verbose?: boolean;
 }
@@ -58,22 +65,33 @@ interface EmbeddingResult {
    * the archive ships no aesthetics (heuristic fallback, no aspects).
    */
   aestheticSeed: number | null;
+  /** Bundle mode only: preview path relative to the dataset (for the duel UI). */
+  preview?: string;
 }
 
 export function registerEmbeddingsCommand(program: Command): void {
   program
     .command('embeddings')
-    .description('Export raw CLIP embeddings (profile-neutral) as a consolidated JSON dataset for preference-learning tooling')
+    .description('Export raw CLIP embeddings (profile-neutral) for preference-learning tooling; --out bundles browser previews for RAW')
     .argument('<path>', 'folder (or single file) to embed')
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
     .option('--concurrency <n>', 'max parallel embedding jobs', '4')
-    .option('--out <file>', 'write the dataset to a file instead of stdout')
+    .option('--out <dir>', 'write a self-contained bundle (embeddings.json + previews/) to this directory')
+    .option('--preview-size <px>', 'max preview edge in bundle mode', '1024')
+    .option('--preview-quality <q>', 'JPEG quality for previews (1-100)', '82')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runEmbeddings);
 }
 
 const mean = (xs: number[]): number => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+/** Collision-proof, readable preview filename: zero-padded index + safe basename. */
+function previewName(index: number, file: ScannedFile, total: number): string {
+  const width = String(total).length;
+  const base = path.parse(file.name).name.replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 60);
+  return `${String(index).padStart(width, '0')}_${base}.jpg`;
+}
 
 async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Promise<void> {
   const io = makeIo(options);
@@ -101,9 +119,26 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
 
   if (!(await ensureClipModelReady(io))) return;
 
+  // Bundle mode: previews for RAW come from the embedded JPEG via exiftool, so
+  // provision it up front. Precompute per-file preview paths (dir set once).
+  const bundle = options.out !== undefined;
+  const previewsRel = 'previews';
+  const previewFor = new Map<string, { rel: string; abs: string }>();
+  if (bundle) {
+    if (!(await ensureExiftoolReady(io))) return;
+    const previewsDir = path.join(options.out!, previewsRel);
+    await mkdir(previewsDir, { recursive: true });
+    files.forEach((f, i) => {
+      const name = previewName(i, f, files.length);
+      previewFor.set(f.path, { rel: `${previewsRel}/${name}`, abs: path.join(previewsDir, name) });
+    });
+  }
+  const previewSize = parsePositiveInt(options.previewSize, 1024);
+  const previewQuality = parsePositiveInt(options.previewQuality, 82);
+
   await model.init();
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
-  const progress = await startProgress(io, files.length, 'Embedding');
+  const progress = await startProgress(io, files.length, bundle ? 'Embedding + previews' : 'Embedding');
 
   const outcomes = await queue.run(
     files,
@@ -112,6 +147,20 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
       if (!assessment.embedding) {
         throw new Error('backend produced no embedding (unsupported model?)');
       }
+
+      let preview: string | undefined;
+      if (bundle) {
+        const target = previewFor.get(file.path)!;
+        await generateThumbnail(file.path, {
+          width: previewSize,
+          height: previewSize,
+          format: 'jpeg',
+          quality: previewQuality,
+          dest: target.abs,
+        });
+        preview = target.rel;
+      }
+
       const aspectScores = assessment.aspects.map((a) => a.score);
       return {
         file: file.path,
@@ -120,6 +169,7 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
         keywords: assessment.keywords,
         focus: Math.round(assessment.focus * 1000) / 1000,
         aestheticSeed: assessment.aspects.length ? Math.round(mean(aspectScores) * 1000) / 1000 : null,
+        ...(preview ? { preview } : {}),
       };
     },
     progress.onProgress,
@@ -144,10 +194,11 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
     summary: { total: files.length, embedded: embedded.length, failed: errors.length },
   };
 
-  if (options.out) {
-    await writeFile(options.out, JSON.stringify(dataset, null, 2) + '\n', 'utf8');
-    printHuman(io, `Wrote ${embedded.length} embeddings (dim ${dim}) to ${options.out}`);
-    if (io.json) printJson({ ...dataset, results: [], out: options.out });
+  if (bundle) {
+    const jsonPath = path.join(options.out!, 'embeddings.json');
+    await writeFile(jsonPath, JSON.stringify(dataset, null, 2) + '\n', 'utf8');
+    printHuman(io, `Wrote bundle to ${options.out}: embeddings.json + ${embedded.length} previews in ${previewsRel}/ (dim ${dim})`);
+    if (io.json) printJson({ ...dataset, results: [], out: options.out, previews: previewsRel });
   } else if (io.json) {
     printJson(dataset);
   } else {

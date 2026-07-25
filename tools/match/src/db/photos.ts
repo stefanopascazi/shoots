@@ -4,6 +4,7 @@ import type { PhotoRow } from '../types.js';
 
 export interface PhotoInput {
   path: string;
+  previewPath: string | null;
   model: string;
   embedding: number[];
   clipScore: number | null;
@@ -13,15 +14,17 @@ export interface PhotoInput {
 /** Insert or refresh a photo by path (idempotent). */
 export function upsertPhoto(db: Db, p: PhotoInput): void {
   db.prepare(
-    `INSERT INTO photos (path, model, embedding, clip_score, aspects, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO photos (path, preview_path, model, embedding, clip_score, aspects, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(path) DO UPDATE SET
+       preview_path = excluded.preview_path,
        model = excluded.model,
        embedding = excluded.embedding,
        clip_score = excluded.clip_score,
        aspects = excluded.aspects`,
   ).run(
     p.path,
+    p.previewPath,
     p.model,
     encodeEmbedding(p.embedding),
     p.clipScore,
@@ -33,6 +36,7 @@ export function upsertPhoto(db: Db, p: PhotoInput): void {
 interface RawPhotoRow {
   id: number;
   path: string;
+  preview_path: string | null;
   model: string;
   embedding: Uint8Array;
   clip_score: number | null;
@@ -43,6 +47,7 @@ interface RawPhotoRow {
 const hydrate = (r: RawPhotoRow): PhotoRow => ({
   id: Number(r.id),
   path: r.path,
+  preview_path: r.preview_path,
   model: r.model,
   embedding: decodeEmbedding(r.embedding),
   clip_score: r.clip_score == null ? null : Number(r.clip_score),

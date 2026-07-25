@@ -54,11 +54,15 @@ export function createServer(db: Db): express.Express {
 
   app.get('/api/image/:id', (req, res) => {
     const photo = getPhoto(db, Number(req.params.id));
-    if (!photo || !existsSync(photo.path)) return res.status(404).end();
-    const mime = MIME[extname(photo.path).toLowerCase()];
-    if (!mime) return res.status(415).end(); // e.g. a RAW original the browser can't show
+    if (!photo) return res.status(404).end();
+    // Prefer the browser-viewable preview from the bundle; fall back to the
+    // original (works when it is itself a JPEG/PNG, not a RAW).
+    const file = photo.preview_path && existsSync(photo.preview_path) ? photo.preview_path : photo.path;
+    if (!existsSync(file)) return res.status(404).end();
+    const mime = MIME[extname(file).toLowerCase()];
+    if (!mime) return res.status(415).end(); // e.g. a RAW original with no preview
     res.type(mime);
-    res.sendFile(photo.path);
+    res.sendFile(file);
   });
 
   app.get('/api/stats', (_req, res) => {

@@ -6,7 +6,7 @@
  * SQLite, collects pairwise preferences, and trains a linear-embedding profile.
  */
 
-/** One image record inside a `shoots embeddings --json` dataset. */
+/** One image record inside a `shoots embeddings` dataset. */
 export interface DatasetResult {
   file: string;
   embedding: number[];
@@ -15,6 +15,8 @@ export interface DatasetResult {
   focus: number;
   /** Neutral aesthetic seed (unweighted mean of aspects); may be null. */
   aestheticSeed: number | null;
+  /** Bundle mode: preview path relative to the dataset file (for the UI). */
+  preview?: string;
 }
 
 /** The whole `shoots embeddings --json` payload. */
@@ -30,6 +32,8 @@ export interface Dataset {
 export interface PhotoRow {
   id: number;
   path: string;
+  /** Browser-viewable preview path for the UI; falls back to `path` when null. */
+  preview_path: string | null;
   model: string;
   embedding: Float32Array;
   clip_score: number | null;

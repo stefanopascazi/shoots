@@ -12,6 +12,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS photos (
   id            INTEGER PRIMARY KEY,
   path          TEXT NOT NULL UNIQUE,
+  preview_path  TEXT,
   model         TEXT NOT NULL,
   embedding     BLOB NOT NULL,
   clip_score    REAL,
@@ -36,7 +37,16 @@ export function openDatabase(path: string): Db {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
+}
+
+/** Additive migrations for DBs created by an earlier version. */
+function migrate(db: Db): void {
+  const cols = db.prepare('PRAGMA table_info(photos)').all() as unknown as { name: string }[];
+  if (!cols.some((c) => c.name === 'preview_path')) {
+    db.exec('ALTER TABLE photos ADD COLUMN preview_path TEXT');
+  }
 }
 
 /** Pack a numeric embedding into a little-endian Float32 BLOB. */

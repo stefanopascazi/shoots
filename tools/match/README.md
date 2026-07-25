@@ -22,13 +22,20 @@ personal training, not for commercial redistribution. Storage uses Node's built-
 ## Pipeline
 
 ```
-shoots embeddings <my-photos> --json > dataset.json     # in the Shoots CLI
-match import --data dataset.json --images <my-photos>    # → SQLite
+shoots embeddings <my-photos> --out bundle              # in the Shoots CLI → bundle/{embeddings.json,previews/}
+match import --data bundle/embeddings.json               # → SQLite (previews resolved from the bundle)
 match serve                                              # duel UI at http://127.0.0.1:4576
 match train --name street --out profiles/street.json     # → the deliverable
 ```
 
+`shoots embeddings --out <dir>` writes a self-contained bundle: the consumable
+`embeddings.json` plus a JPEG `previews/` folder. RAW originals aren't
+browser-viewable, so the duel UI shows those previews (generated from the embedded
+RAW preview via exiftool, resized with sharp). For a JSON-only export (no previews)
+use `shoots embeddings <my-photos> --json > dataset.json` instead.
+
 - **import** — loads a `shoots embeddings` dataset into SQLite. Idempotent on path.
+  Preview paths in a bundle are resolved relative to `embeddings.json`.
 - **serve** — two photos side by side; `←`/`→` or click to keep one, `space` to skip.
   Pairs are chosen by active learning (least-compared photo vs its closest rival in
   the current estimate), seeded from the neutral CLIP aesthetic.
@@ -45,8 +52,9 @@ profile is applied to the same CLIP space it was learned on.
 
 ## Notes
 
-- The UI displays browser-viewable images (JPEG/PNG/WebP/…). RAW originals won't
-  render — point `shoots embeddings` at exported previews/JPEGs for the duels.
+- RAW workflows: use `shoots embeddings --out <dir>` so the bundle carries JPEG
+  previews; the UI shows those. A plain `--json` dataset points at the originals,
+  which only render if they are themselves browser-viewable.
 - Default DB is `./match.db` (override with `--db`).
 
 ## Develop
