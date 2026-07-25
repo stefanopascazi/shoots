@@ -21,7 +21,7 @@ import path from 'node:path';
 import { writeFile, mkdir } from 'node:fs/promises';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles, type ScannedFile } from '@shoots/core';
-import { generateThumbnail } from '@shoots/imaging';
+import { generateThumbnail, isRawFile } from '@shoots/imaging';
 import {
   createQualityModel,
   getProfile,
@@ -41,10 +41,14 @@ import {
 import { startProgress } from '../progress.js';
 import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 
+type PreviewMode = 'auto' | 'always' | 'never';
+const PREVIEW_MODES: PreviewMode[] = ['auto', 'always', 'never'];
+
 interface EmbeddingsOptions {
   model: string;
   concurrency: string;
   out?: string;
+  previews: string;
   previewSize: string;
   previewQuality: string;
   json?: boolean;
@@ -77,6 +81,7 @@ export function registerEmbeddingsCommand(program: Command): void {
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
     .option('--concurrency <n>', 'max parallel embedding jobs', '4')
     .option('--out <dir>', 'write a self-contained bundle (embeddings.json + previews/) to this directory')
+    .option('--previews <mode>', 'when to generate browser previews in --out mode: auto (RAW only) | always | never', 'auto')
     .option('--preview-size <px>', 'max preview edge in bundle mode', '1024')
     .option('--preview-quality <q>', 'JPEG quality for previews (1-100)', '82')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -102,6 +107,12 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
     process.exitCode = 2;
     return;
   }
+  if (!PREVIEW_MODES.includes(options.previews as PreviewMode)) {
+    logError(`unknown --previews mode '${options.previews}' (available: ${PREVIEW_MODES.join(', ')})`);
+    process.exitCode = 2;
+    return;
+  }
+  const previewMode = options.previews as PreviewMode;
 
   // A profile is required to construct the model, but this command consumes only
   // the embedding and the raw aspects — both profile-independent — so the choice
@@ -119,26 +130,33 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
 
   if (!(await ensureClipModelReady(io))) return;
 
-  // Bundle mode: previews for RAW come from the embedded JPEG via exiftool, so
-  // provision it up front. Precompute per-file preview paths (dir set once).
+  // Bundle mode: decide which files get a browser preview. `auto` previews only
+  // RAW (viewable images are referenced directly — the match server falls back to
+  // the original path); `always` previews everything; `never` writes just the JSON.
   const bundle = options.out !== undefined;
   const previewsRel = 'previews';
   const previewFor = new Map<string, { rel: string; abs: string }>();
-  if (bundle) {
-    if (!(await ensureExiftoolReady(io))) return;
-    const previewsDir = path.join(options.out!, previewsRel);
-    await mkdir(previewsDir, { recursive: true });
-    files.forEach((f, i) => {
-      const name = previewName(i, f, files.length);
-      previewFor.set(f.path, { rel: `${previewsRel}/${name}`, abs: path.join(previewsDir, name) });
-    });
+  if (bundle && previewMode !== 'never') {
+    const wantsPreview = (f: ScannedFile): boolean => previewMode === 'always' || isRawFile(f.path);
+    const targets = files.filter(wantsPreview);
+    if (targets.length > 0) {
+      // RAW previews come from the embedded JPEG via exiftool (extract + orientation).
+      if (targets.some((f) => isRawFile(f.path)) && !(await ensureExiftoolReady(io))) return;
+      const previewsDir = path.join(options.out!, previewsRel);
+      await mkdir(previewsDir, { recursive: true });
+      files.forEach((f, i) => {
+        if (!wantsPreview(f)) return;
+        const name = previewName(i, f, files.length);
+        previewFor.set(f.path, { rel: `${previewsRel}/${name}`, abs: path.join(previewsDir, name) });
+      });
+    }
   }
   const previewSize = parsePositiveInt(options.previewSize, 1024);
   const previewQuality = parsePositiveInt(options.previewQuality, 82);
 
   await model.init();
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
-  const progress = await startProgress(io, files.length, bundle ? 'Embedding + previews' : 'Embedding');
+  const progress = await startProgress(io, files.length, previewFor.size > 0 ? 'Embedding + previews' : 'Embedding');
 
   const outcomes = await queue.run(
     files,
@@ -149,8 +167,8 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
       }
 
       let preview: string | undefined;
-      if (bundle) {
-        const target = previewFor.get(file.path)!;
+      const target = previewFor.get(file.path);
+      if (target) {
         await generateThumbnail(file.path, {
           width: previewSize,
           height: previewSize,
@@ -195,10 +213,13 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
   };
 
   if (bundle) {
+    await mkdir(options.out!, { recursive: true });
     const jsonPath = path.join(options.out!, 'embeddings.json');
     await writeFile(jsonPath, JSON.stringify(dataset, null, 2) + '\n', 'utf8');
-    printHuman(io, `Wrote bundle to ${options.out}: embeddings.json + ${embedded.length} previews in ${previewsRel}/ (dim ${dim})`);
-    if (io.json) printJson({ ...dataset, results: [], out: options.out, previews: previewsRel });
+    const previewCount = embedded.filter((r) => r.preview).length;
+    const previewNote = previewCount > 0 ? `${previewCount} previews in ${previewsRel}/` : `no previews (--previews ${previewMode})`;
+    printHuman(io, `Wrote bundle to ${options.out}: embeddings.json + ${previewNote} (dim ${dim})`);
+    if (io.json) printJson({ ...dataset, results: [], out: options.out, previews: previewCount > 0 ? previewsRel : null });
   } else if (io.json) {
     printJson(dataset);
   } else {

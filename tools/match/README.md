@@ -29,10 +29,11 @@ match train --name street --out profiles/street.json     # → the deliverable
 ```
 
 `shoots embeddings --out <dir>` writes a self-contained bundle: the consumable
-`embeddings.json` plus a JPEG `previews/` folder. RAW originals aren't
-browser-viewable, so the duel UI shows those previews (generated from the embedded
-RAW preview via exiftool, resized with sharp). For a JSON-only export (no previews)
-use `shoots embeddings <my-photos> --json > dataset.json` instead.
+`embeddings.json` plus (when needed) a JPEG `previews/` folder. `--previews` controls
+this: `auto` (default) previews only RAW files — already-viewable images are
+referenced directly and the UI serves the originals; `always` previews everything
+(handy to downscale huge JPEGs); `never` writes only the JSON. RAW previews come from
+the embedded RAW preview via exiftool, resized and EXIF-oriented with sharp.
 
 - **import** — loads a `shoots embeddings` dataset into SQLite. Idempotent on path.
   Preview paths in a bundle are resolved relative to `embeddings.json`.
