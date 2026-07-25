@@ -10,7 +10,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
 import { RAW_EXTENSIONS } from '@shoots/core';
-import { extractPreview } from './exif.js';
+import { extractPreview, readOrientation } from './exif.js';
 
 export function isRawFile(filePath: string): boolean {
   return RAW_EXTENSIONS.has(path.extname(filePath).slice(1).toLowerCase());
@@ -52,6 +52,33 @@ export interface ThumbnailOptions {
 }
 
 /**
+ * Apply an EXIF orientation (1–8) to a sharp pipeline explicitly. Used when the
+ * pixels carry no orientation tag of their own (a RAW's embedded preview), so
+ * sharp's metadata-driven `.rotate()` would be a no-op. Rotations are clockwise;
+ * 5/7 are the mirrored diagonals (rare but handled for completeness).
+ */
+function applyExifOrientation(pipeline: sharp.Sharp, orientation: number): sharp.Sharp {
+  switch (orientation) {
+    case 2:
+      return pipeline.flop();
+    case 3:
+      return pipeline.rotate(180);
+    case 4:
+      return pipeline.flip();
+    case 5:
+      return pipeline.rotate(90).flop();
+    case 6:
+      return pipeline.rotate(90);
+    case 7:
+      return pipeline.rotate(270).flop();
+    case 8:
+      return pipeline.rotate(270);
+    default:
+      return pipeline;
+  }
+}
+
+/**
  * Generate a thumbnail from a file path or an already-loaded buffer.
  * Never modifies the input; returns the encoded thumbnail buffer.
  */
@@ -64,12 +91,25 @@ export async function generateThumbnail(
   const format = options.format ?? 'jpeg';
   const quality = options.quality ?? 82;
 
-  const source =
-    typeof input === 'string' ? (await loadRenderableImage(input)).buffer : input;
+  const loaded =
+    typeof input === 'string'
+      ? await loadRenderableImage(input)
+      : { buffer: input, source: 'file' as const };
 
-  let pipeline = sharp(source)
-    .rotate() // honor EXIF orientation
-    .resize(width, height, { fit: 'inside', withoutEnlargement: true });
+  let pipeline = sharp(loaded.buffer);
+
+  // Orientation: normal files carry an EXIF Orientation tag that sharp honors via
+  // `.rotate()`. A RAW's embedded preview usually lacks it (the tag lives in the
+  // RAW), so read the original's orientation and apply it explicitly — otherwise
+  // portrait shots come out landscape.
+  const previewMeta = loaded.source === 'embedded-preview' ? await sharp(loaded.buffer).metadata() : null;
+  if (loaded.source === 'embedded-preview' && typeof input === 'string' && !previewMeta?.orientation) {
+    pipeline = applyExifOrientation(pipeline, await readOrientation(input));
+  } else {
+    pipeline = pipeline.rotate(); // honor the pixels' own EXIF orientation
+  }
+
+  pipeline = pipeline.resize(width, height, { fit: 'inside', withoutEnlargement: true });
 
   pipeline =
     format === 'png'

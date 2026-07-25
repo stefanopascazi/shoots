@@ -5,6 +5,7 @@ export {
   writeMetadata,
   writeXmpSidecar,
   extractPreview,
+  readOrientation,
   getTagString,
   parseExifDate,
   ExiftoolError,

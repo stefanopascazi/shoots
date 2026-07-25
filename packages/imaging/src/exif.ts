@@ -189,6 +189,23 @@ export async function extractPreview(file: string): Promise<Buffer | null> {
   return null;
 }
 
+/**
+ * Read the numeric EXIF orientation (1–8) of a file, or 1 when absent/unknown.
+ * A RAW's embedded preview usually drops this tag, so callers that render such a
+ * preview need the original's orientation to rotate it upright.
+ */
+export async function readOrientation(file: string): Promise<number> {
+  try {
+    // -n = numeric value (1..8), -s3 = bare value with no tag name.
+    const out = await runExiftool([...COMMON_ARGS, '-n', '-s3', '-Orientation', file], { lenient: true });
+    const n = parseInt(out.toString('utf8').trim(), 10);
+    return Number.isInteger(n) && n >= 1 && n <= 8 ? n : 1;
+  } catch (err) {
+    if (err instanceof ExiftoolNotFoundError) throw err;
+    return 1;
+  }
+}
+
 /** Read a string-valued tag off a record, or null. */
 export function getTagString(record: ExifRecord, tag: string): string | null {
   const value = record[tag];
