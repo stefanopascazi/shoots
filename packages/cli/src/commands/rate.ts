@@ -42,7 +42,6 @@ interface RateOptions {
   concurrency: string;
   dryRun?: boolean;
   json?: boolean;
-  embeddings?: boolean;
   verbose?: boolean;
 }
 
@@ -55,8 +54,6 @@ interface RatingResult {
   keywords: string[];
   sidecar: string | null;
   model: string;
-  /** CLIP embedding, present only under `--embeddings` (preference-learning export). */
-  embedding?: number[];
 }
 
 export function registerRateCommand(program: Command): void {
@@ -70,7 +67,6 @@ export function registerRateCommand(program: Command): void {
     .option('--concurrency <n>', 'max parallel scoring jobs', '4')
     .option('--dry-run', 'score and report, but write no sidecars')
     .option('--json', 'machine-readable JSON output on stdout')
-    .option('--embeddings', 'include the raw CLIP embedding in JSON output and sidecars (for preference-learning tooling)')
     .option('--verbose', 'verbose logging on stderr')
     .action(runRate);
 }
@@ -143,8 +139,6 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
                 scores: { focus: assessment.focus, aesthetic: assessment.aesthetic },
                 aspects: assessment.aspects,
                 keywords: assessment.keywords,
-                // Opt-in: keep normal sidecars lean; only preference-learning runs want it.
-                ...(options.embeddings ? { embedding: assessment.embedding } : {}),
                 generatedAt: new Date().toISOString(),
               },
               null,
@@ -165,7 +159,6 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
         keywords: assessment.keywords,
         sidecar,
         model: model.name,
-        ...(options.embeddings ? { embedding: assessment.embedding } : {}),
       };
     },
     progress.onProgress,
