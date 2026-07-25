@@ -42,6 +42,14 @@ export interface QualityAssessment {
   aspects: AestheticAspectScore[];
   /** Suggested keywords, most relevant first. */
   keywords: string[];
+  /**
+   * The L2-normalized CLIP image embedding (512-d) in the backend's embedding
+   * space. Populated only when explicitly requested (opt-in via `rate
+   * --embeddings`), since it is bulky and only preference-learning tooling needs
+   * it. The {@link QualityModel.name} identifies the embedding space, so a
+   * consumer can guard that a learned profile matches.
+   */
+  embedding?: number[];
 }
 
 export interface QualityModel {

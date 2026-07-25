@@ -127,8 +127,8 @@ export class LocalOnnxModel implements QualityModel {
     const focus = lap.focusPeak / (lap.focusPeak + DEFAULT_FOCUS_THRESHOLD);
 
     // One image embedding feeds both the aesthetic aspects and the keywords.
-    const embedding = await this.embed(buffer);
-    const keywords = matchKeywords(vocab, embedding, KEYWORD_TOP_K, KEYWORD_FLOOR);
+    const clipEmbedding = await this.embed(buffer);
+    const keywords = matchKeywords(vocab, clipEmbedding, KEYWORD_TOP_K, KEYWORD_FLOOR);
 
     // Aesthetic: zero-shot CLIP across quality aspects when available, else a
     // conservative technical heuristic. The CLIP aspects capture composition,
@@ -136,14 +136,20 @@ export class LocalOnnxModel implements QualityModel {
     let aesthetic: number;
     let aspects: QualityAssessment['aspects'] = [];
     if (this.aesthetics) {
-      const scored = scoreAesthetics(this.aesthetics, embedding, this.profile.meritWeights);
+      const scored = scoreAesthetics(this.aesthetics, clipEmbedding, this.profile.meritWeights);
       aesthetic = scored.aesthetic;
       aspects = scored.aspects;
     } else {
       aesthetic = heuristicAesthetic(await aestheticStats(buffer));
     }
 
-    return { focus: clamp01(focus), aesthetic: clamp01(aesthetic), aspects, keywords };
+    // Surface the raw embedding for preference-learning tooling. Rounded to 6
+    // decimals (same convention as keyword/aesthetic scores) to roughly halve
+    // the JSON size without perturbing the CLIP cosine space. Callers decide
+    // whether to persist it (opt-in), so this stays cheap in the common path.
+    const embedding = Array.from(clipEmbedding, (x) => Math.round(x * 1e6) / 1e6);
+
+    return { focus: clamp01(focus), aesthetic: clamp01(aesthetic), aspects, keywords, embedding };
   }
 
   async scoreFocus(image: ImageInput): Promise<number> {
