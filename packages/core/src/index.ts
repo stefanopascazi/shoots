@@ -17,6 +17,7 @@ export {
   modelsDir,
   modelDir,
   cacheDir,
+  profilesDir,
   logsDir,
   configPath,
 } from './paths.js';

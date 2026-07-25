@@ -17,7 +17,8 @@ import { writeXmpSidecar } from '@shoots/imaging';
 import {
   createQualityModel,
   toStarRating,
-  getProfile,
+  resolveProfile,
+  allProfileNames,
   PROFILE_NAMES,
   DEFAULT_PROFILE_NAME,
   type AestheticAspectScore,
@@ -62,7 +63,7 @@ export function registerRateCommand(program: Command): void {
     .description('Score images (focus/aesthetic/keywords) via the ONNX inference model and write star ratings to sidecars')
     .argument('<path>', 'folder (or single file) to rate')
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
-    .option('--profile <name>', `rating profile: ${PROFILE_NAMES.join(' | ')}`, DEFAULT_PROFILE_NAME)
+    .option('--profile <name>', `rating profile: ${PROFILE_NAMES.join(' | ')} | a learned profile in ~/.shoots/profiles`, DEFAULT_PROFILE_NAME)
     .option('--write-xmp', 'write XMP sidecars via exiftool instead of JSON sidecars')
     .option('--concurrency <n>', 'max parallel scoring jobs', '4')
     .option('--dry-run', 'score and report, but write no sidecars')
@@ -80,13 +81,21 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     process.exitCode = 2;
     return;
   }
-  const profile = getProfile(options.profile);
+  const profile = await resolveProfile(options.profile);
   if (!profile) {
-    logError(`unknown rating profile '${options.profile}' (available: ${PROFILE_NAMES.join(', ')})`);
+    logError(`unknown rating profile '${options.profile}' (available: ${(await allProfileNames()).join(', ')})`);
     process.exitCode = 2;
     return;
   }
-  const model = createQualityModel(options.model as ModelKind, { profile });
+  // Constructing the model validates a learned profile's embedding space.
+  let model;
+  try {
+    model = createQualityModel(options.model as ModelKind, { profile });
+  } catch (err) {
+    logError(err instanceof Error ? err.message : String(err));
+    process.exitCode = 2;
+    return;
+  }
 
   const files = await scanFiles(targetPath);
   if (files.length === 0) {

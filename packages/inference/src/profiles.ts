@@ -22,18 +22,14 @@
  */
 import type { StarRating } from './QualityModel.js';
 
-export interface RatingProfile {
+/** Fields shared by every profile kind — identity, focus gate, star cut-offs. */
+export interface BaseProfile {
   /** Stable identifier used with `rate --profile`. */
   name: string;
   /** One-line description shown in help and errors. */
   description: string;
   /** True when calibrated against real judged data (vs a heuristic prior). */
   calibrated: boolean;
-  /**
-   * Aesthetic-merit aggregation weights by aspect name. Aspects not listed
-   * contribute nothing, keeping the merit signal explicit per profile.
-   */
-  meritWeights: Record<string, number>;
   /** Focus below this is a technical reject → 0 stars. */
   focusReject: number;
   /** Focus below this is soft/missed focus → capped at `focusSoftCap`. */
@@ -45,11 +41,39 @@ export interface RatingProfile {
 }
 
 /**
+ * Built-in kind: aesthetic merit is a weighted mean of the per-aspect CLIP
+ * scores. `meritWeights` decides WHAT matters; aspects not listed count zero.
+ */
+export interface AspectWeightsProfile extends BaseProfile {
+  type: 'aspect-weights';
+  meritWeights: Record<string, number>;
+}
+
+/**
+ * Learned kind (emitted by tools/match): aesthetic merit is a linear head on the
+ * CLIP embedding, `s(x) = w·x + b`, normalized to [0,1]. `aestheticStars` cut-offs
+ * are on that normalized score. `embeddingModel` must match the scoring backend.
+ */
+export interface LinearEmbeddingProfile extends BaseProfile {
+  type: 'linear-embedding';
+  /** CLIP space this was trained on; guards against a mismatched backend. */
+  embeddingModel: string;
+  dim: number;
+  weights: number[];
+  bias: number;
+  /** Standardization applied before the logistic squashing into [0,1]. */
+  scoreNormalization: { mean: number; std: number };
+}
+
+export type RatingProfile = AspectWeightsProfile | LinearEmbeddingProfile;
+
+/**
  * Street / documentary (the author's own eye, calibrated on a real shoot).
  * Content is everything; technical competence is assumed, so exposure/sharpness/
  * composition are zeroed. Unforgiving: the mass of a shoot lands at 0.
  */
 const STREET: RatingProfile = {
+  type: 'aspect-weights',
   name: 'street',
   description: 'Street / documentary — content over craft, unforgiving bar (calibrated)',
   calibrated: true,
@@ -72,6 +96,7 @@ const STREET: RatingProfile = {
  * so a clean, well-made frame already earns a star or two.
  */
 const GENERIC: RatingProfile = {
+  type: 'aspect-weights',
   name: 'generic',
   description: 'All-round, forgiving — technical competence counts (prior)',
   calibrated: false,
@@ -101,6 +126,7 @@ const GENERIC: RatingProfile = {
  * (stricter soft gate). Composition matters mildly. Prior, uncalibrated.
  */
 const PORTRAIT: RatingProfile = {
+  type: 'aspect-weights',
   name: 'portrait',
   description: 'Portrait — subject & light lead, eyes must be sharp (prior)',
   calibrated: false,
@@ -122,6 +148,7 @@ const PORTRAIT: RatingProfile = {
  * is gated hard (a soft animal is a miss). Prior, uncalibrated.
  */
 const WILDLIFE: RatingProfile = {
+  type: 'aspect-weights',
   name: 'wildlife',
   description: 'Wildlife — sharp subject & behaviour, strict focus (prior)',
   calibrated: false,
@@ -144,6 +171,7 @@ const WILDLIFE: RatingProfile = {
  * it. True emotion/expression scoring awaits richer aspects in a future model.
  */
 const WEDDING: RatingProfile = {
+  type: 'aspect-weights',
   name: 'wedding',
   description: 'Wedding — forgiving, a clean frame already counts (prior)',
   calibrated: false,

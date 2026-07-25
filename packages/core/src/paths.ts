@@ -44,6 +44,11 @@ export function cacheDir(): string {
   return path.join(shootsHome(), 'cache');
 }
 
+/** Directory holding user-supplied rating profiles (learned `*.json`). */
+export function profilesDir(): string {
+  return path.join(shootsHome(), 'profiles');
+}
+
 /** Root for log files. */
 export function logsDir(): string {
   return path.join(shootsHome(), 'logs');

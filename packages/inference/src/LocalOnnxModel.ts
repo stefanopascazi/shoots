@@ -37,7 +37,7 @@ import {
 } from './models/clipManifest.js';
 import { loadKeywordVocab, matchKeywords, type KeywordVocab } from './models/keywords.js';
 import { loadAestheticModel, scoreAesthetics, type AestheticModel } from './models/aesthetics.js';
-import type { RatingProfile } from './profiles.js';
+import type { LinearEmbeddingProfile, RatingProfile } from './profiles.js';
 
 /** How many keywords to suggest, and the minimum cosine similarity to keep one. */
 const KEYWORD_TOP_K = 6;
@@ -69,6 +69,19 @@ function l2normalize(v: Float32Array): Float32Array {
   return out;
 }
 
+/**
+ * Aesthetic merit from a learned linear head: s = w·x + b, standardized and
+ * squashed into [0,1] with a logistic — matching the calibration tools/match
+ * used to place the star cut-offs.
+ */
+function linearAesthetic(profile: LinearEmbeddingProfile, embedding: Float32Array): number {
+  const w = profile.weights;
+  let s = profile.bias;
+  for (let i = 0; i < w.length; i++) s += w[i] * embedding[i];
+  const z = (s - profile.scoreNormalization.mean) / (profile.scoreNormalization.std || 1);
+  return clamp01(1 / (1 + Math.exp(-z)));
+}
+
 export class LocalOnnxModel implements QualityModel {
   readonly name = `onnx-clip/${CLIP_MODEL_VERSION}`;
 
@@ -81,7 +94,15 @@ export class LocalOnnxModel implements QualityModel {
   constructor(
     private readonly profile: RatingProfile,
     private readonly options: EnsureModelOptions = {},
-  ) {}
+  ) {
+    // A learned profile is valid only in the CLIP space it was trained on.
+    if (profile.type === 'linear-embedding' && profile.embeddingModel !== this.name) {
+      throw new Error(
+        `profile '${profile.name}' was trained on embedding model '${profile.embeddingModel}', ` +
+          `but this backend is '${this.name}' — spaces differ, refusing to score`,
+      );
+    }
+  }
 
   async init(): Promise<void> {
     this.manifest = await ensureClipModel(this.options);
@@ -130,12 +151,18 @@ export class LocalOnnxModel implements QualityModel {
     const clipEmbedding = await this.embed(buffer);
     const keywords = matchKeywords(vocab, clipEmbedding, KEYWORD_TOP_K, KEYWORD_FLOOR);
 
-    // Aesthetic: zero-shot CLIP across quality aspects when available, else a
-    // conservative technical heuristic. The CLIP aspects capture composition,
-    // subject and lighting — the dimensions a pure exposure heuristic can't see.
+    // Aesthetic merit depends on the profile kind:
+    //  - linear-embedding (learned): a linear head straight on the embedding;
+    //  - aspect-weights (built-in): weighted mean of the zero-shot CLIP aspects,
+    //    or a conservative technical heuristic when the archive ships no aspects.
+    // The per-aspect scores are profile-independent, so we still surface them for
+    // provenance whenever the aesthetics archive is present.
     let aesthetic: number;
     let aspects: QualityAssessment['aspects'] = [];
-    if (this.aesthetics) {
+    if (this.profile.type === 'linear-embedding') {
+      aesthetic = linearAesthetic(this.profile, clipEmbedding);
+      if (this.aesthetics) aspects = scoreAesthetics(this.aesthetics, clipEmbedding, {}).aspects;
+    } else if (this.aesthetics) {
       const scored = scoreAesthetics(this.aesthetics, clipEmbedding, this.profile.meritWeights);
       aesthetic = scored.aesthetic;
       aspects = scored.aspects;

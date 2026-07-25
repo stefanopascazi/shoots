@@ -33,7 +33,18 @@ export {
   PROFILE_NAMES,
   getProfile,
   type RatingProfile,
+  type BaseProfile,
+  type AspectWeightsProfile,
+  type LinearEmbeddingProfile,
 } from './profiles.js';
+
+export {
+  resolveProfile,
+  allProfileNames,
+  listUserProfileNames,
+  loadProfileFile,
+  parseLinearEmbeddingProfile,
+} from './userProfiles.js';
 
 /**
  * Inference backend. Only `onnx` exists today; the type stays open so a future
