@@ -60,3 +60,9 @@ export {
   type ClipPreprocessOptions,
   type AestheticStats,
 } from './quality.js';
+
+export {
+  extractColorFeatures,
+  COLOR_FEATURE_NAMES,
+  type ColorFeatures,
+} from './features.js';

@@ -1,0 +1,42 @@
+#!/usr/bin/env node
+/**
+ * develop — personal develop-setting prediction for Shoots.
+ *
+ * train → predict. Consumes `shoots develop-export` datasets and emits a
+ * per-catalog develop profile (multi-output ridge over develop-setting deltas).
+ * Separate from the Shoots monorepo: its own deps, its own build; it never loads
+ * onnxruntime — the heavy feature extraction lives in `shoots develop-export`.
+ */
+import { Command } from 'commander';
+import { runTrain } from './commands/train.js';
+import { runPredict } from './commands/predict.js';
+
+const program = new Command();
+program
+  .name('develop')
+  .description('Personal develop prediction: develop-export dataset → multi-output ridge → per-catalog profile')
+  .version('0.1.0');
+
+program
+  .command('train')
+  .description('Fit and export the per-catalog develop profile')
+  .requiredOption('--data <file>', 'dataset.json from `shoots develop-export`')
+  .requiredOption('--name <name>', 'profile name')
+  .requiredOption('--out <file>', 'output profile JSON path')
+  .option('--lambda <n>', 'ridge regularization strength', (v) => parseFloat(v), 10)
+  .option('--holdout <frac>', 'fraction of images held out for the go/no-go metric', (v) => parseFloat(v), 0.2)
+  .action((opts) => runTrain({ data: opts.data, name: opts.name, out: opts.out, lambda: opts.lambda, holdout: opts.holdout }));
+
+program
+  .command('predict')
+  .description('Apply a develop profile to a new develop-export dataset')
+  .requiredOption('--data <file>', 'dataset.json from `shoots develop-export` (the new set)')
+  .requiredOption('--profile <file>', 'develop profile JSON from `develop train`')
+  .option('--out <file>', 'write predictions JSON here (default: stdout)')
+  .option('--xmp <dir>', 'also write a Lightroom-readable .xmp sidecar per image into this dir')
+  .action((opts) => runPredict({ data: opts.data, profile: opts.profile, out: opts.out, xmp: opts.xmp }));
+
+program.parseAsync(process.argv).catch((err: unknown) => {
+  process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exitCode = 1;
+});

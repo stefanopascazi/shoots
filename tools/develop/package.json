@@ -1,0 +1,29 @@
+{
+  "name": "shoots-develop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal develop-prediction tool for Shoots: (baseline render features + as-shot metadata) → multi-output ridge over develop-setting DELTAS → per-catalog develop profile. Consumes `shoots develop-export` datasets; no ML runtime.",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "author": "Stefano Pascazi <stefanopascazi@gmail.com>",
+  "bin": {
+    "develop": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
