@@ -32,6 +32,31 @@ interface DRow {
   abs: number[];
   meta: AsShotMeta;
   develop: Record<string, number>;
+  curve?: number[];
+}
+
+/** Inputs (0..255) at which the tone curve is sampled for clustering features. */
+const CURVE_SAMPLES = [0, 32, 64, 96, 128, 160, 192, 224, 255];
+/** Contrast / black-clipping is a dominant style axis → weight the curve features. */
+const CURVE_WEIGHT = 2.5;
+
+/** Sample a point tone curve at fixed inputs → normalized outputs (linear default). */
+function sampleCurve(curve: number[] | undefined): number[] {
+  if (!curve || curve.length < 4) return CURVE_SAMPLES.map((x) => x / 255);
+  const pts: [number, number][] = [];
+  for (let i = 0; i + 1 < curve.length; i += 2) pts.push([curve[i]!, curve[i + 1]!]);
+  pts.sort((a, b) => a[0] - b[0]);
+  const interp = (x: number): number => {
+    if (x <= pts[0]![0]) return pts[0]![1];
+    if (x >= pts[pts.length - 1]![0]) return pts[pts.length - 1]![1];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [x0, y0] = pts[i]!;
+      const [x1, y1] = pts[i + 1]!;
+      if (x >= x0 && x <= x1) return y0 + ((x - x0) / (x1 - x0 || 1)) * (y1 - y0);
+    }
+    return x;
+  };
+  return CURVE_SAMPLES.map((x) => interp(x) / 255);
 }
 
 interface ColStats { mean: number[]; std: number[]; }
@@ -71,6 +96,7 @@ function buildRows(dataset: DevelopDataset): DRow[] {
       abs: DEVELOP_PARAMS.map((_, i) => actualAbs(i, r.develop, r.asShot)),
       meta: r.asShot,
       develop: r.develop,
+      curve: r.curve,
     });
   }
   return rows;
@@ -151,6 +177,10 @@ export interface ClusterSignature {
   meanContrast: number;
   meanHighlights: number;
   meanExposure: number;
+  /** Mean tone-curve output at input 0 (0..1): high = lifted/matte blacks. */
+  blackLift: number;
+  /** Mean curve contrast (output@192 − output@64): high = steep/contrasty. */
+  curveContrast: number;
 }
 
 export interface DiagnoseResult {
@@ -159,16 +189,22 @@ export interface DiagnoseResult {
   perK: { k: number; clusteredSkill: number | null; clusters: ClusterSignature[] }[];
 }
 
-/** Build the clustering feature vectors: standardized absolute develop values. */
+/**
+ * Build the clustering feature vectors: standardized absolute develop values
+ * PLUS the sampled tone curve (the contrast / black-clipping style axis, which the
+ * slider params alone miss). B&W and curve axes are up-weighted.
+ */
 function clusterVectors(rows: DRow[]): number[][] {
   // Union of develop keys present in ≥10% of edited rows.
   const counts = new Map<string, number>();
   for (const r of rows) for (const k of Object.keys(r.develop)) counts.set(k, (counts.get(k) ?? 0) + 1);
   const keys = [...counts.entries()].filter(([, c]) => c >= rows.length * 0.1).map(([k]) => k);
-  const raw = rows.map((r) => keys.map((k) => r.develop[k] ?? 0));
+  const nKeys = keys.length;
+  const raw = rows.map((r) => [...keys.map((k) => r.develop[k] ?? 0), ...sampleCurve(r.curve)]);
   const s = columnStats(raw);
   return raw.map((row) => row.map((v, j) => {
     const z = (v - s.mean[j]!) / s.std[j]!;
+    if (j >= nKeys) return z * CURVE_WEIGHT; // curve-sample columns
     return keys[j] === BW_KEY ? z * BW_WEIGHT : z;
   }));
 }
@@ -176,6 +212,14 @@ function clusterVectors(rows: DRow[]): number[][] {
 function signature(rows: DRow[], idx: number[]): ClusterSignature {
   const get = (key: string): number => idx.reduce((a, i) => a + (rows[i]!.develop[key] ?? 0), 0) / idx.length;
   const bwPresent = rows.some((r) => BW_KEY in r.develop);
+  // Curve-derived: black lift (output@0) and contrast (output@192 − output@64).
+  let blackLift = 0;
+  let curveContrast = 0;
+  for (const i of idx) {
+    const s = sampleCurve(rows[i]!.curve); // aligned with CURVE_SAMPLES
+    blackLift += s[0]!;
+    curveContrast += s[6]! - s[2]!;
+  }
   return {
     size: idx.length,
     bwFraction: bwPresent ? get(BW_KEY) : null,
@@ -183,6 +227,8 @@ function signature(rows: DRow[], idx: number[]): ClusterSignature {
     meanContrast: Math.round(get('Contrast2012')),
     meanHighlights: Math.round(get('Highlights2012')),
     meanExposure: Math.round(get('Exposure2012') * 100) / 100,
+    blackLift: Math.round((blackLift / idx.length) * 1000) / 1000,
+    curveContrast: Math.round((curveContrast / idx.length) * 1000) / 1000,
   };
 }
 

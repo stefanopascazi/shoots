@@ -24,7 +24,7 @@ export async function runDiagnose(args: DiagnoseArgs): Promise<void> {
     for (const c of k.clusters) {
       const bw = c.bwFraction === null ? '' : `  B&W ${(c.bwFraction * 100).toFixed(0)}%`;
       w.write(
-        `    cluster n=${String(c.size).padStart(4)}  Sat ${String(c.meanSaturation).padStart(4)}  Contrast ${String(c.meanContrast).padStart(4)}  Highlights ${String(c.meanHighlights).padStart(4)}  Exp ${c.meanExposure.toFixed(2).padStart(5)}${bw}\n`,
+        `    n=${String(c.size).padStart(4)}  curveContrast ${c.curveContrast.toFixed(2).padStart(5)}  blackLift ${c.blackLift.toFixed(2).padStart(4)}  Sat ${String(c.meanSaturation).padStart(4)}  Contrast ${String(c.meanContrast).padStart(4)}  Exp ${c.meanExposure.toFixed(2).padStart(5)}${bw}\n`,
       );
     }
   }

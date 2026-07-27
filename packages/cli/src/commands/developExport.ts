@@ -101,6 +101,7 @@ interface DevelopExportOptions {
   concurrency: string;
   out: string;
   baseline: string;
+  editedOnly?: boolean;
   json?: boolean;
   verbose?: boolean;
 }
@@ -120,6 +121,9 @@ interface DatasetRecord {
   features: number[];
   develop: Record<string, number>;
   asShot: AsShot;
+  /** Flattened point tone-curve [x0,y0,x1,y1,…] (ToneCurvePV2012) — the contrast
+   *  / black-clipping vehicle, absent when the curve is linear/default. */
+  curve?: number[];
 }
 
 export function registerDevelopExportCommand(program: Command): void {
@@ -131,6 +135,7 @@ export function registerDevelopExportCommand(program: Command): void {
     .option('--concurrency <n>', 'max parallel jobs', '4')
     .requiredOption('--out <file>', 'write the JSONL dataset to this path (one record per line + a trailing meta line)')
     .option('--baseline <mode>', `baseline render strategy: ${BASELINES.join(' | ')}`, 'embedded-preview')
+    .option('--edited-only', 'only run the expensive embedding/render on files that carry develop settings (for training-set builds)')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runDevelopExport);
@@ -161,6 +166,19 @@ function readDevelop(record: ExifRecord | undefined): Record<string, number> {
     if (n !== null) out[tag] = n;
   }
   return out;
+}
+
+/** Parse the point tone curve (ToneCurvePV2012) into flat [x0,y0,x1,y1,…]. */
+function readCurve(record: ExifRecord | undefined): number[] | undefined {
+  const raw = record?.['ToneCurvePV2012'];
+  if (raw == null) return undefined;
+  // exiftool returns the Seq as an array of "x, y" strings or one joined string;
+  // String() + split on comma handles both.
+  const nums = String(raw)
+    .split(',')
+    .map((s) => parseFloat(s.trim()))
+    .filter((n) => Number.isFinite(n));
+  return nums.length >= 4 ? nums : undefined;
 }
 
 function readAsShot(crs: ExifRecord | undefined, exif: ExifRecord | undefined): AsShot {
@@ -226,18 +244,34 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
   if (!(await ensureExiftoolReady(io))) return;
   if (!(await ensureClipModelReady(io))) return;
 
-  // Two batched metadata reads, keyed by resolved path so per-file jobs are pure
-  // map lookups. crs develop targets come from the sidecar (or embedded, for
-  // DNG/JPEG); as-shot EXIF always from the image file itself.
+  // crs develop targets first, from the sidecars (cheap): needed for ALL files to
+  // decide which are edited. crs comes from the sidecar (or embedded, for DNG/JPEG).
   const developSrcByFile = new Map(files.map((f) => [f.path, developSource(f.path)] as const));
   const crsPaths = [...new Set(developSrcByFile.values())];
-  const crsTagArgs = [...CRS_TARGET_TAGS.map((t) => `XMP-crs:${t}`), 'XMP-crs:WhiteBalance'];
-  const [crsRecords, exifRecords] = await Promise.all([
-    readMetadata(crsPaths, { tags: crsTagArgs }),
-    readMetadata(files.map((f) => f.path), { tags: [...META_TAGS] }),
-  ]);
+  const crsTagArgs = [...CRS_TARGET_TAGS.map((t) => `XMP-crs:${t}`), 'XMP-crs:WhiteBalance', 'XMP-crs:ToneCurvePV2012'];
+  const crsRecords = await readMetadata(crsPaths, { tags: crsTagArgs });
   const crsByPath = new Map<string, ExifRecord>();
   for (const rec of crsRecords) crsByPath.set(path.resolve(rec.SourceFile), rec);
+  const crsFor = (file: string): ExifRecord | undefined => crsByPath.get(path.resolve(developSrcByFile.get(file)!));
+
+  // --edited-only: skip the expensive per-file work (embedding / neutral render /
+  // color features) AND the as-shot EXIF read for files with no develop settings.
+  // This is the right default for training-set builds (we train on edited photos
+  // only) and avoids opening thousands of large unedited RAWs.
+  const workFiles = options.editedOnly
+    ? files.filter((f) => Object.keys(readDevelop(crsFor(f.path))).length > 0)
+    : files;
+  if (options.editedOnly) {
+    logVerbose(io, `edited-only: ${workFiles.length}/${files.length} files carry develop settings`);
+  }
+  if (workFiles.length === 0) {
+    printHuman(io, options.editedOnly ? 'No edited files found (nothing carries develop settings).' : 'No files to process.');
+    return;
+  }
+
+  // As-shot EXIF, read from the image files themselves — only for the files we
+  // will actually process (opening RAWs is comparatively expensive).
+  const exifRecords = await readMetadata(workFiles.map((f) => f.path), { tags: [...META_TAGS] });
   const exifByPath = new Map<string, ExifRecord>();
   for (const rec of exifRecords) exifByPath.set(path.resolve(rec.SourceFile), rec);
 
@@ -257,12 +291,12 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
 
   await model.init();
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
-  const progress = await startProgress(io, files.length, 'Develop-export');
+  const progress = await startProgress(io, workFiles.length, 'Develop-export');
 
   // Stream each record to disk as it completes (JSONL); return only lightweight
   // counters so nothing is accumulated in memory.
   const outcomes = await queue.run(
-    files,
+    workFiles,
     async (file): Promise<{ hasDevelop: boolean; dim: number }> => {
       // CLIP stays on the embedded preview (semantic, colour-invariant); only the
       // photometric color features move to the neutral render when requested.
@@ -273,15 +307,17 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
       const [assessment, color] = await Promise.all([model.assess({ path: file.path }), colorTask]);
       if (!assessment.embedding) throw new Error('backend produced no embedding (unsupported model?)');
 
-      const crsRec = crsByPath.get(path.resolve(developSrcByFile.get(file.path)!));
+      const crsRec = crsFor(file.path);
       const exifRec = exifByPath.get(path.resolve(file.path));
       const develop = readDevelop(crsRec);
+      const curve = readCurve(crsRec);
       const record: DatasetRecord = {
         file: file.path,
         embedding: assessment.embedding.map(round5),
         features: color.vector,
         develop,
         asShot: readAsShot(crsRec, exifRec),
+        ...(curve ? { curve } : {}),
       };
       await writeLine(record);
       return { hasDevelop: Object.keys(develop).length > 0, dim: assessment.embedding.length };
@@ -299,7 +335,7 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
     .map((o) => ({ file: o.item.path, error: o.error?.message ?? 'unknown error' }));
   const withDevelop = ok.filter((o) => o.value!.hasDevelop).length;
   const dim = ok.find((o) => o.value)?.value!.dim ?? 0;
-  const summary = { total: files.length, exported: ok.length, failed: errors.length, withDevelop };
+  const summary = { total: files.length, processed: workFiles.length, exported: ok.length, failed: errors.length, withDevelop };
 
   // Trailing meta line: dataset-level fields (dim is known only now) + summary.
   await writeLine({

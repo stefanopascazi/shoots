@@ -16,6 +16,8 @@ export interface DevelopExportResult {
   /** Raw absolute crs develop values actually present (absent ⇒ ACR default). */
   develop: Record<string, number>;
   asShot: AsShotMeta;
+  /** Flattened point tone-curve [x0,y0,x1,y1,…] (ToneCurvePV2012); absent if linear. */
+  curve?: number[];
   /** Present only in the legacy per-record format; the baseline lives on the dataset. */
   baseline?: string;
 }
