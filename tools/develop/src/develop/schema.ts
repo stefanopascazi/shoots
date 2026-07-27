@@ -124,6 +124,10 @@ const COLOR: DevelopParam[] = [
 ];
 
 // ── B&W branch: predicted only for black-and-white photos ────────────────────
+// NOTE: empirically the B&W tonal look is much harder to predict than colour
+// (skill ~4% vs ~16% on real data). High-contrast B&W is a per-image *artistic*
+// decision (curve peaks, deliberate black clipping) more than a reproducible
+// recipe — the tool offers a weak starting point here by design, not a bug.
 const BW: DevelopParam[] = HSL_CHANNELS.map((ch) => slider(`GrayMixer${ch}`, 'grayMixer', 'bw', 1.0));
 
 /** The full ordered list (shared + colour + B&W). A param's index is its position. */
