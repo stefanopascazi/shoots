@@ -88,6 +88,16 @@ async function launchShell(): Promise<void> {
   process.stdout.write('◉ shoots — session closed. See you at the next shoot.\n');
 }
 
+/** Resolve once stdout/stderr have flushed their buffers (safe before exit). */
+function flushStdio(): Promise<void> {
+  return new Promise((resolve) => {
+    let pending = 2;
+    const done = (): void => { if (--pending <= 0) resolve(); };
+    process.stdout.write('', done);
+    process.stderr.write('', done);
+  });
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.length === 0) {
@@ -99,6 +109,12 @@ async function main(): Promise<void> {
     return;
   }
   await program.parseAsync(process.argv);
+  // Batch commands use native addons (onnxruntime, sharp/libvips) and the Ink
+  // progress view, whose thread pools / stdin handles can keep the event loop
+  // alive after the work is finished. For a one-shot CLI the correct behavior is
+  // to exit promptly once output is flushed — preserving the command's exit code.
+  await flushStdio();
+  process.exit(process.exitCode ?? 0);
 }
 
 main().catch((err: unknown) => {
