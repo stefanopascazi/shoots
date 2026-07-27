@@ -14,7 +14,7 @@ export default defineConfig({
   dts: false,
   sourcemap: true,
   clean: true,
-  target: 'node18',
+  target: 'node20',
   platform: 'node',
   banner: { js: '#!/usr/bin/env node' },
   define: {

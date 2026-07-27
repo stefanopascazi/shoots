@@ -171,15 +171,28 @@ function sharpLoaderContents(): string {
     throw new Error(`no sharp prebuilt binaries found for ${sharpPlatform} under ${imgRoot}`);
   }
   const entries = stageFiles(files, 'sharp');
-  const nodeRel = `sharp-${sharpPlatform}/lib/sharp-${sharpPlatform}.node`;
-  return generateExtractorModule(entries, `shoots-sharp-${sharpVersion}-${sharpPlatform}`, nodeRel);
+  // sharp >=0.35 suffixes the addon with its version (sharp-win32-x64-0.35.3.node),
+  // earlier releases did not — resolve it from the staged files instead of guessing.
+  const addon = files.find(
+    (f) => f.rel.startsWith(`sharp-${sharpPlatform}/lib/`) && f.rel.endsWith('.node'),
+  );
+  if (!addon) {
+    throw new Error(`no sharp addon (.node) found for ${sharpPlatform} under ${imgRoot}`);
+  }
+  return generateExtractorModule(
+    entries,
+    `shoots-sharp-${sharpVersion}-${sharpPlatform}`,
+    addon.rel,
+  );
 }
 
 const staticSharpLoader = {
   name: 'static-sharp-loader',
   setup(build: import('bun').PluginBuilder) {
     const contents = sharpLoaderContents();
-    build.onLoad({ filter: /[\\/]sharp[\\/]lib[\\/]sharp\.js$/ }, () => ({
+    // sharp <0.35 loaded the addon from lib/sharp.js (CJS); >=0.35 ships dual
+    // builds and the ESM entry pulls dist/sharp.mjs. Match either.
+    build.onLoad({ filter: /[\\/]sharp[\\/](lib[\\/]sharp\.js|dist[\\/]sharp\.mjs)$/ }, () => ({
       contents,
       loader: 'js' as const,
     }));

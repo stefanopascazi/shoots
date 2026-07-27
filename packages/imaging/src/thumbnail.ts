@@ -8,7 +8,7 @@
  */
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { RAW_EXTENSIONS } from '@shoots/core';
 import { extractPreview, readOrientation } from './exif.js';
 
@@ -57,7 +57,7 @@ export interface ThumbnailOptions {
  * sharp's metadata-driven `.rotate()` would be a no-op. Rotations are clockwise;
  * 5/7 are the mirrored diagonals (rare but handled for completeness).
  */
-function applyExifOrientation(pipeline: sharp.Sharp, orientation: number): sharp.Sharp {
+function applyExifOrientation(pipeline: Sharp, orientation: number): Sharp {
   switch (orientation) {
     case 2:
       return pipeline.flop();

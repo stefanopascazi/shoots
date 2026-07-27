@@ -10,7 +10,7 @@
     "packages/*"
   ],
   "engines": {
-    "node": ">=18.17"
+    "node": ">=20.9.0"
   },
   "scripts": {
     "build": "npm run build -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/cli",
@@ -26,5 +26,8 @@
     "@types/node": "^24.0.0",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3"
+  },
+  "overrides": {
+    "sharp": "^0.35.3"
   }
 }
