@@ -72,6 +72,10 @@ function buildRows(dataset: DevelopDataset): Row[] {
   const rows: Row[] = [];
   for (const r of dataset.results) {
     if (!r.embedding?.length || !r.features?.length) continue;
+    // Edited-only: an unedited photo (develop = default) is not "the photographer
+    // chose neutral", it is an unlabeled/unprocessed frame. Training on those zero
+    // targets biases every prediction toward the mean and masks the real skill.
+    if (Object.keys(r.develop).length === 0) continue;
     const meta = r.asShot;
     rows.push({
       x: assembleFeatures(r.embedding, r.features, meta),
