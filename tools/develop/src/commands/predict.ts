@@ -8,7 +8,8 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { assertApplicable, predictOne } from '../predict.js';
 import { buildXmpSidecar } from '../xmp.js';
-import type { DevelopDataset, DevelopProfile } from '../types.js';
+import { loadDataset } from '../dataset/load.js';
+import type { DevelopProfile } from '../types.js';
 
 export interface PredictArgs {
   data: string;
@@ -18,10 +19,7 @@ export interface PredictArgs {
 }
 
 export async function runPredict(args: PredictArgs): Promise<void> {
-  const dataset = JSON.parse(await readFile(args.data, 'utf8')) as DevelopDataset;
-  if (dataset.command !== 'develop-export') {
-    throw new Error(`'${args.data}' is not a develop-export dataset (command: ${String(dataset.command)})`);
-  }
+  const dataset = await loadDataset(args.data);
   const profile = JSON.parse(await readFile(args.profile, 'utf8')) as DevelopProfile;
   assertApplicable(profile, dataset.model, dataset.dim, dataset.colorDim);
 

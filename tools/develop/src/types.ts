@@ -16,7 +16,8 @@ export interface DevelopExportResult {
   /** Raw absolute crs develop values actually present (absent ⇒ ACR default). */
   develop: Record<string, number>;
   asShot: AsShotMeta;
-  baseline: string;
+  /** Present only in the legacy per-record format; the baseline lives on the dataset. */
+  baseline?: string;
 }
 
 /** The whole `shoots develop-export` payload. */

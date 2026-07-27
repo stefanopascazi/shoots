@@ -15,16 +15,20 @@
  * every crs value it finds as a name→number map. The `develop` tool owns the
  * ordered param schema and the delta encoding.
  *
- * BASELINE render (the plan's "vero rischio"): a colorimetrically correct
- * neutral render needs Lightroom (virtual-copy reset) or an external RAW
- * developer. Neither is wired yet, so v1 defaults to `--baseline embedded-preview`
- * — the RAW's embedded JPEG (or the file itself for rendered formats). This is an
- * APPROXIMATION, recorded in the dataset so the evaluation is read with the right
- * caveat; `virtual-copy` / `external-developer` are future strategies.
+ * Output is JSONL, streamed to disk as each file completes: one record per line
+ * plus a trailing `_type: "develop-meta"` line (model, dims, baseline, summary).
+ * This keeps memory flat for very large catalogs (20k+ RAW) instead of buffering
+ * every embedding in RAM and serializing one giant JSON at the end.
+ *
+ * BASELINE render: `embedded-preview` (default) uses the RAW's embedded JPEG (an
+ * approximation — bakes in the camera picture style); `external` renders a
+ * neutral, camera-independent baseline via a stand-alone RAW developer (see
+ * rawDeveloper.ts). The chosen strategy is recorded in the meta line.
  */
 import path from 'node:path';
-import { existsSync } from 'node:fs';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { existsSync, createWriteStream } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
+import { once } from 'node:events';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
 import { extractColorFeatures, COLOR_FEATURE_NAMES, readMetadata, isRawFile, type ExifRecord } from '@shoots/imaging';
@@ -89,7 +93,7 @@ type Baseline = (typeof BASELINES)[number];
 interface DevelopExportOptions {
   model: string;
   concurrency: string;
-  out?: string;
+  out: string;
   baseline: string;
   json?: boolean;
   verbose?: boolean;
@@ -103,13 +107,13 @@ interface AsShot {
   camera: string | null;
 }
 
-interface DevelopExportResult {
+/** One record line in the JSONL dataset (baseline lives in the trailing meta line). */
+interface DatasetRecord {
   file: string;
   embedding: number[];
   features: number[];
   develop: Record<string, number>;
   asShot: AsShot;
-  baseline: Baseline;
 }
 
 export function registerDevelopExportCommand(program: Command): void {
@@ -119,7 +123,7 @@ export function registerDevelopExportCommand(program: Command): void {
     .argument('<path>', 'folder (or single file) of RAW/edited images carrying develop settings')
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
     .option('--concurrency <n>', 'max parallel jobs', '4')
-    .option('--out <file>', 'write the dataset JSON to this path (default: stdout with --json)')
+    .requiredOption('--out <file>', 'write the JSONL dataset to this path (one record per line + a trailing meta line)')
     .option('--baseline <mode>', `baseline render strategy: ${BASELINES.join(' | ')}`, 'embedded-preview')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
@@ -225,13 +229,29 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
   const exifByPath = new Map<string, ExifRecord>();
   for (const rec of exifRecords) exifByPath.set(path.resolve(rec.SourceFile), rec);
 
+  await mkdir(path.dirname(path.resolve(options.out)), { recursive: true });
+  const stream = createWriteStream(options.out, { encoding: 'utf8' });
+  let writeFailed = false;
+  stream.on('error', (err: Error) => {
+    logError(`failed writing dataset: ${err.message}`);
+    writeFailed = true;
+  });
+  // One atomic write per line (no interleaving across concurrent workers); await
+  // drain on backpressure so memory stays bounded even for huge catalogs.
+  const writeLine = async (obj: unknown): Promise<void> => {
+    if (!stream.write(JSON.stringify(obj) + '\n')) await once(stream, 'drain');
+  };
+  const round5 = (v: number): number => Math.round(v * 1e5) / 1e5;
+
   await model.init();
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
   const progress = await startProgress(io, files.length, 'Develop-export');
 
+  // Stream each record to disk as it completes (JSONL); return only lightweight
+  // counters so nothing is accumulated in memory.
   const outcomes = await queue.run(
     files,
-    async (file): Promise<DevelopExportResult> => {
+    async (file): Promise<{ hasDevelop: boolean; dim: number }> => {
       // CLIP stays on the embedded preview (semantic, colour-invariant); only the
       // photometric color features move to the neutral render when requested.
       const colorTask =
@@ -243,14 +263,16 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
 
       const crsRec = crsByPath.get(path.resolve(developSrcByFile.get(file.path)!));
       const exifRec = exifByPath.get(path.resolve(file.path));
-      return {
+      const develop = readDevelop(crsRec);
+      const record: DatasetRecord = {
         file: file.path,
-        embedding: assessment.embedding,
+        embedding: assessment.embedding.map(round5),
         features: color.vector,
-        develop: readDevelop(crsRec),
+        develop,
         asShot: readAsShot(crsRec, exifRec),
-        baseline,
       };
+      await writeLine(record);
+      return { hasDevelop: Object.keys(develop).length > 0, dim: assessment.embedding.length };
     },
     progress.onProgress,
     (file) => file.name,
@@ -259,36 +281,35 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
   progress.stop();
   await model.dispose();
 
-  const exported = outcomes.filter((o) => o.ok).map((o) => o.value!);
+  const ok = outcomes.filter((o) => o.ok);
   const errors = outcomes
     .filter((o) => !o.ok)
     .map((o) => ({ file: o.item.path, error: o.error?.message ?? 'unknown error' }));
+  const withDevelop = ok.filter((o) => o.value!.hasDevelop).length;
+  const dim = ok.find((o) => o.value)?.value!.dim ?? 0;
+  const summary = { total: files.length, exported: ok.length, failed: errors.length, withDevelop };
 
-  const withDevelop = exported.filter((r) => Object.keys(r.develop).length > 0).length;
-  const dataset = {
-    command: 'develop-export' as const,
+  // Trailing meta line: dataset-level fields (dim is known only now) + summary.
+  await writeLine({
+    _type: 'develop-meta',
+    command: 'develop-export',
     model: model.name,
-    dim: exported[0]?.embedding.length ?? 0,
+    dim,
     colorFeatureNames: COLOR_FEATURE_NAMES,
     colorDim: COLOR_FEATURE_NAMES.length,
     baseline,
-    results: exported,
-    errors,
-    summary: { total: files.length, exported: exported.length, failed: errors.length, withDevelop },
-  };
-
-  if (options.out) {
-    await mkdir(path.dirname(path.resolve(options.out)), { recursive: true });
-    await writeFile(options.out, JSON.stringify(dataset, null, 2) + '\n', 'utf8');
-    printHuman(io, `Wrote develop dataset to ${options.out}: ${exported.length} images, ${withDevelop} with develop settings (baseline: ${baseline}).`);
-    if (io.json) printJson({ ...dataset, results: [], out: options.out });
-  } else if (io.json) {
-    printJson(dataset);
-  } else {
-    printHuman(io, `${exported.length}/${files.length} exported, ${withDevelop} carry develop settings (baseline: ${baseline}). Use --out to write the dataset.`);
+    summary,
+  });
+  await new Promise<void>((resolve) => stream.end(resolve));
+  if (writeFailed) {
+    markFailure();
+    return;
   }
 
-  if (withDevelop === 0 && exported.length > 0) {
+  printHuman(io, `Wrote develop dataset to ${options.out}: ${ok.length} images, ${withDevelop} with develop settings (baseline: ${baseline}).`);
+  if (io.json) printJson({ command: 'develop-export', model: model.name, dim, colorDim: COLOR_FEATURE_NAMES.length, baseline, out: options.out, summary });
+
+  if (withDevelop === 0 && ok.length > 0) {
     logError('No develop settings found on any file — check that XMP sidecars / crs metadata are present.');
     markFailure();
   }

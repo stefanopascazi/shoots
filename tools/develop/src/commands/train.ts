@@ -1,9 +1,9 @@
 /**
  * `develop train` — fit and export a per-catalog develop profile.
  */
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { train } from '../train/train.js';
-import type { DevelopDataset } from '../types.js';
+import { loadDataset } from '../dataset/load.js';
 
 export interface TrainArgs {
   data: string;
@@ -15,10 +15,7 @@ export interface TrainArgs {
 }
 
 export async function runTrain(args: TrainArgs): Promise<void> {
-  const dataset = JSON.parse(await readFile(args.data, 'utf8')) as DevelopDataset;
-  if (dataset.command !== 'develop-export') {
-    throw new Error(`'${args.data}' is not a develop-export dataset (command: ${String(dataset.command)})`);
-  }
+  const dataset = await loadDataset(args.data);
   const lambda = args.lambda === 'auto' ? undefined : parseFloat(args.lambda);
   if (lambda !== undefined && !Number.isFinite(lambda)) throw new Error(`invalid --lambda '${args.lambda}' (use a number or 'auto')`);
 
