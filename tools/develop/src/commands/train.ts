@@ -9,8 +9,9 @@ export interface TrainArgs {
   data: string;
   name: string;
   out: string;
-  lambda: number;
-  holdout: number;
+  /** 'auto' (cross-validated) or a numeric ridge strength. */
+  lambda: string;
+  folds: number;
 }
 
 export async function runTrain(args: TrainArgs): Promise<void> {
@@ -18,12 +19,16 @@ export async function runTrain(args: TrainArgs): Promise<void> {
   if (dataset.command !== 'develop-export') {
     throw new Error(`'${args.data}' is not a develop-export dataset (command: ${String(dataset.command)})`);
   }
-  const profile = train(dataset, { name: args.name, lambda: args.lambda, holdout: args.holdout });
+  const lambda = args.lambda === 'auto' ? undefined : parseFloat(args.lambda);
+  if (lambda !== undefined && !Number.isFinite(lambda)) throw new Error(`invalid --lambda '${args.lambda}' (use a number or 'auto')`);
+
+  const profile = train(dataset, { name: args.name, lambda, folds: args.folds });
   await writeFile(args.out, JSON.stringify(profile, null, 2) + '\n', 'utf8');
 
   const s = profile.stats;
   process.stderr.write(`\nDevelop profile '${profile.name}' → ${args.out}\n`);
-  process.stderr.write(`  ${s.withDevelop}/${s.samples} images with develop settings, ${s.heldOut} held out\n`);
+  process.stderr.write(`  ${s.withDevelop}/${s.samples} images with develop settings, ${s.heldOut} held out (${args.folds}-fold CV)\n`);
+  process.stderr.write(`  ridge λ: ${profile.ridgeLambda}${lambda === undefined ? ' (auto)' : ''}\n`);
   process.stderr.write(`  image-dependent skill: ${s.imageDependentSkill ?? 'n/a (too little held-out data)'}\n`);
 
   if (s.perParam.length > 0) {

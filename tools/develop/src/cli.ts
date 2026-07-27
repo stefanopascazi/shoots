@@ -23,9 +23,9 @@ program
   .requiredOption('--data <file>', 'dataset.json from `shoots develop-export`')
   .requiredOption('--name <name>', 'profile name')
   .requiredOption('--out <file>', 'output profile JSON path')
-  .option('--lambda <n>', 'ridge regularization strength', (v) => parseFloat(v), 10)
-  .option('--holdout <frac>', 'fraction of images held out for the go/no-go metric', (v) => parseFloat(v), 0.2)
-  .action((opts) => runTrain({ data: opts.data, name: opts.name, out: opts.out, lambda: opts.lambda, holdout: opts.holdout }));
+  .option('--lambda <n>', "ridge strength, or 'auto' to pick by cross-validation", 'auto')
+  .option('--folds <k>', 'cross-validation folds', (v) => parseInt(v, 10), 5)
+  .action((opts) => runTrain({ data: opts.data, name: opts.name, out: opts.out, lambda: opts.lambda, folds: opts.folds }));
 
 program
   .command('predict')

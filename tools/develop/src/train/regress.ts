@@ -2,10 +2,13 @@
  * Multi-output ridge over the develop-setting deltas.
  *
  * Each of the P parameters is its own ridge regression s_p(x) = w_p·x + b_p, but
- * they all share the normal-equation matrix A = XcᵀXc + λI. We build and
- * Cholesky-factor A once, then solve one right-hand side per parameter. Inputs
- * are expected already standardized (zero-ish mean, unit-ish variance) per
- * column; centering here only cleans up residual offsets.
+ * they all share the normal-equation matrix A = XcᵀXc + λI (it depends only on
+ * the features, not on which parameter we predict). We build the centered
+ * cross-products ONCE per training set, then — for each candidate λ — only add
+ * λ to the diagonal and Cholesky-factor. That makes a λ sweep / k-fold CV cheap.
+ *
+ * Inputs are expected already standardized (zero-ish mean, unit-ish variance)
+ * per column; centering here only cleans up residual offsets.
  */
 import { choleskyFactor, solveCholesky, dot } from '../math/linalg.js';
 
@@ -15,7 +18,19 @@ export interface MultiRidgeResult {
   bias: number[];
 }
 
-export function fitMultiRidge(X: number[][], Y: number[][], lambda: number): MultiRidgeResult {
+/** Centered normal equations, reusable across λ values for the same data. */
+export interface NormalEquations {
+  /** XcᵀXc (symmetric, both triangles filled), d×d. */
+  xtx: number[][];
+  /** Xcᵀ·Yc per parameter, p×d. */
+  rhs: Float64Array[];
+  xbar: number[];
+  ybar: number[];
+  d: number;
+  p: number;
+}
+
+export function buildNormalEquations(X: number[][], Y: number[][]): NormalEquations {
   const n = X.length;
   if (n === 0) throw new Error('ridge: empty training set');
   const d = X[0]!.length;
@@ -24,13 +39,11 @@ export function fitMultiRidge(X: number[][], Y: number[][], lambda: number): Mul
   const xbar = new Float64Array(d);
   for (const row of X) for (let j = 0; j < d; j++) xbar[j]! += row[j]!;
   for (let j = 0; j < d; j++) xbar[j]! /= n;
-
   const ybar = new Float64Array(p);
   for (const row of Y) for (let k = 0; k < p; k++) ybar[k]! += row[k]!;
   for (let k = 0; k < p; k++) ybar[k]! /= n;
 
-  // A = XcᵀXc + λI (upper triangle), rhs[k] = Xcᵀ·Yc[:,k].
-  const A: number[][] = Array.from({ length: d }, () => new Array<number>(d).fill(0));
+  const xtx: number[][] = Array.from({ length: d }, () => new Array<number>(d).fill(0));
   const rhs: Float64Array[] = Array.from({ length: p }, () => new Float64Array(d));
   const xc = new Float64Array(d);
   for (let i = 0; i < n; i++) {
@@ -39,7 +52,7 @@ export function fitMultiRidge(X: number[][], Y: number[][], lambda: number): Mul
     for (let a = 0; a < d; a++) xc[a] = xr[a]! - xbar[a]!;
     for (let a = 0; a < d; a++) {
       const xa = xc[a]!;
-      const Aa = A[a]!;
+      const Aa = xtx[a]!;
       for (let b = a; b < d; b++) Aa[b]! += xa * xc[b]!;
     }
     for (let k = 0; k < p; k++) {
@@ -48,21 +61,32 @@ export function fitMultiRidge(X: number[][], Y: number[][], lambda: number): Mul
       for (let a = 0; a < d; a++) rk[a]! += xc[a]! * yc;
     }
   }
-  for (let a = 0; a < d; a++) {
-    A[a]![a]! += lambda;
-    for (let b = a + 1; b < d; b++) A[b]![a]! = A[a]![b]!;
-  }
+  // Mirror the upper triangle into the lower one.
+  for (let a = 0; a < d; a++) for (let b = a + 1; b < d; b++) xtx[b]![a]! = xtx[a]![b]!;
 
+  return { xtx, rhs, xbar: Array.from(xbar), ybar: Array.from(ybar), d, p };
+}
+
+/** Solve the ridge head for a given λ, reusing prebuilt normal equations. */
+export function solveRidge(ne: NormalEquations, lambda: number): MultiRidgeResult {
+  const { xtx, rhs, xbar, ybar, d, p } = ne;
+  // A = XtX + λI (copy so ne stays reusable across λ).
+  const A: number[][] = xtx.map((row) => row.slice());
+  for (let a = 0; a < d; a++) A[a]![a]! += lambda;
   const L = choleskyFactor(A);
+
   const weights: number[][] = [];
   const bias: number[] = [];
-  const xbarArr = Array.from(xbar);
   for (let k = 0; k < p; k++) {
     const w = solveCholesky(L, Array.from(rhs[k]!));
     weights.push(w);
-    bias.push(ybar[k]! - dot(w, xbarArr));
+    bias.push(ybar[k]! - dot(w, xbar));
   }
   return { weights, bias };
+}
+
+export function fitMultiRidge(X: number[][], Y: number[][], lambda: number): MultiRidgeResult {
+  return solveRidge(buildNormalEquations(X, Y), lambda);
 }
 
 /** Predict the P standardized outputs for one standardized feature vector. */
