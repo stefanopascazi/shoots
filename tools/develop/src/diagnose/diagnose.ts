@@ -14,14 +14,15 @@
  * *execution* gain from the separate *routing* problem (predicting the style from
  * content / a human pick), which this diagnostic does not attempt.
  */
-import { DEVELOP_PARAMS, PARAM_COUNT, decodeDelta, type AsShotMeta } from '../develop/schema.js';
-import { assembleFeatures, targetDeltas, actualAbs } from '../develop/assemble.js';
+import { DEVELOP_PARAMS, decodeDelta, type AsShotMeta } from '../develop/schema.js';
+import { assembleFeatures, targetDeltas, actualAbsVec } from '../develop/assemble.js';
 import { buildNormalEquations, solveRidge, predictStd } from '../train/regress.js';
 import { kmeans } from './kmeans.js';
 import type { DevelopDataset } from '../types.js';
 
 const GRID = [300, 1000, 3000, 10000, 30000];
 const EPS = 1e-6;
+const PARAM_COUNT = DEVELOP_PARAMS.length;
 /** Emphasize the B&W treatment in clustering — it is a dominant style axis. */
 const BW_KEY = 'ConvertToGrayscale';
 const BW_WEIGHT = 3;
@@ -92,8 +93,8 @@ function buildRows(dataset: DevelopDataset): DRow[] {
     if (Object.keys(r.develop).length === 0) continue; // edited only
     rows.push({
       x: assembleFeatures(r.embedding, r.features, r.asShot),
-      deltas: targetDeltas(r.develop, r.asShot),
-      abs: DEVELOP_PARAMS.map((_, i) => actualAbs(i, r.develop, r.asShot)),
+      deltas: targetDeltas(DEVELOP_PARAMS, r.develop, r.asShot),
+      abs: actualAbsVec(DEVELOP_PARAMS, r.develop, r.asShot),
       meta: r.asShot,
       develop: r.develop,
       curve: r.curve,

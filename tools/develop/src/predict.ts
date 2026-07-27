@@ -1,20 +1,19 @@
 /**
- * Inference: a trained DevelopProfile + a new image's develop-export record →
- * the predicted develop-setting vector (absolute crs values). Deltas are
- * predicted in standardized space, de-standardized, then decoded back to
- * absolute ACR units and clamped to valid ranges.
+ * Inference: a trained (branched) DevelopProfile + a new image's develop-export
+ * record → the predicted develop-setting vector (absolute crs values) for the
+ * chosen treatment (colour or B&W). Deltas are predicted in standardized space,
+ * de-standardized, decoded to absolute ACR units and clamped.
  */
-import { DEVELOP_PARAMS, PARAM_COUNT, SCHEMA_VERSION, decodeDelta } from './develop/schema.js';
+import { SCHEMA_VERSION, decodeDelta, paramsForTreatment, type Treatment } from './develop/schema.js';
 import { assembleFeatures } from './develop/assemble.js';
 import type { DevelopExportResult, DevelopProfile } from './types.js';
 
 export interface Prediction {
   file: string;
-  /** Predicted absolute crs develop values, keyed by tag. */
+  treatment: Treatment;
   develop: Record<string, number>;
 }
 
-/** Throw a clear error if a profile cannot be applied to a dataset/record. */
 export function assertApplicable(profile: DevelopProfile, model: string, embeddingDim: number, colorDim: number): void {
   if (profile.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(`profile schema v${profile.schemaVersion} != tool schema v${SCHEMA_VERSION}; retrain`);
@@ -30,20 +29,32 @@ export function assertApplicable(profile: DevelopProfile, model: string, embeddi
   }
 }
 
-export function predictOne(profile: DevelopProfile, result: DevelopExportResult): Prediction {
+/** Resolve which treatment branch to apply for a record. */
+export function resolveTreatment(profile: DevelopProfile, result: DevelopExportResult, requested: Treatment | 'auto'): Treatment {
+  const want: Treatment = requested === 'auto' ? (result.treatment ?? 'color') : requested;
+  if (profile.branches[want]) return want;
+  // Fall back to whichever branch the profile actually has.
+  const available = (['color', 'bw'] as const).find((t) => profile.branches[t]);
+  if (!available) throw new Error('profile has no trained branch');
+  return available;
+}
+
+export function predictOne(profile: DevelopProfile, result: DevelopExportResult, treatment: Treatment): Prediction {
+  const branch = profile.branches[treatment];
+  if (!branch) throw new Error(`profile has no '${treatment}' branch`);
+  const params = paramsForTreatment(treatment);
   const meta = result.asShot;
   const x = assembleFeatures(result.embedding, result.features, meta);
   const develop: Record<string, number> = {};
-  for (let k = 0; k < PARAM_COUNT; k++) {
-    const param = DEVELOP_PARAMS[k]!;
-    let xStdDot = profile.bias[k]!;
-    const w = profile.weights[k]!;
+  for (let k = 0; k < params.length; k++) {
+    const param = params[k]!;
+    let dot = branch.bias[k]!;
+    const w = branch.weights[k]!;
     for (let j = 0; j < x.length; j++) {
-      xStdDot += w[j]! * ((x[j]! - profile.featureMean[j]!) / profile.featureStd[j]!);
+      dot += w[j]! * ((x[j]! - branch.featureMean[j]!) / branch.featureStd[j]!);
     }
-    const delta = xStdDot * profile.deltaStd[k]! + profile.deltaMean[k]!;
-    const abs = decodeDelta(param, delta, meta);
-    develop[param.key] = Math.round(abs * 1e4) / 1e4;
+    const delta = dot * branch.deltaStd[k]! + branch.deltaMean[k]!;
+    develop[param.key] = Math.round(decodeDelta(param, delta, meta) * 1e4) / 1e4;
   }
-  return { file: result.file, develop };
+  return { file: result.file, treatment, develop };
 }

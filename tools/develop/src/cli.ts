@@ -33,9 +33,10 @@ program
   .description('Apply a develop profile to a new develop-export dataset')
   .requiredOption('--data <file>', 'dataset.json from `shoots develop-export` (the new set)')
   .requiredOption('--profile <file>', 'develop profile JSON from `develop train`')
+  .option('--treatment <t>', 'which branch to apply: auto | color | bw', 'auto')
   .option('--out <file>', 'write predictions JSON here (default: stdout)')
   .option('--xmp <dir>', 'also write a Lightroom-readable .xmp sidecar per image into this dir')
-  .action((opts) => runPredict({ data: opts.data, profile: opts.profile, out: opts.out, xmp: opts.xmp }));
+  .action((opts) => runPredict({ data: opts.data, profile: opts.profile, treatment: opts.treatment, out: opts.out, xmp: opts.xmp }));
 
 program
   .command('diagnose')

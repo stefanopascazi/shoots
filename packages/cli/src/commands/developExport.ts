@@ -58,20 +58,34 @@ import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
  * tool's schema; extra/missing tags are harmless (the tool ignores unknowns and
  * treats absent params as neutral).
  */
+const CHANNELS = ['Red', 'Orange', 'Yellow', 'Green', 'Aqua', 'Blue', 'Purple', 'Magenta'] as const;
 const CRS_TARGET_TAGS: string[] = [
+  // Tone / presence / WB.
   'Exposure2012', 'Contrast2012', 'Highlights2012', 'Shadows2012', 'Whites2012', 'Blacks2012',
   'Texture', 'Clarity2012', 'Dehaze', 'Vibrance', 'Saturation',
   'Temperature', 'Tint',
-  ...(['HueAdjustment', 'SaturationAdjustment', 'LuminanceAdjustment'] as const).flatMap((a) =>
-    ['Red', 'Orange', 'Yellow', 'Green', 'Aqua', 'Blue', 'Purple', 'Magenta'].map((c) => `${a}${c}`),
-  ),
-  'ColorGradeShadowHue', 'ColorGradeShadowSat', 'ColorGradeShadowLum',
-  'ColorGradeMidtoneHue', 'ColorGradeMidtoneSat', 'ColorGradeMidtoneLum',
-  'ColorGradeHighlightHue', 'ColorGradeHighlightSat', 'ColorGradeHighlightLum',
-  'ColorGradeBlending', 'SplitToningBalance',
+  // Parametric tone curve (+ its split points).
   'ParametricHighlights', 'ParametricLights', 'ParametricDarks', 'ParametricShadows',
-  // Not a regression target (the develop schema ignores it), but a dominant STYLE
-  // axis for the clustering diagnostic: black-and-white vs colour treatment.
+  'ParametricShadowSplit', 'ParametricMidtoneSplit', 'ParametricHighlightSplit',
+  // Colour HSL (8×3) and the B&W mixer (8) — mutually exclusive by treatment.
+  ...(['HueAdjustment', 'SaturationAdjustment', 'LuminanceAdjustment'] as const).flatMap((a) => CHANNELS.map((c) => `${a}${c}`)),
+  ...CHANNELS.map((c) => `GrayMixer${c}`),
+  // Colour grading (shadow/mid/highlight/global × H/S/L) + blending + balance.
+  ...(['Shadow', 'Midtone', 'Highlight', 'Global'] as const).flatMap((r) => [`ColorGrade${r}Hue`, `ColorGrade${r}Sat`, `ColorGrade${r}Lum`]),
+  'ColorGradeBlending', 'SplitToningBalance',
+  // Legacy split toning.
+  'SplitToningShadowHue', 'SplitToningShadowSaturation', 'SplitToningHighlightHue', 'SplitToningHighlightSaturation',
+  // Camera calibration.
+  'ShadowTint', 'RedHue', 'RedSaturation', 'GreenHue', 'GreenSaturation', 'BlueHue', 'BlueSaturation',
+  // Effects (vignette + grain).
+  'PostCropVignetteAmount', 'PostCropVignetteMidpoint', 'PostCropVignetteFeather', 'PostCropVignetteRoundness',
+  'GrainAmount', 'GrainSize', 'GrainFrequency', 'VignetteAmount',
+  // Detail — captured for completeness but NOT prediction targets (finishing, not
+  // the starting point): sharpening + noise reduction.
+  'Sharpness', 'SharpenRadius', 'SharpenDetail', 'SharpenEdgeMasking',
+  'LuminanceSmoothing', 'LuminanceNoiseReductionDetail', 'LuminanceNoiseReductionContrast',
+  'ColorNoiseReduction', 'ColorNoiseReductionDetail', 'ColorNoiseReductionSmoothness',
+  // Treatment flag (B&W vs colour) — routing, captured as 1/0.
   'ConvertToGrayscale',
 ];
 
@@ -121,9 +135,20 @@ interface DatasetRecord {
   features: number[];
   develop: Record<string, number>;
   asShot: AsShot;
+  /** Black-and-white vs colour, read deterministically off the edit (HSL ↔ GrayMixer). */
+  treatment: 'color' | 'bw';
+  /** Base rendering profile (crs CameraProfile), e.g. "Camera Faithful v2". */
+  baseProfile?: string;
   /** Flattened point tone-curve [x0,y0,x1,y1,…] (ToneCurvePV2012) — the contrast
    *  / black-clipping vehicle, absent when the curve is linear/default. */
   curve?: number[];
+}
+
+/** Deterministic B&W vs colour from the edit structure. */
+function deriveTreatment(develop: Record<string, number>): 'color' | 'bw' {
+  if (develop['ConvertToGrayscale'] === 1) return 'bw';
+  if (Object.keys(develop).some((k) => k.startsWith('GrayMixer'))) return 'bw';
+  return 'color';
 }
 
 export function registerDevelopExportCommand(program: Command): void {
@@ -248,7 +273,7 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
   // decide which are edited. crs comes from the sidecar (or embedded, for DNG/JPEG).
   const developSrcByFile = new Map(files.map((f) => [f.path, developSource(f.path)] as const));
   const crsPaths = [...new Set(developSrcByFile.values())];
-  const crsTagArgs = [...CRS_TARGET_TAGS.map((t) => `XMP-crs:${t}`), 'XMP-crs:WhiteBalance', 'XMP-crs:ToneCurvePV2012'];
+  const crsTagArgs = [...CRS_TARGET_TAGS.map((t) => `XMP-crs:${t}`), 'XMP-crs:WhiteBalance', 'XMP-crs:ToneCurvePV2012', 'XMP-crs:CameraProfile'];
   const crsRecords = await readMetadata(crsPaths, { tags: crsTagArgs });
   const crsByPath = new Map<string, ExifRecord>();
   for (const rec of crsRecords) crsByPath.set(path.resolve(rec.SourceFile), rec);
@@ -311,12 +336,15 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
       const exifRec = exifByPath.get(path.resolve(file.path));
       const develop = readDevelop(crsRec);
       const curve = readCurve(crsRec);
+      const baseProfile = typeof crsRec?.['CameraProfile'] === 'string' ? (crsRec['CameraProfile'] as string) : undefined;
       const record: DatasetRecord = {
         file: file.path,
         embedding: assessment.embedding.map(round5),
         features: color.vector,
         develop,
         asShot: readAsShot(crsRec, exifRec),
+        treatment: deriveTreatment(develop),
+        ...(baseProfile ? { baseProfile } : {}),
         ...(curve ? { curve } : {}),
       };
       await writeLine(record);

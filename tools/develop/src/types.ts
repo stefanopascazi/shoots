@@ -2,11 +2,12 @@
  * Shared types for the develop tool.
  *
  * It never touches CLIP/onnx: it consumes the dataset emitted by
- * `shoots develop-export` (CLIP embedding + explicit color features + crs
- * develop targets + as-shot metadata), fits a multi-output ridge over the
- * develop-setting deltas, and exports a per-catalog develop profile.
+ * `shoots develop-export` (CLIP embedding + explicit color features + crs develop
+ * targets + as-shot metadata + treatment/profile), fits ONE ridge model per
+ * treatment (colour / B&W) over that treatment's shared+branch parameters, and
+ * exports a branched per-catalog develop profile.
  */
-import type { AsShotMeta } from './develop/schema.js';
+import type { AsShotMeta, Treatment } from './develop/schema.js';
 
 /** One image record inside a `shoots develop-export` dataset. */
 export interface DevelopExportResult {
@@ -16,6 +17,10 @@ export interface DevelopExportResult {
   /** Raw absolute crs develop values actually present (absent ⇒ ACR default). */
   develop: Record<string, number>;
   asShot: AsShotMeta;
+  /** Black-and-white vs colour, read deterministically off the edit. */
+  treatment?: Treatment;
+  /** Base rendering profile (crs CameraProfile), e.g. "Camera Faithful v2". */
+  baseProfile?: string;
   /** Flattened point tone-curve [x0,y0,x1,y1,…] (ToneCurvePV2012); absent if linear. */
   curve?: number[];
   /** Present only in the legacy per-record format; the baseline lives on the dataset. */
@@ -38,39 +43,20 @@ export interface DevelopDataset {
 export interface ParamEval {
   key: string;
   group: string;
+  branch: string;
   weight: number;
-  /** Held-out mean-absolute-error in the parameter's native ACR units. */
   modelMae: number;
-  /** MAE of the naive "apply my average edit" baseline (photographer mean). */
   baselineMae: number;
-  /** Skill score 1 − modelMae/baselineMae; >0 means the model beats the mean. */
   skill: number;
 }
 
-/**
- * The deliverable: everything needed to turn a new image's (embedding, color
- * features, as-shot metadata) into a full develop-setting vector. Standardization
- * stats are stored so inference can invert them; the schema version + dims guard
- * applicability, exactly like the linear-embedding rating profile guards its
- * embedding space.
- */
-export interface DevelopProfile {
-  name: string;
-  description: string;
-  type: 'develop-linear';
-  schemaVersion: number;
-  /** Must match the scoring backend's model name to be applicable. */
-  embeddingModel: string;
-  /** CLIP embedding dim. */
-  embeddingDim: number;
-  /** Explicit color-feature dim (and their names, for interpretability). */
-  colorDim: number;
-  colorFeatureNames: string[];
-  baseline: string;
-  ridgeLambda: number;
-  /** Ordered crs param keys this profile predicts (mirrors the schema order). */
+/** A trained model for one treatment (colour or B&W), over shared+branch params. */
+export interface BranchModel {
+  treatment: Treatment;
+  /** Ordered crs param keys this branch predicts (shared + branch). */
   params: string[];
-  /** Per-feature standardization of the input X (length embeddingDim+colorDim). */
+  ridgeLambda: number;
+  /** Per-feature standardization of the input X (length embeddingDim+colorDim+3). */
   featureMean: number[];
   featureStd: number[];
   /** Per-parameter standardization of the target DELTA (length = params.length). */
@@ -79,13 +65,32 @@ export interface DevelopProfile {
   /** Head weights: P rows × D cols, over the standardized feature space. */
   weights: number[][];
   bias: number[];
+  samples: number;
+  heldOut: number;
+  imageDependentSkill: number | null;
+  perParam: ParamEval[];
+}
+
+/**
+ * The deliverable: one {@link BranchModel} per treatment present in the catalog,
+ * plus the guards (schema version + dims + embedding model) that gate
+ * applicability, exactly like the linear-embedding rating profile.
+ */
+export interface DevelopProfile {
+  name: string;
+  description: string;
+  type: 'develop-branched';
+  schemaVersion: number;
+  embeddingModel: string;
+  embeddingDim: number;
+  colorDim: number;
+  colorFeatureNames: string[];
+  baseline: string;
+  branches: Partial<Record<Treatment, BranchModel>>;
   trainedAt: string;
   stats: {
-    samples: number;
-    withDevelop: number;
-    heldOut: number;
-    /** Weighted-mean skill over image-dependent params — the headline GATE number. */
-    imageDependentSkill: number | null;
-    perParam: ParamEval[];
+    edited: number;
+    color: number;
+    bw: number;
   };
 }

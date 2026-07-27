@@ -22,23 +22,22 @@ export async function runTrain(args: TrainArgs): Promise<void> {
   const profile = train(dataset, { name: args.name, lambda, folds: args.folds });
   await writeFile(args.out, JSON.stringify(profile, null, 2) + '\n', 'utf8');
 
-  const s = profile.stats;
-  process.stderr.write(`\nDevelop profile '${profile.name}' → ${args.out}\n`);
-  process.stderr.write(`  ${s.withDevelop}/${s.samples} images with develop settings, ${s.heldOut} held out (${args.folds}-fold CV)\n`);
-  process.stderr.write(`  ridge λ: ${profile.ridgeLambda}${lambda === undefined ? ' (auto)' : ''}\n`);
-  process.stderr.write(`  image-dependent skill: ${s.imageDependentSkill ?? 'n/a (too little held-out data)'}\n`);
+  const w = process.stderr;
+  w.write(`\nDevelop profile '${profile.name}' → ${args.out}\n`);
+  w.write(`  ${profile.stats.edited} edited images: ${profile.stats.color} colour + ${profile.stats.bw} B&W (${args.folds}-fold CV)\n`);
 
-  if (s.perParam.length > 0) {
-    // Show the image-dependent params, best skill first — the go/no-go evidence.
-    const rows = s.perParam
-      .filter((p) => p.weight >= 1.5)
-      .sort((a, b) => b.skill - a.skill);
-    process.stderr.write('\n  param                model MAE   baseline MAE   skill\n');
-    for (const p of rows) {
-      process.stderr.write(
-        `  ${p.key.padEnd(20)} ${p.modelMae.toFixed(3).padStart(9)} ${p.baselineMae.toFixed(3).padStart(14)} ${(p.skill * 100).toFixed(1).padStart(7)}%\n`,
-      );
+  for (const treatment of ['color', 'bw'] as const) {
+    const b = profile.branches[treatment];
+    if (!b) continue;
+    w.write(`\n  ── ${treatment.toUpperCase()} branch — ${b.samples} images, λ=${b.ridgeLambda}${lambda === undefined ? ' (auto)' : ''} ──\n`);
+    w.write(`  image-dependent skill: ${b.imageDependentSkill ?? 'n/a (too little data)'}\n`);
+    const rows = b.perParam.filter((p) => p.weight >= 1.5 && p.baselineMae > 1e-6).sort((a, b2) => b2.skill - a.skill);
+    if (rows.length > 0) {
+      w.write('  param                model MAE   baseline MAE   skill\n');
+      for (const p of rows) {
+        w.write(`  ${p.key.padEnd(20)} ${p.modelMae.toFixed(3).padStart(9)} ${p.baselineMae.toFixed(3).padStart(14)} ${(p.skill * 100).toFixed(1).padStart(7)}%\n`);
+      }
     }
-    process.stderr.write('\n  skill > 0 means the model beats "apply my average edit".\n');
   }
+  w.write('\n  skill > 0 means the model beats "apply my average edit".\n');
 }
