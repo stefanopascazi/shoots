@@ -23,6 +23,7 @@
  * caveat; `virtual-copy` / `external-developer` are future strategies.
  */
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
@@ -68,6 +69,18 @@ const CRS_TARGET_TAGS: string[] = [
 
 /** As-shot / capture metadata tags (EXIF), read edit-independently from the RAW. */
 const META_TAGS = ['ColorTemperature', 'ISO', 'ExposureCompensation', 'Model'] as const;
+
+/**
+ * Where a file's develop settings live. For proprietary RAW (CR3, NEF, ARW…)
+ * Lightroom writes a `<basename>.xmp` sidecar; exiftool does NOT merge it when
+ * reading the RAW, so we must point it at the sidecar. DNG/JPEG embed the crs
+ * settings, so those fall back to the file itself.
+ */
+function developSource(file: string): string {
+  const parsed = path.parse(file);
+  const sidecar = path.join(parsed.dir, `${parsed.name}.xmp`);
+  return existsSync(sidecar) ? sidecar : file;
+}
 
 const BASELINES = ['embedded-preview'] as const;
 type Baseline = (typeof BASELINES)[number];
@@ -133,13 +146,21 @@ function readDevelop(record: ExifRecord | undefined): Record<string, number> {
   return out;
 }
 
-function readAsShot(record: ExifRecord | undefined): AsShot {
+function readAsShot(crs: ExifRecord | undefined, exif: ExifRecord | undefined): AsShot {
+  const wb = typeof crs?.['WhiteBalance'] === 'string' ? (crs['WhiteBalance'] as string) : null;
+  const chosenTemp = num(crs?.['Temperature']);
+  const exifTemp = num(exif?.['ColorTemperature']);
+  // As-shot Kelvin reference for the WB delta. If the photographer left WB
+  // "As Shot", the chosen temp IS the as-shot temp (delta 0). If they changed it,
+  // anchor on the RAW's EXIF color temperature; fall back to the chosen value
+  // (delta 0) when no edit-independent anchor exists.
+  const tempAsShot = !wb || wb === 'As Shot' ? (chosenTemp ?? exifTemp) : (exifTemp ?? chosenTemp);
   return {
-    tempAsShot: num(record?.['ColorTemperature']),
+    tempAsShot,
     tintAsShot: null, // no clean edit-independent Kelvin tint source; delta falls back to 0
-    iso: num(record?.['ISO']),
-    exposureComp: num(record?.['ExposureCompensation']),
-    camera: typeof record?.['Model'] === 'string' ? (record['Model'] as string) : null,
+    iso: num(exif?.['ISO']),
+    exposureComp: num(exif?.['ExposureCompensation']),
+    camera: typeof exif?.['Model'] === 'string' ? (exif['Model'] as string) : null,
   };
 }
 
@@ -173,12 +194,20 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
   if (!(await ensureExiftoolReady(io))) return;
   if (!(await ensureClipModelReady(io))) return;
 
-  // One batched metadata read for the whole set (crs targets + as-shot EXIF),
-  // keyed by SourceFile so per-file jobs are a pure map lookup.
-  const metaTagArgs = [...CRS_TARGET_TAGS.map((t) => `XMP-crs:${t}`), ...META_TAGS];
-  const records = await readMetadata(files.map((f) => f.path), { tags: metaTagArgs });
-  const byFile = new Map<string, ExifRecord>();
-  for (const rec of records) byFile.set(path.resolve(rec.SourceFile), rec);
+  // Two batched metadata reads, keyed by resolved path so per-file jobs are pure
+  // map lookups. crs develop targets come from the sidecar (or embedded, for
+  // DNG/JPEG); as-shot EXIF always from the image file itself.
+  const developSrcByFile = new Map(files.map((f) => [f.path, developSource(f.path)] as const));
+  const crsPaths = [...new Set(developSrcByFile.values())];
+  const crsTagArgs = [...CRS_TARGET_TAGS.map((t) => `XMP-crs:${t}`), 'XMP-crs:WhiteBalance'];
+  const [crsRecords, exifRecords] = await Promise.all([
+    readMetadata(crsPaths, { tags: crsTagArgs }),
+    readMetadata(files.map((f) => f.path), { tags: [...META_TAGS] }),
+  ]);
+  const crsByPath = new Map<string, ExifRecord>();
+  for (const rec of crsRecords) crsByPath.set(path.resolve(rec.SourceFile), rec);
+  const exifByPath = new Map<string, ExifRecord>();
+  for (const rec of exifRecords) exifByPath.set(path.resolve(rec.SourceFile), rec);
 
   await model.init();
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
@@ -193,13 +222,14 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
       ]);
       if (!assessment.embedding) throw new Error('backend produced no embedding (unsupported model?)');
 
-      const record = byFile.get(path.resolve(file.path));
+      const crsRec = crsByPath.get(path.resolve(developSrcByFile.get(file.path)!));
+      const exifRec = exifByPath.get(path.resolve(file.path));
       return {
         file: file.path,
         embedding: assessment.embedding,
         features: color.vector,
-        develop: readDevelop(record),
-        asShot: readAsShot(record),
+        develop: readDevelop(crsRec),
+        asShot: readAsShot(crsRec, exifRec),
         baseline,
       };
     },
