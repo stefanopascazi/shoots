@@ -27,7 +27,8 @@ import { existsSync } from 'node:fs';
 import { writeFile, mkdir } from 'node:fs/promises';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
-import { extractColorFeatures, COLOR_FEATURE_NAMES, readMetadata, type ExifRecord } from '@shoots/imaging';
+import { extractColorFeatures, COLOR_FEATURE_NAMES, readMetadata, isRawFile, type ExifRecord } from '@shoots/imaging';
+import { resolveRawDeveloper, withNeutralRender, type RawDeveloper } from '../rawDeveloper.js';
 import {
   createQualityModel,
   getProfile,
@@ -82,7 +83,7 @@ function developSource(file: string): string {
   return existsSync(sidecar) ? sidecar : file;
 }
 
-const BASELINES = ['embedded-preview'] as const;
+const BASELINES = ['embedded-preview', 'external'] as const;
 type Baseline = (typeof BASELINES)[number];
 
 interface DevelopExportOptions {
@@ -180,6 +181,21 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
   }
   const baseline = options.baseline as Baseline;
 
+  // The external neutral baseline needs a configured RAW developer (see
+  // rawDeveloper.ts). Resolve it up front so we fail fast, not 700 files in.
+  let developer: RawDeveloper | null = null;
+  if (baseline === 'external') {
+    developer = resolveRawDeveloper();
+    if (!developer) {
+      logError(
+        'baseline "external" needs a RAW developer: set SHOOTS_RAW_DEVELOPER to the binary ' +
+          '(e.g. dcraw_emu / rawtherapee-cli), optionally SHOOTS_RAW_DEVELOPER_ARGS to override the neutral args.',
+      );
+      process.exitCode = 2;
+      return;
+    }
+  }
+
   const profile = getProfile(DEFAULT_PROFILE_NAME)!;
   const model = createQualityModel(options.model as ModelKind, { profile });
 
@@ -216,10 +232,13 @@ async function runDevelopExport(targetPath: string, options: DevelopExportOption
   const outcomes = await queue.run(
     files,
     async (file): Promise<DevelopExportResult> => {
-      const [assessment, color] = await Promise.all([
-        model.assess({ path: file.path }),
-        extractColorFeatures(file.path),
-      ]);
+      // CLIP stays on the embedded preview (semantic, colour-invariant); only the
+      // photometric color features move to the neutral render when requested.
+      const colorTask =
+        developer && isRawFile(file.path)
+          ? withNeutralRender(developer, file.path, (rendered) => extractColorFeatures(rendered))
+          : extractColorFeatures(file.path);
+      const [assessment, color] = await Promise.all([model.assess({ path: file.path }), colorTask]);
       if (!assessment.embedding) throw new Error('backend produced no embedding (unsupported model?)');
 
       const crsRec = crsByPath.get(path.resolve(developSrcByFile.get(file.path)!));
