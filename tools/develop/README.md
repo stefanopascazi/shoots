@@ -16,16 +16,17 @@ runtime dependency is `commander` (MIT).
 ## Pipeline
 
 ```
-# 1. In the Shoots CLI — build the training dataset from an edited catalog
-#    (RAW/edited images carrying crs develop settings in their XMP):
-shoots develop-export <edited-catalog> --out train.json
+# 1. In the Shoots CLI — build the training dataset from an edited catalog.
+#    --edited-only reads crs from the (cheap) sidecars first and runs the
+#    expensive work only on files that actually carry develop settings:
+shoots develop-export <edited-catalog> --edited-only --out train.jsonl
 
-# 2. Fit the per-catalog develop profile (prints the go/no-go evidence):
-develop train --data train.json --name my-style --out profiles/my-style.json
+# 2. Fit the per-catalog develop profile (prints the go/no-go evidence per branch):
+develop train --data train.jsonl --name my-style --out profiles/my-style.json
 
-# 3. Export a NEW set the same way, then predict its develop settings:
-shoots develop-export <new-shoot> --out new.json
-develop predict --data new.json --profile profiles/my-style.json --xmp out-xmp/
+# 3. Export a NEW set, then predict — pick the treatment (colour/B&W) or auto:
+shoots develop-export <new-shoot> --out new.jsonl
+develop predict --data new.jsonl --profile profiles/my-style.json --treatment color --xmp out-xmp/
 ```
 
 `predict --xmp` drops a Lightroom-readable `.xmp` sidecar next to each image — a
@@ -34,11 +35,25 @@ the official SDK; the sidecar is the CLI-only path.)
 
 ## What it predicts
 
-An Adobe Camera Raw (process 2012) develop vector — tone (exposure, contrast,
-highlights/shadows/whites/blacks), presence (texture/clarity/dehaze/vibrance/
-saturation), white balance (temp/tint), the 24 HSL adjustments, color grading, and
-the parametric tone curve. See `src/develop/schema.ts` for the exact list, ranges
-and per-parameter loss weights.
+The **starting-point global look**, as an Adobe Camera Raw (process 2012) develop
+vector, split into two branches by treatment (deterministic from the edit —
+black-and-white uses the GrayMixer, colour uses HSL; they are mutually exclusive):
+
+- **shared** (every photo): tone (exposure, contrast, highlights/shadows/whites/
+  blacks), presence (texture/clarity/dehaze), white balance, the parametric tone
+  curve, camera calibration, vignette/grain.
+- **colour** only: vibrance/saturation, the 24 HSL adjustments, colour grading
+  (shadow/mid/highlight/global) and split toning.
+- **B&W** only: the 8-channel grayscale mixer.
+
+One ridge model is trained per treatment over `shared + <branch>`, so a
+high-contrast B&W edit and a light colour edit never average into a mush. See
+`src/develop/schema.ts` for the exact list, ranges, branches and loss weights.
+
+The full edit is *captured* (incl. sharpening / noise reduction and the base
+`CameraProfile`) but only the look above is *predicted* — the goal is the best
+starting point to refine, not the finished edit. Sharpening/noise are finishing,
+not starting point, so they are recorded in the dataset but not learned as targets.
 
 Two decisions are baked into the model:
 
