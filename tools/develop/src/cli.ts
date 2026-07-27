@@ -10,6 +10,7 @@
 import { Command } from 'commander';
 import { runTrain } from './commands/train.js';
 import { runPredict } from './commands/predict.js';
+import { runDiagnose } from './commands/diagnose.js';
 
 const program = new Command();
 program
@@ -35,6 +36,14 @@ program
   .option('--out <file>', 'write predictions JSON here (default: stdout)')
   .option('--xmp <dir>', 'also write a Lightroom-readable .xmp sidecar per image into this dir')
   .action((opts) => runPredict({ data: opts.data, profile: opts.profile, out: opts.out, xmp: opts.xmp }));
+
+program
+  .command('diagnose')
+  .description('Style-clustering diagnostic: pooled vs per-style (clustered) prediction skill')
+  .requiredOption('--data <file>', 'dataset from `shoots develop-export`')
+  .option('--folds <k>', 'cross-validation folds', (v) => parseInt(v, 10), 5)
+  .option('--max-k <k>', 'max number of style clusters to try', (v) => parseInt(v, 10), 4)
+  .action((opts) => runDiagnose({ data: opts.data, folds: opts.folds, maxK: opts.maxK }));
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   process.stderr.write(`error: ${err instanceof Error ? err.message : String(err)}\n`);

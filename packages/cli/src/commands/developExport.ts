@@ -70,7 +70,13 @@ const CRS_TARGET_TAGS: string[] = [
   'ColorGradeHighlightHue', 'ColorGradeHighlightSat', 'ColorGradeHighlightLum',
   'ColorGradeBlending', 'SplitToningBalance',
   'ParametricHighlights', 'ParametricLights', 'ParametricDarks', 'ParametricShadows',
+  // Not a regression target (the develop schema ignores it), but a dominant STYLE
+  // axis for the clustering diagnostic: black-and-white vs colour treatment.
+  'ConvertToGrayscale',
 ];
+
+/** crs boolean tags exiftool returns as "True"/"False" — captured as 1/0. */
+const CRS_BOOL_TAGS = new Set(['ConvertToGrayscale']);
 
 /** As-shot / capture metadata tags (EXIF), read edit-independently from the RAW. */
 const META_TAGS = ['ColorTemperature', 'ISO', 'ExposureCompensation', 'Model'] as const;
@@ -145,7 +151,13 @@ function readDevelop(record: ExifRecord | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   if (!record) return out;
   for (const tag of CRS_TARGET_TAGS) {
-    const n = num(record[tag]);
+    const raw = record[tag];
+    if (CRS_BOOL_TAGS.has(tag)) {
+      if (raw === true || raw === 'True') out[tag] = 1;
+      else if (raw === false || raw === 'False') out[tag] = 0;
+      continue;
+    }
+    const n = num(raw);
     if (n !== null) out[tag] = n;
   }
   return out;
