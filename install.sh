@@ -26,6 +26,13 @@ case "$arch" in
   *) err "unsupported architecture '$arch'" ;;
 esac
 
+# Intel macOS is intentionally not built (no reliable Intel CI runner; the Bun
+# binary embeds per-arch native addons, so no universal/cross build). Fail early
+# with a clear reason rather than a confusing "download failed".
+if [ "$plat" = darwin ] && [ "$cpu" = x64 ]; then
+  err "Intel macOS (darwin-x64) is not supported — shoots ships an Apple Silicon (arm64) build only"
+fi
+
 target="${plat}-${cpu}"
 asset="shoots-${target}"
 base="https://github.com/${REPO}/releases/latest/download"

@@ -48,7 +48,8 @@ function currentTarget(): string | null {
     'win32/x64': 'windows-x64',
     'linux/x64': 'linux-x64',
     'linux/arm64': 'linux-arm64',
-    'darwin/x64': 'darwin-x64',
+    // Intel macOS (darwin/x64) is intentionally not built — no reliable Intel CI
+    // runner; the Bun binary embeds per-arch native addons (no universal build).
     'darwin/arm64': 'darwin-arm64',
   };
   return map[key] ?? null;
