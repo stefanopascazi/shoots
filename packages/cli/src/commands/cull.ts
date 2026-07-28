@@ -23,6 +23,7 @@ import {
   logVerbose,
   makeIo,
   markFailure,
+  oneLine,
   parsePositiveInt,
   printHuman,
   printJson,
@@ -265,7 +266,7 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     }
   }
 
-  for (const e of errors) logError(`${e.file}: ${e.error}`);
+  for (const e of errors) logError(`${e.file}: ${oneLine(e.error)}`);
   if (errors.length > 0) markFailure();
 }
 

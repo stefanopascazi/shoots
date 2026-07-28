@@ -15,6 +15,7 @@ import {
   logVerbose,
   makeIo,
   markFailure,
+  oneLine,
   printHuman,
   printJson,
 } from '../io.js';
@@ -141,6 +142,6 @@ async function runRename(targetPath: string, options: RenameOptions): Promise<vo
     }
     printHuman(io, `\n${renamed.length} renamed, ${plan.length - changes.length} unchanged, ${errors.length} failed`);
   }
-  for (const e of errors) logError(`${e.source}: ${e.error}`);
+  for (const e of errors) logError(`${e.source}: ${oneLine(e.error)}`);
   if (errors.length > 0) markFailure();
 }

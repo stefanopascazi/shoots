@@ -23,6 +23,7 @@ import {
   logVerbose,
   makeIo,
   markFailure,
+  oneLine,
   parsePositiveInt,
   printHuman,
   printJson,
@@ -219,6 +220,6 @@ async function runImport(source: string, options: ImportOptions): Promise<void> 
     }
     printHuman(io, `\n${succeeded.length}/${outcomes.length} files ${options.move ? 'moved' : 'copied'} to ${destRoot}`);
   }
-  for (const e of errors) logError(`${e.source}: ${e.error}`);
+  for (const e of errors) logError(`${e.source}: ${oneLine(e.error)}`);
   if (failed.length > 0) markFailure();
 }

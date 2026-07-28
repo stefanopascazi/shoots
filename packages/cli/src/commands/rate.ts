@@ -29,6 +29,7 @@ import {
   logVerbose,
   makeIo,
   markFailure,
+  oneLine,
   parsePositiveInt,
   printHuman,
   printJson,
@@ -203,6 +204,6 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     }
     printHuman(io, `\n${rated.length}/${files.length} rated with ${model.name} (profile: ${profile.name})${options.dryRun ? ' (dry run, no sidecars written)' : ''}`);
   }
-  for (const e of errors) logError(`${e.file}: ${e.error}`);
+  for (const e of errors) logError(`${e.file}: ${oneLine(e.error)}`);
   if (errors.length > 0) markFailure();
 }

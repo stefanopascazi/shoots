@@ -14,6 +14,7 @@
  * has at least one in-focus region (high peak).
  */
 import sharp from 'sharp';
+import { SHARP_INPUT } from './sharpInput.js';
 import { loadRenderableImage } from './thumbnail.js';
 
 /**
@@ -76,7 +77,7 @@ export async function laplacianVariance(
   options: LaplacianOptions = {},
 ): Promise<LaplacianResult> {
   const maxDim = options.maxDimension ?? 1024;
-  const { data, info } = await sharp(input)
+  const { data, info } = await sharp(input, SHARP_INPUT)
     .rotate()
     .grayscale()
     .resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true })

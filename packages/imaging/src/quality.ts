@@ -4,6 +4,7 @@
  * @shoots/inference composes these with model inference and Laplacian focus.
  */
 import sharp from 'sharp';
+import { SHARP_INPUT } from './sharpInput.js';
 
 export interface ClipPreprocessOptions {
   /** Square input side (CLIP ViT-B/32 = 224). */
@@ -21,7 +22,7 @@ export interface ClipPreprocessOptions {
  */
 export async function preprocessClip(input: Buffer, opts: ClipPreprocessOptions): Promise<Float32Array> {
   const { size, mean, std } = opts;
-  const { data } = await sharp(input)
+  const { data } = await sharp(input, SHARP_INPUT)
     .rotate()
     .resize(size, size, { fit: 'cover', position: 'centre', kernel: 'cubic' })
     .removeAlpha()
@@ -54,7 +55,7 @@ export interface AestheticStats {
  * heuristic (no-ML) part of the aesthetic score.
  */
 export async function aestheticStats(input: Buffer): Promise<AestheticStats> {
-  const { channels } = await sharp(input).rotate().removeAlpha().stats();
+  const { channels } = await sharp(input, SHARP_INPUT).rotate().removeAlpha().stats();
   // channels: [R, G, B] with mean/stdev in 0..255.
   const [r, g, b] = channels;
   const brightness = (0.299 * r.mean + 0.587 * g.mean + 0.114 * b.mean) / 255;

@@ -34,6 +34,7 @@ import {
   logVerbose,
   makeIo,
   markFailure,
+  oneLine,
   parsePositiveInt,
   printHuman,
   printJson,
@@ -233,6 +234,6 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
     printHuman(io, `\n${embedded.length}/${files.length} embedded with ${model.name} (dim ${dim})`);
   }
 
-  for (const e of errors) logError(`${e.file}: ${e.error}`);
+  for (const e of errors) logError(`${e.file}: ${oneLine(e.error)}`);
   if (errors.length > 0) markFailure();
 }

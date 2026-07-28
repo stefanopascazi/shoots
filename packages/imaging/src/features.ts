@@ -10,6 +10,7 @@
  * output is a fixed-length vector plus stable names for interpretability.
  */
 import sharp from 'sharp';
+import { SHARP_INPUT } from './sharpInput.js';
 import { loadRenderableImage } from './thumbnail.js';
 
 /** Edge of the square the image is fit into before pixel stats. */
@@ -83,7 +84,7 @@ export async function extractColorFeatures(input: string | Buffer): Promise<Colo
   const buffer =
     typeof input === 'string' ? (await loadRenderableImage(input)).buffer : input;
 
-  const { data, info } = await sharp(buffer)
+  const { data, info } = await sharp(buffer, SHARP_INPUT)
     .resize(SAMPLE_EDGE, SAMPLE_EDGE, { fit: 'inside', withoutEnlargement: true })
     .removeAlpha()
     .toColourspace('srgb')

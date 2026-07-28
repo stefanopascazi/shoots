@@ -43,6 +43,7 @@ import {
   logVerbose,
   makeIo,
   markFailure,
+  oneLine,
   parsePositiveInt,
   printHuman,
   printJson,
@@ -400,6 +401,6 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     logError('No develop settings found on any file — check that XMP sidecars / crs metadata are present.');
     markFailure();
   }
-  for (const e of errors) logError(`${e.file}: ${e.error}`);
+  for (const e of errors) logError(`${e.file}: ${oneLine(e.error)}`);
   if (errors.length > 0) markFailure();
 }

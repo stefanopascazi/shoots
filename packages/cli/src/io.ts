@@ -32,6 +32,19 @@ export function logError(message: string): void {
   process.stderr.write(`error: ${message}\n`);
 }
 
+/**
+ * Flatten a multi-line error into a single reportable line.
+ *
+ * libvips and exiftool accumulate every internal complaint into one message, so
+ * a single unreadable file can emit dozens of lines — enough to bury the other
+ * failures in a batch. The human report gets this collapsed form; `--json` keeps
+ * the untouched `error` string for anyone who needs the full text.
+ */
+export function oneLine(message: string, max = 300): string {
+  const flat = message.replace(/\s*\r?\n\s*/g, ' · ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
 export function logVerbose(io: CliIo, message: string): void {
   if (io.verbose) process.stderr.write(`· ${message}\n`);
 }
