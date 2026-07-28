@@ -61,21 +61,14 @@ import {
 import { startPhase, startProgress } from '../progress.js';
 import type { AsShotMeta, Treatment } from './develop/schema.js';
 import { ensureClipModelReady, ensureExiftoolReady, ensureLibrawReady } from '../tools.js';
-// Everything ACR-specific — which crs tags carry the look, how exiftool names
-// them, where the sidecar lives, what counts as a real edit — lives in the
-// adapter, shared with `develop refresh-targets`.
-import {
-  CRS_TAG_ARGS,
-  META_TAGS,
-  deriveTreatment,
-  developSource,
-  isEdited,
-  readAsShot,
-  readBaseProfile,
-  readCurve,
-  readDevelop,
-  warnNeverSeenTargets,
-} from './adapters/acr/ingest.js';
+// Nothing here knows how an editor stores an edit: the adapter does.
+import { DEFAULT_EDITOR, EDITOR_IDS, resolveAdapter } from './adapters/registry.js';
+
+/** Used only when the capture read returned nothing for a file. */
+const EMPTY_AS_SHOT: AsShotMeta = {
+  tempAsShot: null, tempMeasured: null, tintAsShot: null,
+  iso: null, exposureComp: null, camera: null,
+};
 
 export const BASELINES = ['embedded-preview', 'external'] as const;
 type Baseline = (typeof BASELINES)[number];
@@ -85,6 +78,8 @@ export interface DevelopExportOptions {
   concurrency: string;
   out: string;
   baseline: string;
+  /** Which editor's develop settings to read (see adapters/registry.ts). */
+  editor?: string;
   editedOnly?: boolean;
   json?: boolean;
   verbose?: boolean;
@@ -121,6 +116,14 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     return;
   }
   const baseline = options.baseline as Baseline;
+
+  const editorId = options.editor ?? DEFAULT_EDITOR;
+  if (!EDITOR_IDS.includes(editorId)) {
+    logError(`unknown --editor '${editorId}' (available: ${EDITOR_IDS.join(', ')})`);
+    process.exitCode = 2;
+    return;
+  }
+  const adapter = resolveAdapter(editorId);
 
   // The external neutral baseline needs a RAW developer (see rawDeveloper.ts).
   // Unless the user pointed us at their own via SHOOTS_RAW_DEVELOPER, provision
@@ -163,40 +166,29 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   if (!(await ensureExiftoolReady(io))) return;
   if (!(await ensureClipModelReady(io))) return;
 
-  // crs develop targets first, from the sidecars (cheap): needed for ALL files to
-  // decide which are edited. crs comes from the sidecar (or embedded, for DNG/JPEG).
-  const developSrcByFile = new Map(files.map((f) => [f.path, developSource(f.path)] as const));
-  const crsPaths = [...new Set(developSrcByFile.values())];
+  // Develop edits first, from the editor's own store (cheap — sidecars, never
+  // the images): needed for ALL files to decide which are edited.
   const crsPhase = startPhase(io, 'Reading develop settings');
-  const crsRecords = await readMetadata(crsPaths, {
-    tags: CRS_TAG_ARGS,
-    onProgress: (done, total) => crsPhase.update(`${done}/${total}`),
-  });
-  crsPhase.done(`${crsPaths.length} files`);
-  const crsByPath = new Map<string, ExifRecord>();
-  for (const rec of crsRecords) crsByPath.set(path.resolve(rec.SourceFile), rec);
-  const crsFor = (file: string): ExifRecord | undefined => crsByPath.get(path.resolve(developSrcByFile.get(file)!));
-
-  warnNeverSeenTargets(io, crsRecords);
+  const edits = await adapter.readEdits(files.map((f) => f.path), io, (done, total) => crsPhase.update(`${done}/${total}`));
+  crsPhase.done(`${files.length} files`);
 
   // --edited-only: skip the expensive per-file work (embedding / neutral render /
-  // color features) AND the as-shot EXIF read for files that were never edited.
+  // color features) AND the as-shot read for files that were never edited.
   // This is the right default for training-set builds (we train on edited photos
   // only) and avoids opening thousands of large untouched RAWs.
   let untouched = 0;
   let neutral = 0;
   const workFiles = options.editedOnly
     ? files.filter((f) => {
-        const crs = crsFor(f.path);
-        const develop = readDevelop(crs);
-        if (Object.keys(develop).length === 0) {
+        const edit = edits.get(f.path);
+        if (!edit) {
           untouched++;
           return false;
         }
-        // Carries crs tags but every predicted target sits at its neutral
+        // Carries develop tags but every predicted target sits at its neutral
         // default — Lightroom wrote them, the photographer did not. Including
         // these teaches the model to predict "change nothing".
-        if (!isEdited(develop, readCurve(crs), crs)) {
+        if (!edit.edited) {
           neutral++;
           return false;
         }
@@ -234,13 +226,13 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   }
 
   const exifPhase = startPhase(io, 'Reading capture metadata');
-  const exifRecords = await readMetadata(workFiles.map((f) => f.path), {
-    tags: [...META_TAGS],
-    onProgress: (done, total) => exifPhase.update(`${done}/${total}`),
-  });
+  const capture = await adapter.readCapture(
+    workFiles.map((f) => f.path),
+    edits,
+    io,
+    (done, total) => exifPhase.update(`${done}/${total}`),
+  );
   exifPhase.done(`${workFiles.length} files`);
-  const exifByPath = new Map<string, ExifRecord>();
-  for (const rec of exifRecords) exifByPath.set(path.resolve(rec.SourceFile), rec);
 
   await mkdir(path.dirname(path.resolve(options.out)), { recursive: true });
   const stream = createWriteStream(options.out, { encoding: 'utf8' });
@@ -285,20 +277,17 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
       const [assessment, color] = await Promise.all([model.assess({ path: file.path }), colorTask]);
       if (!assessment.embedding) throw new Error('backend produced no embedding (unsupported model?)');
 
-      const crsRec = crsFor(file.path);
-      const exifRec = exifByPath.get(path.resolve(file.path));
-      const develop = readDevelop(crsRec);
-      const curve = readCurve(crsRec);
-      const baseProfile = readBaseProfile(crsRec);
+      const edit = edits.get(file.path);
+      const develop = edit?.develop ?? {};
       const record: DatasetRecord = {
         file: file.path,
         embedding: assessment.embedding.map(round5),
         features: color.vector,
         develop,
-        asShot: readAsShot(crsRec, exifRec),
-        treatment: deriveTreatment(develop),
-        ...(baseProfile ? { baseProfile } : {}),
-        ...(curve ? { curve } : {}),
+        asShot: capture.get(file.path) ?? EMPTY_AS_SHOT,
+        treatment: edit?.treatment ?? 'color',
+        ...(edit?.baseProfile ? { baseProfile: edit.baseProfile } : {}),
+        ...(edit?.curve ? { curve: edit.curve } : {}),
       };
       await writeLine(record);
       return { hasDevelop: Object.keys(develop).length > 0, dim: assessment.embedding.length };

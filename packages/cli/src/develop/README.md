@@ -27,11 +27,17 @@ shoots develop train --data train.jsonl --name my-style --out profiles/my-style.
 # 3. Export a NEW set, then predict — pick the treatment (colour/B&W) or auto:
 shoots develop export <new-shoot> --out new.jsonl
 shoots develop predict --data new.jsonl --profile profiles/my-style.json --treatment color --xmp out-xmp/
+
+# Changed the target side (a tag, a new parameter, a stricter "edited" test)?
+# Re-read the targets in place instead of re-exporting: it keeps the embeddings
+# and the neutral renders, turning hours back into minutes.
+shoots develop refresh-targets --data train.jsonl --out train-v2.jsonl
 ```
 
-`predict --xmp` drops a Lightroom-readable `.xmp` sidecar next to each image — a
-non-destructive starting point. (The Lua plugin of the full plan applies these via
-the official SDK; the sidecar is the CLI-only path.)
+`predict --xmp` drops a sidecar per image in the chosen editor's format (`acr` →
+a Lightroom-readable `.xmp`) — a non-destructive starting point. (The Lua plugin
+of the full plan applies these via the official SDK; the sidecar is the CLI-only
+path.)
 
 ## What it predicts
 
@@ -67,14 +73,56 @@ Two decisions are baked into the model:
   dehaze/vibrance) and expects style-constant parameters (HSL, color grading) to
   collapse to the photographer's mean — that is correct, not a failure.
 
+## Editors are adapters
+
+Develop settings are not portable, and no file-format work makes them so. XMP is
+only a container; `crs:` is Adobe's private vocabulary inside it; darktable keeps
+a base64 module stack in a namespace of its own; Capture One does not put
+adjustments in XMP at all. Deeper still, the numbers do not transfer even where
+the names line up — `Exposure2012 +0.35` means what ACR's pipeline says it means.
+
+So each editor gets an adapter (`src/develop/adapters/`), and the adapter is the
+only code that knows. Schema, model, profile and evaluation stay in one
+vocabulary — **ACR's**, because it is the de-facto lingua franca and the emit
+path has to speak it regardless. `--editor <id>` selects one; `acr` is the only
+one today. The `readEdits` / `readCapture` split is batch-shaped on purpose: it
+is one exiftool pass over sidecars now, and one query against a Lightroom
+`.lrcat` if that source is ever added (read-only — never write a user's catalog).
+
 ## The go/no-go metric (Fase 0 GATE)
 
-`shoots develop train` reports, per parameter, the held-out **MAE of the model** versus
-the **"apply my average edit"** baseline, and a **skill** score
-`1 − modelMae/baselineMae`. Skill > 0 means the model beats the mean. The headline
-number is the weighted skill over the image-dependent parameters. If that is not
-clearly positive on a real catalog, the signal is too weak to build the plugin on
-— stop and reconsider the baseline render strategy.
+`shoots develop train` reports, per parameter, the held-out **MAE of the model**
+versus the **"apply my average edit"** baseline, and a **skill** score
+`1 − modelMae/baselineMae`. The headline is the weighted skill over the
+image-dependent parameters.
+
+Two things make that number mean what it says, both learned by getting it wrong:
+
+- **Whole capture sessions are held out** (`--group-by folder`, the default). A
+  catalog is not i.i.d.: a shoot is dozens of near-identical frames, routinely
+  edited by pasting settings across the take. Random folds put a frame's twin in
+  the training set, and the model scores itself on photographs it has already
+  seen. The random-fold number is printed alongside — the gap between them *is*
+  the leakage, and on a real catalog it was 0.13 against a true 0.02.
+- **The baseline lives in delta space** — the average *move*, decoded per image,
+  not the average absolute value. Averaging absolute Kelvin charges the baseline
+  with the spread of the as-shot anchor instead of the spread of the edit.
+
+Targets that never move across the catalog are flagged `[never moves]` and kept
+out of the headline: a constant is predicted perfectly by anything, so scoring it
+rewards an exporter bug rather than a model.
+
+If the grouped number is not clearly positive on a real catalog, the signal is
+too weak to build the plugin on — stop and reconsider the baseline render
+strategy.
+
+## Gating
+
+Parameters whose held-out skill sits at or below `--gate-threshold` (default
+0.02) are predicted as the photographer's own constant instead of the model
+output. A prediction that scores below the mean is worse than no prediction: it
+moves a slider away from where this photographer would have left it. The profile
+records which parameters are gated, and `predict` honours the list.
 
 ## Baseline render
 

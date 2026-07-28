@@ -1,10 +1,10 @@
 /**
- * Minimal XMP sidecar writer for predicted develop settings.
+ * Canonical develop edit → an Adobe Camera Raw sidecar.
  *
- * A Lightroom-readable `.xmp` is just an RDF wrapper with crs: attributes, so we
- * template it directly — no exiftool needed on the tool side. This lets a
- * prediction be dropped next to a RAW and read by Lightroom as a starting point,
- * before the Lua plugin (Fase 4) wires proper preset application via the SDK.
+ * A Lightroom-readable `.xmp` is just an RDF wrapper around crs: attributes, so
+ * we template it directly — no exiftool needed on the write side. Dropping one
+ * next to a RAW gives the photographer a non-destructive starting point they can
+ * accept or discard.
  */
 
 const CRS_NS = 'http://ns.adobe.com/camera-raw-settings/1.0/';

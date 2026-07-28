@@ -5,9 +5,8 @@
  * Lightroom-readable `.xmp` sidecar per image (a non-destructive starting point).
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import path from 'node:path';
 import { assertApplicable, predictOne, resolveTreatment } from '../predict.js';
-import { buildXmpSidecar } from '../xmp.js';
+import { assertCanEmit, DEFAULT_EDITOR, resolveAdapter } from '../adapters/registry.js';
 import { loadDataset } from '../dataset/load.js';
 import type { Treatment } from '../develop/schema.js';
 import type { DevelopProfile } from '../types.js';
@@ -16,6 +15,8 @@ export interface PredictArgs {
   data: string;
   profile: string;
   treatment: string;
+  /** Which editor's format to write the prediction in. */
+  editor?: string;
   out?: string;
   xmp?: string;
 }
@@ -35,12 +36,13 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     .map((r) => predictOne(profile, r, resolveTreatment(profile, r, requested)));
 
   if (args.xmp) {
+    const adapter = resolveAdapter(args.editor ?? DEFAULT_EDITOR);
+    assertCanEmit(adapter);
     await mkdir(args.xmp, { recursive: true });
     for (const p of predictions) {
-      const base = path.parse(p.file).name;
-      await writeFile(path.join(args.xmp, `${base}.xmp`), buildXmpSidecar(p.develop), 'utf8');
+      await adapter.writeEdit!(p.develop, adapter.sidecarPathFor!(p.file, args.xmp));
     }
-    process.stderr.write(`Wrote ${predictions.length} XMP sidecars to ${args.xmp}\n`);
+    process.stderr.write(`Wrote ${predictions.length} ${adapter.id} sidecars to ${args.xmp}\n`);
   }
 
   const payload = { command: 'develop-predict' as const, profile: profile.name, count: predictions.length, predictions };

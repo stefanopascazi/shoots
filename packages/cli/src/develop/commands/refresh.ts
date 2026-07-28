@@ -3,7 +3,7 @@
  * dataset without recomputing a single pixel.
  *
  * The expensive half of `develop export` is the CLIP embedding and the neutral
- * baseline render; the targets are a cheap exiftool pass over the sidecars. When
+ * baseline render; the targets are a cheap pass over the editor's sidecars. When
  * the target side changes — a tag read under the wrong name, a new parameter in
  * the schema, a sharper definition of "edited" — re-exporting the whole catalog
  * costs hours to recompute features that did not change. This rebuilds only
@@ -15,28 +15,17 @@
  */
 import { createWriteStream } from 'node:fs';
 import { once } from 'node:events';
-import path from 'node:path';
-import { readMetadata, type ExifRecord } from '@shoots/imaging';
 import { loadDataset } from '../dataset/load.js';
 import { startPhase } from '../../progress.js';
 import { logWarn, makeIo, printHuman, printJson } from '../../io.js';
 import { ensureExiftoolReady } from '../../tools.js';
-import {
-  CRS_TAG_ARGS,
-  META_TAGS,
-  deriveTreatment,
-  developSource,
-  isEdited,
-  readAsShot,
-  readBaseProfile,
-  readCurve,
-  readDevelop,
-  warnNeverSeenTargets,
-} from '../adapters/acr/ingest.js';
+import { DEFAULT_EDITOR, resolveAdapter } from '../adapters/registry.js';
 
 export interface RefreshArgs {
   data: string;
   out: string;
+  /** Which editor's develop settings to read (see adapters/registry.ts). */
+  editor?: string;
   /** Keep records that no longer look edited (default: drop them, like export). */
   keepUnedited?: boolean;
   json?: boolean;
@@ -45,6 +34,7 @@ export interface RefreshArgs {
 
 export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
   const io = makeIo(args);
+  const adapter = resolveAdapter(args.editor ?? DEFAULT_EDITOR);
   const dataset = await loadDataset(args.data);
   if (dataset.results.length === 0) {
     printHuman(io, 'Dataset has no records.');
@@ -54,30 +44,13 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
 
   const files = dataset.results.map((r) => r.file);
 
-  // crs targets, from the sidecar next to each image (or the image itself).
-  const developSrcByFile = new Map(files.map((f) => [f, developSource(f)] as const));
-  const crsPaths = [...new Set(developSrcByFile.values())];
-  const crsPhase = startPhase(io, 'Reading develop settings');
-  const crsRecords = await readMetadata(crsPaths, {
-    tags: CRS_TAG_ARGS,
-    onProgress: (done, total) => crsPhase.update(`${done}/${total}`),
-  });
-  crsPhase.done(`${crsPaths.length} files`);
-  const crsByPath = new Map<string, ExifRecord>();
-  for (const rec of crsRecords) crsByPath.set(path.resolve(rec.SourceFile), rec);
-  const crsFor = (file: string): ExifRecord | undefined => crsByPath.get(path.resolve(developSrcByFile.get(file)!));
+  const editPhase = startPhase(io, 'Reading develop settings');
+  const edits = await adapter.readEdits(files, io, (done, total) => editPhase.update(`${done}/${total}`));
+  editPhase.done(`${files.length} files`);
 
-  warnNeverSeenTargets(io, crsRecords);
-
-  // As-shot EXIF, from the image files themselves.
-  const metaPhase = startPhase(io, 'Reading as-shot metadata');
-  const exifRecords = await readMetadata(files, {
-    tags: [...META_TAGS],
-    onProgress: (done, total) => metaPhase.update(`${done}/${total}`),
-  });
-  metaPhase.done(`${files.length} files`);
-  const exifByPath = new Map<string, ExifRecord>();
-  for (const rec of exifRecords) exifByPath.set(path.resolve(rec.SourceFile), rec);
+  const capturePhase = startPhase(io, 'Reading as-shot metadata');
+  const capture = await adapter.readCapture(files, edits, io, (done, total) => capturePhase.update(`${done}/${total}`));
+  capturePhase.done(`${files.length} files`);
 
   const out = createWriteStream(args.out, { encoding: 'utf8' });
   const write = async (line: string): Promise<void> => {
@@ -88,31 +61,28 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
   let unreadable = 0;
   let dropped = 0;
   for (const record of dataset.results) {
-    const crs = crsFor(record.file);
-    const exif = exifByPath.get(path.resolve(record.file));
-    // Neither source responded: the file moved, the share is offline, or the
+    const edit = edits.get(record.file);
+    const asShot = capture.get(record.file);
+    // Nothing came back for this file: it moved, the share is offline, or the
     // sidecar is gone. Carry the record through untouched rather than silently
     // turning a real edit into an empty one.
-    if (!crs && !exif) {
+    if (!edit && !asShot) {
       unreadable++;
       await write(JSON.stringify(record) + '\n');
       continue;
     }
-    const develop = readDevelop(crs);
-    const curve = readCurve(crs);
-    if (!args.keepUnedited && !isEdited(develop, curve, crs)) {
+    if (!args.keepUnedited && !edit?.edited) {
       dropped++;
       continue;
     }
-    const baseProfile = readBaseProfile(crs);
     await write(
       JSON.stringify({
         ...record,
-        develop,
-        asShot: readAsShot(crs, exif),
-        treatment: deriveTreatment(develop),
-        ...(baseProfile ? { baseProfile } : {}),
-        ...(curve ? { curve } : {}),
+        develop: edit!.develop,
+        ...(asShot ? { asShot } : {}),
+        treatment: edit!.treatment,
+        ...(edit!.baseProfile ? { baseProfile: edit!.baseProfile } : {}),
+        ...(edit!.curve ? { curve: edit!.curve } : {}),
       }) + '\n',
     );
     refreshed++;
@@ -138,7 +108,7 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
     logWarn(`${unreadable} record(s) kept unchanged — their files could not be read (moved, or the share is offline)`);
   }
   if (io.json) {
-    printJson({ command: 'develop-refresh-targets', out: args.out, summary });
+    printJson({ command: 'develop-refresh-targets', editor: adapter.id, out: args.out, summary });
     return;
   }
   printHuman(io, `Refreshed ${refreshed}/${dataset.results.length} records → ${args.out}`);

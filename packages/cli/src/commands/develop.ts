@@ -15,6 +15,7 @@
  */
 import type { Command } from 'commander';
 import { BASELINES, runDevelopExport } from '../develop/export.js';
+import { DEFAULT_EDITOR, EDITOR_IDS } from '../develop/adapters/registry.js';
 import { runRefreshTargets } from '../develop/commands/refresh.js';
 import { runTrain } from '../develop/commands/train.js';
 import { runPredict } from '../develop/commands/predict.js';
@@ -33,6 +34,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--concurrency <n>', 'max parallel jobs', '4')
     .requiredOption('--out <file>', 'write the JSONL dataset to this path (one record per line + a trailing meta line)')
     .option('--baseline <mode>', `baseline render strategy: ${BASELINES.join(' | ')}`, 'embedded-preview')
+    .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--edited-only', 'only run the expensive embedding/render on files that carry develop settings (for training-set builds)')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
@@ -43,6 +45,7 @@ export function registerDevelopCommand(program: Command): void {
     .description('Re-read the develop targets of an existing dataset (keeps the embeddings — minutes, not hours)')
     .requiredOption('--data <file>', 'dataset from `shoots develop export`')
     .requiredOption('--out <file>', 'write the refreshed JSONL dataset here')
+    .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--keep-unedited', 'keep records that no longer carry a real edit (default: drop, as export does)')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
@@ -71,8 +74,12 @@ export function registerDevelopCommand(program: Command): void {
     .requiredOption('--profile <file>', 'develop profile JSON from `shoots develop train`')
     .option('--treatment <t>', 'which branch to apply: auto | color | bw', 'auto')
     .option('--out <file>', 'write predictions JSON here (default: stdout)')
-    .option('--xmp <dir>', 'also write a Lightroom-readable .xmp sidecar per image into this dir')
-    .action((opts) => runPredict({ data: opts.data, profile: opts.profile, treatment: opts.treatment, out: opts.out, xmp: opts.xmp }));
+    .option('--editor <id>', `which editor's format to write predictions in: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
+    .option('--xmp <dir>', 'also write an editor-readable sidecar per image into this dir')
+    .action((opts) => runPredict({
+      data: opts.data, profile: opts.profile, treatment: opts.treatment,
+      editor: opts.editor, out: opts.out, xmp: opts.xmp,
+    }));
 
   develop
     .command('diagnose')
