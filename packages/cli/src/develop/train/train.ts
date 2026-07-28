@@ -6,31 +6,56 @@
  * parameters — so a high-contrast B&W edit and a light colour edit never average
  * into a mushy mean. Each model picks λ by k-fold CV and reports per-parameter
  * held-out MAE vs the "apply my average edit" baseline (the go/no-go metric).
+ *
+ * The evaluation itself lives in `evaluate.ts` — sessions held out, baseline in
+ * delta space — and is shared with `diagnose` so the two cannot disagree about
+ * what skill means.
+ *
+ * Parameters the held-out evidence says the model cannot predict are *gated*:
+ * the profile keeps predicting the photographer's constant for them rather than
+ * a model output that measurably makes the result worse. Shipping a negative-
+ * skill prediction is strictly worse than shipping no prediction at all.
  */
 import {
   DEVELOP_PARAMS,
   SCHEMA_VERSION,
-  decodeDelta,
   paramsForTreatment,
   type AsShotMeta,
   type DevelopParam,
   type Treatment,
 } from '../develop/schema.js';
 import { assembleFeatures, targetDeltas, actualAbsVec, profileOneHot } from '../develop/assemble.js';
-import { buildNormalEquations, solveRidge, predictStd } from './regress.js';
+import { buildNormalEquations, solveRidge } from './regress.js';
+import {
+  EPS,
+  LAMBDA_GRID,
+  columnStats,
+  crossValidate,
+  degenerateTargets,
+  sessionKey,
+  standardize,
+  weightedSkill,
+  type EvalRow,
+  type GroupBy,
+  type ParamStats,
+} from './evaluate.js';
 import type { BranchModel, DevelopDataset, DevelopProfile, ParamEval } from '../types.js';
 
 export interface TrainOptions {
   name: string;
   lambda?: number;
   folds?: number;
+  /** Fold policy for the gate metric (default: hold whole sessions out). */
+  groupBy?: GroupBy;
+  /** Skill at or below which a parameter falls back to the constant. 0 = off. */
+  gateThreshold?: number;
 }
 
-const LAMBDA_GRID = [100, 300, 1000, 3000, 10000, 30000];
 const DEFAULT_FALLBACK_LAMBDA = 1000;
-const EPS = 1e-6;
+const DEFAULT_GATE_THRESHOLD = 0.02;
 
 interface RawRow {
+  file: string;
   embedding: number[];
   features: number[];
   develop: Record<string, number>;
@@ -44,39 +69,6 @@ function buildProfileVocab(rows: RawRow[]): string[] {
   const counts = new Map<string, number>();
   for (const r of rows) if (r.baseProfile) counts.set(r.baseProfile, (counts.get(r.baseProfile) ?? 0) + 1);
   return [...counts.entries()].filter(([, c]) => c >= 3).map(([k]) => k).sort();
-}
-
-interface BranchRow {
-  x: number[];
-  deltas: number[];
-  abs: number[];
-  meta: AsShotMeta;
-}
-
-interface ColStats { mean: number[]; std: number[]; }
-
-function columnStats(rows: number[][]): ColStats {
-  const n = rows.length;
-  const d = rows[0]!.length;
-  const mean = new Array<number>(d).fill(0);
-  const std = new Array<number>(d).fill(0);
-  for (const r of rows) for (let j = 0; j < d; j++) mean[j]! += r[j]!;
-  for (let j = 0; j < d; j++) mean[j]! /= n;
-  for (const r of rows) for (let j = 0; j < d; j++) { const dv = r[j]! - mean[j]!; std[j]! += dv * dv; }
-  for (let j = 0; j < d; j++) std[j] = Math.max(EPS, Math.sqrt(std[j]! / n));
-  return { mean, std };
-}
-const standardize = (row: number[], s: ColStats): number[] => row.map((v, j) => (v - s.mean[j]!) / s.std[j]!);
-
-function shuffled<T>(items: T[], seed = 12345): T[] {
-  const a = items.slice();
-  let s = seed >>> 0;
-  for (let i = a.length - 1; i > 0; i--) {
-    s = (1103515245 * s + 12345) >>> 0;
-    const j = s % (i + 1);
-    [a[i], a[j]] = [a[j]!, a[i]!];
-  }
-  return a;
 }
 
 /** B&W vs colour, from the explicit field or the edit structure (GrayMixer/flag). */
@@ -93,6 +85,7 @@ function buildRows(dataset: DevelopDataset): RawRow[] {
     if (!r.embedding?.length || !r.features?.length) continue;
     if (Object.keys(r.develop).length === 0) continue; // edited-only
     rows.push({
+      file: r.file,
       embedding: r.embedding,
       features: r.features,
       develop: r.develop,
@@ -104,110 +97,77 @@ function buildRows(dataset: DevelopDataset): RawRow[] {
   return rows;
 }
 
-function imageDependentSkill(perParam: ParamEval[]): number | null {
-  let wsum = 0;
-  let acc = 0;
-  for (const p of perParam) {
-    if (p.weight < 1.5) continue;
-    if (p.baselineMae < EPS) continue;
-    wsum += p.weight;
-    acc += p.weight * p.skill;
-  }
-  return wsum > 0 ? Math.round((acc / wsum) * 1e4) / 1e4 : null;
-}
-
-/** k-fold CV over the λ grid at once → per-λ out-of-fold per-parameter eval. */
-function crossValidate(rows: BranchRow[], params: DevelopParam[], grid: number[], folds: number): Map<number, ParamEval[]> {
-  const P = params.length;
-  const shuffledRows = shuffled(rows);
-  const foldOf = shuffledRows.map((_, i) => i % folds);
-  const modelErr = new Map<number, number[]>(grid.map((l) => [l, new Array<number>(P).fill(0)]));
-  const baseErr = new Array<number>(P).fill(0);
-  let counted = 0;
-
-  for (let f = 0; f < folds; f++) {
-    const train = shuffledRows.filter((_, i) => foldOf[i] !== f);
-    const val = shuffledRows.filter((_, i) => foldOf[i] === f);
-    if (train.length < 2 || val.length === 0) continue;
-    const fs = columnStats(train.map((r) => r.x));
-    const ds = columnStats(train.map((r) => r.deltas));
-    const ne = buildNormalEquations(train.map((r) => standardize(r.x, fs)), train.map((r) => standardize(r.deltas, ds)));
-
-    const baselineAbs = new Array<number>(P).fill(0);
-    for (const r of train) for (let k = 0; k < P; k++) baselineAbs[k]! += r.abs[k]!;
-    for (let k = 0; k < P; k++) baselineAbs[k]! /= train.length;
-    for (const r of val) for (let k = 0; k < P; k++) baseErr[k]! += Math.abs(baselineAbs[k]! - r.abs[k]!);
-    counted += val.length;
-
-    for (const lambda of grid) {
-      const { weights, bias } = solveRidge(ne, lambda);
-      const err = modelErr.get(lambda)!;
-      for (const r of val) {
-        const predStd = predictStd(weights, bias, standardize(r.x, fs));
-        for (let k = 0; k < P; k++) {
-          const delta = predStd[k]! * ds.std[k]! + ds.mean[k]!;
-          err[k]! += Math.abs(decodeDelta(params[k]!, delta, r.meta) - r.abs[k]!);
-        }
-      }
-    }
-  }
-
-  const out = new Map<number, ParamEval[]>();
-  const n = Math.max(1, counted);
-  for (const lambda of grid) {
-    const err = modelErr.get(lambda)!;
-    out.set(lambda, params.map((param, k) => {
-      const modelMae = err[k]! / n;
-      const baselineMae = baseErr[k]! / n;
-      return {
-        key: param.key,
-        group: param.group,
-        branch: param.branch,
-        weight: param.weight,
-        modelMae: Math.round(modelMae * 1e4) / 1e4,
-        baselineMae: Math.round(baselineMae * 1e4) / 1e4,
-        skill: baselineMae > EPS ? Math.round((1 - modelMae / baselineMae) * 1e4) / 1e4 : 0,
-      };
-    }));
-  }
-  return out;
-}
-
 const round6 = (v: number): number => Math.round(v * 1e6) / 1e6;
+const round4 = (v: number): number => Math.round(v * 1e4) / 1e4;
 
 /** Train one treatment's model over its shared+branch parameters. */
 function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions): BranchModel {
   const params = paramsForTreatment(treatment);
   const folds = options.folds ?? 5;
+  const groupBy: GroupBy = options.groupBy ?? 'folder';
+  const gateThreshold = options.gateThreshold ?? DEFAULT_GATE_THRESHOLD;
   const profileVocab = buildProfileVocab(raw);
-  const rows: BranchRow[] = raw.map((r) => ({
+
+  const rows: EvalRow[] = raw.map((r) => ({
     x: [...assembleFeatures(r.embedding, r.features, r.meta), ...profileOneHot(r.baseProfile, profileVocab)],
     deltas: targetDeltas(params, r.develop, r.meta),
     abs: actualAbsVec(params, r.develop, r.meta),
     meta: r.meta,
+    group: sessionKey(r.file),
   }));
 
-  let perParam: ParamEval[] = [];
+  const degenerate = degenerateTargets(rows, params.length);
+
+  let gateStats: ParamStats[] = [];
+  let randomStats: ParamStats[] = [];
   let chosenLambda = options.lambda ?? DEFAULT_FALLBACK_LAMBDA;
   let heldOut = 0;
+
   if (rows.length >= folds * 4) {
     const grid = options.lambda !== undefined ? [options.lambda] : LAMBDA_GRID;
-    const cv = crossValidate(rows, params, grid, folds);
+    const gateCv = crossValidate(rows, params, { folds, groupBy, grid });
     if (options.lambda === undefined) {
       let best = -Infinity;
-      for (const [lambda, pp] of cv) {
-        const s = imageDependentSkill(pp) ?? -Infinity;
+      for (const [lambda, stats] of gateCv) {
+        const s = weightedSkill(stats, params, degenerate) ?? -Infinity;
         if (s > best) { best = s; chosenLambda = lambda; }
       }
     }
-    perParam = cv.get(chosenLambda) ?? [];
+    gateStats = gateCv.get(chosenLambda) ?? [];
+    // The leakage-prone split, at the same λ, purely for contrast in the report.
+    randomStats = crossValidate(rows, params, { folds, groupBy: 'none', grid: [chosenLambda] }).get(chosenLambda) ?? [];
     heldOut = rows.length;
   }
+
+  const perParam: ParamEval[] = params.map((param, k) => {
+    const gate = gateStats[k];
+    const rand = randomStats[k];
+    const isDegenerate = degenerate[k]!;
+    // No held-out evidence at all (too few images) means no basis to trust a
+    // prediction — but also none to condemn it, so only degeneracy gates here.
+    const gated = isDegenerate || (gate !== undefined && gateThreshold > 0 && gate.skill <= gateThreshold);
+    return {
+      key: param.key,
+      group: param.group,
+      branch: param.branch,
+      weight: param.weight,
+      modelMae: round4(gate?.modelMae ?? 0),
+      baselineMae: round4(gate?.baselineMae ?? 0),
+      skill: round4(gate?.skill ?? 0),
+      skillRandom: round4(rand?.skill ?? 0),
+      degenerate: isDegenerate,
+      gated,
+      ...(gated ? { gateReason: isDegenerate ? ('degenerate' as const) : ('low-skill' as const) } : {}),
+    };
+  });
 
   const featStats = columnStats(rows.map((r) => r.x));
   const deltaStats = columnStats(rows.map((r) => r.deltas));
   const ne = buildNormalEquations(rows.map((r) => standardize(r.x, featStats)), rows.map((r) => standardize(r.deltas, deltaStats)));
   const { weights, bias } = solveRidge(ne, chosenLambda);
+
+  const skillOf = (stats: ParamStats[]): number | null =>
+    stats.length > 0 ? round4(weightedSkill(stats, params, degenerate) ?? 0) : null;
 
   return {
     treatment,
@@ -222,7 +182,10 @@ function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions)
     bias: bias.map(round6),
     samples: rows.length,
     heldOut,
-    imageDependentSkill: imageDependentSkill(perParam),
+    imageDependentSkill: gateStats.length > 0 ? skillOf(gateStats) : null,
+    imageDependentSkillRandom: randomStats.length > 0 ? skillOf(randomStats) : null,
+    gatedParams: perParam.filter((p) => p.gated).map((p) => p.key),
+    gateThreshold,
     perParam,
   };
 }
@@ -264,4 +227,4 @@ export function train(dataset: DevelopDataset, options: TrainOptions): DevelopPr
 }
 
 /** Re-export for callers that enumerate the schema (e.g. reporting). */
-export { DEVELOP_PARAMS };
+export { DEVELOP_PARAMS, EPS };

@@ -45,9 +45,24 @@ export interface ParamEval {
   group: string;
   branch: string;
   weight: number;
+  /** Held-out MAE with whole capture sessions kept out of training — the gate. */
   modelMae: number;
+  /** Same policy, for "apply my average edit" (the mean target delta). */
   baselineMae: number;
   skill: number;
+  /**
+   * Skill with folds drawn at random instead of by session. Near-duplicate
+   * frames from one shoot then sit on both sides of the split, so this measures
+   * "finish a shoot already under way" — a real scenario, but not the one the
+   * gate asks about. The gap against {@link skill} is the leakage meter.
+   */
+  skillRandom: number;
+  /** The target never moves across the catalog: nothing to predict, and a
+   *  perfect score on it would be an artefact. Excluded from the headline. */
+  degenerate: boolean;
+  /** Prediction suppressed in favour of the photographer's constant. */
+  gated: boolean;
+  gateReason?: 'low-skill' | 'degenerate';
 }
 
 /** A trained model for one treatment (colour or B&W), over shared+branch params. */
@@ -69,7 +84,14 @@ export interface BranchModel {
   bias: number[];
   samples: number;
   heldOut: number;
+  /** Weighted skill over the image-dependent params, sessions held out. */
   imageDependentSkill: number | null;
+  /** The same number under random folds — reported for contrast, never the gate. */
+  imageDependentSkillRandom: number | null;
+  /** Params whose prediction is replaced by the photographer's mean delta. */
+  gatedParams: string[];
+  /** Skill at or below which a param is gated (0 disables gating). */
+  gateThreshold: number;
   perParam: ParamEval[];
 }
 

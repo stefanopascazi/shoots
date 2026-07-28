@@ -17,11 +17,14 @@
 import { DEVELOP_PARAMS, decodeDelta, type AsShotMeta } from '../develop/schema.js';
 import { assembleFeatures, targetDeltas, actualAbsVec } from '../develop/assemble.js';
 import { buildNormalEquations, solveRidge, predictStd } from '../train/regress.js';
+// Same held-out policy as `train`: whole capture sessions kept out, baseline in
+// delta space. A diagnostic scoring itself differently from the gate would send
+// us chasing a style-clustering lever the gate cannot see.
+import { EPS, assignFolds, columnStats, sessionKey, standardize, type ColStats } from '../train/evaluate.js';
 import { kmeans } from './kmeans.js';
 import type { DevelopDataset } from '../types.js';
 
 const GRID = [300, 1000, 3000, 10000, 30000];
-const EPS = 1e-6;
 const PARAM_COUNT = DEVELOP_PARAMS.length;
 /** Emphasize the B&W treatment in clustering — it is a dominant style axis. */
 const BW_KEY = 'ConvertToGrayscale';
@@ -34,6 +37,8 @@ interface DRow {
   meta: AsShotMeta;
   develop: Record<string, number>;
   curve?: number[];
+  /** Capture session — rows sharing one never straddle a fold boundary. */
+  group: string;
 }
 
 /** Inputs (0..255) at which the tone curve is sampled for clustering features. */
@@ -60,32 +65,6 @@ function sampleCurve(curve: number[] | undefined): number[] {
   return CURVE_SAMPLES.map((x) => interp(x) / 255);
 }
 
-interface ColStats { mean: number[]; std: number[]; }
-
-function columnStats(rows: number[][]): ColStats {
-  const n = rows.length;
-  const d = rows[0]!.length;
-  const mean = new Array<number>(d).fill(0);
-  const std = new Array<number>(d).fill(0);
-  for (const r of rows) for (let j = 0; j < d; j++) mean[j]! += r[j]!;
-  for (let j = 0; j < d; j++) mean[j]! /= n;
-  for (const r of rows) for (let j = 0; j < d; j++) { const dv = r[j]! - mean[j]!; std[j]! += dv * dv; }
-  for (let j = 0; j < d; j++) std[j] = Math.max(EPS, Math.sqrt(std[j]! / n));
-  return { mean, std };
-}
-const standardize = (row: number[], s: ColStats): number[] => row.map((v, j) => (v - s.mean[j]!) / s.std[j]!);
-
-function shuffledIdx(n: number, seed = 12345): number[] {
-  const a = Array.from({ length: n }, (_, i) => i);
-  let s = seed >>> 0;
-  for (let i = n - 1; i > 0; i--) {
-    s = (1103515245 * s + 12345) >>> 0;
-    const j = s % (i + 1);
-    [a[i], a[j]] = [a[j]!, a[i]!];
-  }
-  return a;
-}
-
 function buildRows(dataset: DevelopDataset): DRow[] {
   const rows: DRow[] = [];
   for (const r of dataset.results) {
@@ -98,13 +77,19 @@ function buildRows(dataset: DevelopDataset): DRow[] {
       meta: r.asShot,
       develop: r.develop,
       curve: r.curve,
+      group: sessionKey(r.file),
     });
   }
   return rows;
 }
 
-/** Weighted image-dependent skill of predicted-abs vs a fixed baseline-abs. */
-function imageDependentSkill(rows: DRow[], predAbs: number[][], baselineAbs: number[]): number | null {
+/**
+ * Weighted image-dependent skill of predicted-abs against "apply my average
+ * edit" — the mean target *delta*, decoded per image. Averaging absolute values
+ * instead would charge the baseline with the spread of the as-shot anchor for
+ * the WB params rather than the spread of the edit.
+ */
+function imageDependentSkill(rows: DRow[], predAbs: number[][], baselineDelta: number[]): number | null {
   let wsum = 0;
   let acc = 0;
   for (let k = 0; k < PARAM_COUNT; k++) {
@@ -112,11 +97,15 @@ function imageDependentSkill(rows: DRow[], predAbs: number[][], baselineAbs: num
     if (param.weight < 1.5) continue;
     let modelErr = 0;
     let baseErr = 0;
+    let moved = false;
     for (let i = 0; i < rows.length; i++) {
-      modelErr += Math.abs(predAbs[i]![k]! - rows[i]!.abs[k]!);
-      baseErr += Math.abs(baselineAbs[k]! - rows[i]!.abs[k]!);
+      const row = rows[i]!;
+      modelErr += Math.abs(predAbs[i]![k]! - row.abs[k]!);
+      baseErr += Math.abs(decodeDelta(param, baselineDelta[k]!, row.meta) - row.abs[k]!);
+      if (row.deltas[k] !== rows[0]!.deltas[k]) moved = true;
     }
-    if (baseErr < EPS) continue;
+    // A target that never moves is predicted perfectly by anything at all.
+    if (!moved || baseErr < EPS) continue;
     const skill = 1 - modelErr / baseErr;
     wsum += param.weight;
     acc += param.weight * skill;
@@ -124,19 +113,24 @@ function imageDependentSkill(rows: DRow[], predAbs: number[][], baselineAbs: num
   return wsum > 0 ? acc / wsum : null;
 }
 
+/** The "apply my average edit" reference for a set of rows, in delta space. */
+function meanDelta(rows: DRow[]): number[] {
+  const out = new Array<number>(PARAM_COUNT).fill(0);
+  for (const r of rows) for (let k = 0; k < PARAM_COUNT; k++) out[k]! += r.deltas[k]!;
+  for (let k = 0; k < PARAM_COUNT; k++) out[k]! /= Math.max(1, rows.length);
+  return out;
+}
+
 /** Out-of-fold predicted-abs for a set of rows (picks λ by image-dependent skill). */
 function cvPredictAbs(rows: DRow[], folds: number): number[][] {
   const n = rows.length;
-  const meanAbs = new Array<number>(PARAM_COUNT).fill(0);
-  for (const r of rows) for (let k = 0; k < PARAM_COUNT; k++) meanAbs[k]! += r.abs[k]!;
-  for (let k = 0; k < PARAM_COUNT; k++) meanAbs[k]! /= n;
+  const base = meanDelta(rows);
+  const baseAbs = rows.map((r) => DEVELOP_PARAMS.map((p, k) => decodeDelta(p, base[k]!, r.meta)));
 
   // Too small for a stable CV → fall back to the group mean (skill ≈ 0 vs it).
-  if (n < folds * 3) return rows.map(() => meanAbs.slice());
+  if (n < folds * 3) return baseAbs;
 
-  const order = shuffledIdx(n);
-  const foldOf = new Array<number>(n);
-  order.forEach((rowIdx, i) => { foldOf[rowIdx] = i % folds; });
+  const foldOf = assignFolds(rows, folds, 'folder');
 
   // Per-λ out-of-fold predictions.
   const predByLambda = new Map<number, number[][]>(GRID.map((l) => [l, Array.from({ length: n }, () => new Array<number>(PARAM_COUNT).fill(0))]));
@@ -165,7 +159,7 @@ function cvPredictAbs(rows: DRow[], folds: number): number[][] {
   let bestLambda = GRID[0]!;
   let best = -Infinity;
   for (const lambda of GRID) {
-    const s = imageDependentSkill(rows, predByLambda.get(lambda)!, meanAbs) ?? -Infinity;
+    const s = imageDependentSkill(rows, predByLambda.get(lambda)!, base) ?? -Infinity;
     if (s > best) { best = s; bestLambda = lambda; }
   }
   return predByLambda.get(bestLambda)!;
@@ -239,11 +233,9 @@ export function diagnose(dataset: DevelopDataset, opts: { folds?: number; maxK?:
   const rows = buildRows(dataset);
   if (rows.length < folds * 3) throw new Error(`too few edited images (${rows.length}) for the diagnostic`);
 
-  const baselineAbs = new Array<number>(PARAM_COUNT).fill(0);
-  for (const r of rows) for (let k = 0; k < PARAM_COUNT; k++) baselineAbs[k]! += r.abs[k]!;
-  for (let k = 0; k < PARAM_COUNT; k++) baselineAbs[k]! /= rows.length;
+  const baselineDelta = meanDelta(rows);
 
-  const pooledSkill = imageDependentSkill(rows, cvPredictAbs(rows, folds), baselineAbs);
+  const pooledSkill = imageDependentSkill(rows, cvPredictAbs(rows, folds), baselineDelta);
 
   const cvecs = clusterVectors(rows);
   const perK: DiagnoseResult['perK'] = [];
@@ -259,7 +251,7 @@ export function diagnose(dataset: DevelopDataset, opts: { folds?: number; maxK?:
       clusters.push(signature(rows, idx));
     }
     clusters.sort((a, b) => b.size - a.size);
-    perK.push({ k, clusteredSkill: imageDependentSkill(rows, clusteredPred, baselineAbs), clusters });
+    perK.push({ k, clusteredSkill: imageDependentSkill(rows, clusteredPred, baselineDelta), clusters });
   }
 
   return { edited: rows.length, pooledSkill, perK };

@@ -133,8 +133,15 @@ const BW: DevelopParam[] = HSL_CHANNELS.map((ch) => slider(`GrayMixer${ch}`, 'gr
 /** The full ordered list (shared + colour + B&W). A param's index is its position. */
 export const DEVELOP_PARAMS: DevelopParam[] = [...SHARED, ...COLOR, ...BW];
 
-/** Bump when the param list / order / branches / feature layout change. */
-export const SCHEMA_VERSION = 3;
+/**
+ * Bump when the param list / order / branches / feature layout change, or when
+ * the profile gains a field inference depends on.
+ *
+ * v4: per-parameter gating. A profile carries `gatedParams`, and prediction
+ * falls back to the photographer's constant for those — a v3 profile has no
+ * such list, so it would silently emit model output the evidence rejected.
+ */
+export const SCHEMA_VERSION = 4;
 
 /** Parameters predicted for a given treatment: shared + that treatment's branch. */
 export function paramsForTreatment(treatment: Treatment): DevelopParam[] {

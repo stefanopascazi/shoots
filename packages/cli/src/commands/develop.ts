@@ -56,7 +56,13 @@ export function registerDevelopCommand(program: Command): void {
     .requiredOption('--out <file>', 'output profile JSON path')
     .option('--lambda <n>', "ridge strength, or 'auto' to pick by cross-validation", 'auto')
     .option('--folds <k>', 'cross-validation folds', (v) => parseInt(v, 10), 5)
-    .action((opts) => runTrain({ data: opts.data, name: opts.name, out: opts.out, lambda: opts.lambda, folds: opts.folds }));
+    .option('--group-by <mode>', 'held-out folds: folder (whole capture sessions) | none (random, leakage-prone)', 'folder')
+    .option('--gate-threshold <n>', 'skill at or below which a param falls back to your constant (0 disables)', (v) => parseFloat(v), 0.02)
+    .option('--all', 'report every parameter, not just the image-dependent ones')
+    .action((opts) => runTrain({
+      data: opts.data, name: opts.name, out: opts.out, lambda: opts.lambda, folds: opts.folds,
+      groupBy: opts.groupBy, gateThreshold: opts.gateThreshold, all: opts.all,
+    }));
 
   develop
     .command('predict')

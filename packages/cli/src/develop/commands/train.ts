@@ -1,9 +1,16 @@
 /**
  * `develop train` — fit and export a per-catalog develop profile.
+ *
+ * The report is the product here: it is the evidence a photographer decides on.
+ * It shows the gate skill (capture sessions held out) next to the random-fold
+ * skill, because the gap between them is how much of an encouraging number is
+ * really the model recognising frames from a shoot it already saw.
  */
 import { writeFile } from 'node:fs/promises';
 import { train } from '../train/train.js';
+import { GROUP_BY_MODES, type GroupBy } from '../train/evaluate.js';
 import { loadDataset } from '../dataset/load.js';
+import type { BranchModel } from '../types.js';
 
 export interface TrainArgs {
   data: string;
@@ -12,6 +19,49 @@ export interface TrainArgs {
   /** 'auto' (cross-validated) or a numeric ridge strength. */
   lambda: string;
   folds: number;
+  groupBy?: string;
+  gateThreshold?: number;
+  /** Report every parameter, not just the image-dependent ones. */
+  all?: boolean;
+}
+
+const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
+
+function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boolean, all: boolean): void {
+  w.write(`\n  ── ${b.treatment.toUpperCase()} branch — ${b.samples} images, λ=${b.ridgeLambda}${lambdaAuto ? ' (auto)' : ''} ──\n`);
+  const gate = b.imageDependentSkill;
+  const rand = b.imageDependentSkillRandom;
+  w.write(`  image-dependent skill: ${gate === null ? 'n/a (too little data)' : gate.toFixed(4)}`);
+  if (gate !== null && rand !== null) {
+    w.write(`   (random folds: ${rand.toFixed(4)} — the gap is session leakage)`);
+  }
+  w.write('\n');
+
+  // Image-dependent params always; the rest only on request. Degenerate targets
+  // are listed too — a target that never moves is evidence about the *export*,
+  // and hiding it is how a misread tag stays hidden.
+  const shown = b.perParam.filter((p) => all || p.weight >= 1.5);
+  const rows = shown.slice().sort((x, y) => y.skill - x.skill);
+  if (rows.length > 0) {
+    w.write('  param                 skill   random    model MAE   baseline MAE\n');
+    for (const p of rows) {
+      const note = p.degenerate ? '  [never moves]' : p.gated ? '  [gated → constant]' : '';
+      w.write(
+        `  ${p.key.padEnd(20)} ${pct(p.skill).padStart(7)} ${pct(p.skillRandom).padStart(8)} ` +
+          `${p.modelMae.toFixed(3).padStart(12)} ${p.baselineMae.toFixed(3).padStart(14)}${note}\n`,
+      );
+    }
+  }
+  if (!all) {
+    const hidden = b.perParam.filter((p) => p.weight < 1.5);
+    const negative = hidden.filter((p) => p.skill < 0).length;
+    if (hidden.length > 0) {
+      w.write(`  … ${hidden.length} style params not shown (${negative} with negative skill) — pass --all\n`);
+    }
+  }
+  if (b.gatedParams.length > 0) {
+    w.write(`  gated (predicted as your constant): ${b.gatedParams.length}/${b.perParam.length} params at skill ≤ ${b.gateThreshold}\n`);
+  }
 }
 
 export async function runTrain(args: TrainArgs): Promise<void> {
@@ -19,25 +69,29 @@ export async function runTrain(args: TrainArgs): Promise<void> {
   const lambda = args.lambda === 'auto' ? undefined : parseFloat(args.lambda);
   if (lambda !== undefined && !Number.isFinite(lambda)) throw new Error(`invalid --lambda '${args.lambda}' (use a number or 'auto')`);
 
-  const profile = train(dataset, { name: args.name, lambda, folds: args.folds });
+  const groupBy = (args.groupBy ?? 'folder') as GroupBy;
+  if (!GROUP_BY_MODES.includes(groupBy)) {
+    throw new Error(`invalid --group-by '${args.groupBy}' (use ${GROUP_BY_MODES.join(' | ')})`);
+  }
+
+  const profile = train(dataset, {
+    name: args.name,
+    lambda,
+    folds: args.folds,
+    groupBy,
+    gateThreshold: args.gateThreshold,
+  });
   await writeFile(args.out, JSON.stringify(profile, null, 2) + '\n', 'utf8');
 
   const w = process.stderr;
   w.write(`\nDevelop profile '${profile.name}' → ${args.out}\n`);
-  w.write(`  ${profile.stats.edited} edited images: ${profile.stats.color} colour + ${profile.stats.bw} B&W (${args.folds}-fold CV)\n`);
+  w.write(`  ${profile.stats.edited} edited images: ${profile.stats.color} colour + ${profile.stats.bw} B&W (${args.folds}-fold CV, `);
+  w.write(groupBy === 'folder' ? 'capture sessions held out)\n' : 'random folds — leakage-prone)\n');
 
   for (const treatment of ['color', 'bw'] as const) {
-    const b = profile.branches[treatment];
-    if (!b) continue;
-    w.write(`\n  ── ${treatment.toUpperCase()} branch — ${b.samples} images, λ=${b.ridgeLambda}${lambda === undefined ? ' (auto)' : ''} ──\n`);
-    w.write(`  image-dependent skill: ${b.imageDependentSkill ?? 'n/a (too little data)'}\n`);
-    const rows = b.perParam.filter((p) => p.weight >= 1.5 && p.baselineMae > 1e-6).sort((a, b2) => b2.skill - a.skill);
-    if (rows.length > 0) {
-      w.write('  param                model MAE   baseline MAE   skill\n');
-      for (const p of rows) {
-        w.write(`  ${p.key.padEnd(20)} ${p.modelMae.toFixed(3).padStart(9)} ${p.baselineMae.toFixed(3).padStart(14)} ${(p.skill * 100).toFixed(1).padStart(7)}%\n`);
-      }
-    }
+    const branch = profile.branches[treatment];
+    if (branch) writeBranch(w, branch, lambda === undefined, args.all ?? false);
   }
-  w.write('\n  skill > 0 means the model beats "apply my average edit".\n');
+  w.write('\n  skill > 0 means the model beats "apply my average edit" on photographs\n');
+  w.write('  from shoots it has never seen. That is the number that decides.\n');
 }
