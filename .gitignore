@@ -7,3 +7,9 @@ dist-models/
 *.log
 .DS_Store
 test/
+
+# local develop-predictor experiment artifacts (datasets / profiles)
+/train_*.json
+/train_*.jsonl
+/profile*.json
+/smke.json
