@@ -49,12 +49,14 @@ import {
 import {
   logError,
   logVerbose,
+  logWarn,
   makeIo,
   markFailure,
   oneLine,
   parsePositiveInt,
   printHuman,
   printJson,
+  type CliIo,
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
 import { DEVELOP_PARAMS } from './develop/schema.js';
@@ -101,8 +103,43 @@ const CRS_TARGET_TAGS: string[] = [
 /** crs boolean tags exiftool returns as "True"/"False" — captured as 1/0. */
 const CRS_BOOL_TAGS = new Set(['ConvertToGrayscale']);
 
-/** As-shot / capture metadata tags (EXIF), read edit-independently from the RAW. */
-const META_TAGS = ['ColorTemperature', 'ISO', 'ExposureCompensation', 'Model'] as const;
+/**
+ * XMP property name → the tag name exiftool exposes it under.
+ *
+ * exiftool does not always name a tag after its XMP property. `crs:Temperature`
+ * is published as `ColorTemperature`, so asking for `XMP-crs:Temperature`
+ * returns *nothing at all* — silently, with no warning. That cost us the single
+ * most image-dependent target in the schema: white balance was absent from every
+ * record of a 1045-image catalog while the trainer happily reported 100% skill on
+ * it (a constant target is trivially "predicted").
+ *
+ * Keep this map as the one place where the two vocabularies differ. As of
+ * exiftool 13.59, `Temperature` is the only renamed tag among CRS_TARGET_TAGS
+ * (verified with `exiftool -listx -XMP-crs:all`).
+ */
+const CRS_TAG_ALIASES: Record<string, string> = {
+  Temperature: 'ColorTemperature',
+};
+
+/** The exiftool tag name to request/read for a canonical crs property. */
+const exifToolTag = (crsProperty: string): string => CRS_TAG_ALIASES[crsProperty] ?? crsProperty;
+
+/**
+ * As-shot / capture metadata tags, read edit-independently from the RAW.
+ *
+ * WB anchors, in order of what they mean (Canon names; other makers expose
+ * equivalents that exiftool normalizes to the same tags):
+ *  - `ColorTempAsShot`   the WB the camera actually recorded — the delta anchor.
+ *  - `ColorTempMeasured` the camera's own *measured* scene temperature. Unlike
+ *    the as-shot value it moves with the light, not with the WB dial, so it is
+ *    an edit-independent estimate of the answer the photographer is about to
+ *    pick. Captured for the feature vector.
+ *  - `ColorTemperature`  fallback for bodies exposing neither of the above.
+ */
+const META_TAGS = [
+  'ColorTempAsShot', 'ColorTempMeasured', 'ColorTemperature',
+  'ISO', 'ExposureCompensation', 'Model',
+] as const;
 
 /**
  * Where a file's develop settings live. For proprietary RAW (CR3, NEF, ARW…)
@@ -131,6 +168,8 @@ export interface DevelopExportOptions {
 
 interface AsShot {
   tempAsShot: number | null;
+  /** Camera-measured scene temperature (edit-independent); null if unavailable. */
+  tempMeasured: number | null;
   tintAsShot: number | null;
   iso: number | null;
   exposureComp: number | null;
@@ -163,19 +202,33 @@ function deriveTreatment(develop: Record<string, number>): 'color' | 'bw' {
 /** Coerce an exiftool value to a finite number, or null. */
 function num(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string') {
-    const n = parseFloat(value.replace(/[^0-9eE.+-]/g, ''));
-    return Number.isFinite(n) ? n : null;
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  // exiftool renders EXIF rationals as fractions: ExposureCompensation comes
+  // back as "-1/3". Stripping the slash the way the generic path below does
+  // would read that as -13 — a third of a stop becoming thirteen stops, in a
+  // feature the model consumes directly.
+  const ratio = /^([+-]?\d+(?:\.\d+)?)\/(\d+(?:\.\d+)?)$/.exec(text);
+  if (ratio) {
+    const denominator = parseFloat(ratio[2]!);
+    if (denominator === 0) return null;
+    const v = parseFloat(ratio[1]!) / denominator;
+    return Number.isFinite(v) ? v : null;
   }
-  return null;
+  const n = parseFloat(text.replace(/[^0-9eE.+-]/g, ''));
+  return Number.isFinite(n) ? n : null;
 }
 
-/** Pull the crs develop settings actually present on a record (absent = neutral). */
+/**
+ * Pull the crs develop settings actually present on a record (absent = neutral).
+ * Keys are the canonical XMP property names, so the schema never has to know
+ * about exiftool's renames (see {@link CRS_TAG_ALIASES}).
+ */
 function readDevelop(record: ExifRecord | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   if (!record) return out;
   for (const tag of CRS_TARGET_TAGS) {
-    const raw = record[tag];
+    const raw = record[exifToolTag(tag)];
     if (CRS_BOOL_TAGS.has(tag)) {
       if (raw === true || raw === 'True') out[tag] = 1;
       else if (raw === false || raw === 'False') out[tag] = 0;
@@ -185,6 +238,33 @@ function readDevelop(record: ExifRecord | undefined): Record<string, number> {
     if (n !== null) out[tag] = n;
   }
   return out;
+}
+
+/**
+ * Warn about target tags that never appeared on a single file.
+ *
+ * A crs tag we ask for under the wrong name comes back as silence, not an error,
+ * and silence reads downstream as "the photographer never touched this" — a
+ * constant target that the trainer then scores as perfectly predicted. That is
+ * how white balance stayed missing from an entire catalog while the GATE
+ * reported 100% skill on it. One tag absent everywhere is a spelling bug far
+ * more often than it is a real habit, so say so out loud.
+ */
+function warnNeverSeenTargets(io: CliIo, records: ExifRecord[]): void {
+  if (records.length === 0) return;
+  const seen = new Set<string>();
+  for (const rec of records) {
+    for (const tag of CRS_TARGET_TAGS) {
+      if (rec[exifToolTag(tag)] !== undefined) seen.add(tag);
+    }
+  }
+  const missing = CRS_TARGET_TAGS.filter((t) => !seen.has(t));
+  if (missing.length === 0) return;
+  logWarn(
+    `${missing.length} develop tag(s) absent from all ${records.length} files — ` +
+      `they will train as constants: ${missing.join(', ')}`,
+  );
+  printHuman(io, '  (if one you actively use is listed, suspect the exiftool tag name, not the catalog)');
 }
 
 /** Parse the point tone curve (ToneCurvePV2012) into flat [x0,y0,x1,y1,…]. */
@@ -255,15 +335,23 @@ function isEdited(
 
 function readAsShot(crs: ExifRecord | undefined, exif: ExifRecord | undefined): AsShot {
   const wb = typeof crs?.['WhiteBalance'] === 'string' ? (crs['WhiteBalance'] as string) : null;
-  const chosenTemp = num(crs?.['Temperature']);
-  const exifTemp = num(exif?.['ColorTemperature']);
+  // The photographer's chosen Kelvin, from the sidecar. Note this reads the crs
+  // record under exiftool's name for crs:Temperature — same spelling as the EXIF
+  // tag below, but a different record and a different meaning.
+  const chosenTemp = num(crs?.[exifToolTag('Temperature')]);
+  // The camera's own as-shot Kelvin, edit-independent by construction.
+  const captureTemp = num(exif?.['ColorTempAsShot']) ?? num(exif?.['ColorTemperature']);
   // As-shot Kelvin reference for the WB delta. If the photographer left WB
   // "As Shot", the chosen temp IS the as-shot temp (delta 0). If they changed it,
-  // anchor on the RAW's EXIF color temperature; fall back to the chosen value
+  // anchor on the camera's as-shot temperature; fall back to the chosen value
   // (delta 0) when no edit-independent anchor exists.
-  const tempAsShot = !wb || wb === 'As Shot' ? (chosenTemp ?? exifTemp) : (exifTemp ?? chosenTemp);
+  const tempAsShot = !wb || wb === 'As Shot' ? (chosenTemp ?? captureTemp) : (captureTemp ?? chosenTemp);
   return {
     tempAsShot,
+    // The camera's measured scene temperature — tracks the light rather than the
+    // WB dial, so it is a genuine edit-independent hint at the Kelvin the
+    // photographer is about to dial in.
+    tempMeasured: num(exif?.['ColorTempMeasured']),
     tintAsShot: null, // no clean edit-independent Kelvin tint source; delta falls back to 0
     iso: num(exif?.['ISO']),
     exposureComp: num(exif?.['ExposureCompensation']),
@@ -332,7 +420,10 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   // decide which are edited. crs comes from the sidecar (or embedded, for DNG/JPEG).
   const developSrcByFile = new Map(files.map((f) => [f.path, developSource(f.path)] as const));
   const crsPaths = [...new Set(developSrcByFile.values())];
-  const crsTagArgs = [...CRS_TARGET_TAGS.map((t) => `XMP-crs:${t}`), 'XMP-crs:WhiteBalance', 'XMP-crs:ToneCurvePV2012', 'XMP-crs:CameraProfile'];
+  const crsTagArgs = [
+    ...CRS_TARGET_TAGS.map((t) => `XMP-crs:${exifToolTag(t)}`),
+    'XMP-crs:WhiteBalance', 'XMP-crs:ToneCurvePV2012', 'XMP-crs:CameraProfile',
+  ];
   const crsPhase = startPhase(io, 'Reading develop settings');
   const crsRecords = await readMetadata(crsPaths, {
     tags: crsTagArgs,
@@ -342,6 +433,8 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   const crsByPath = new Map<string, ExifRecord>();
   for (const rec of crsRecords) crsByPath.set(path.resolve(rec.SourceFile), rec);
   const crsFor = (file: string): ExifRecord | undefined => crsByPath.get(path.resolve(developSrcByFile.get(file)!));
+
+  warnNeverSeenTargets(io, crsRecords);
 
   // --edited-only: skip the expensive per-file work (embedding / neutral render /
   // color features) AND the as-shot EXIF read for files that were never edited.

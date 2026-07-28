@@ -144,6 +144,13 @@ export function paramsForTreatment(treatment: Treatment): DevelopParam[] {
 /** As-shot metadata that anchors the WB delta (and feeds the feature vector). */
 export interface AsShotMeta {
   tempAsShot: number | null;
+  /**
+   * The camera's *measured* scene temperature, where the body reports one.
+   * Distinct from {@link tempAsShot}: it follows the light rather than the WB
+   * dial, so it is an edit-independent estimate of the Kelvin the photographer
+   * will choose. Captured by the exporter; absent on older datasets.
+   */
+  tempMeasured?: number | null;
   tintAsShot: number | null;
   iso: number | null;
   exposureComp: number | null;
