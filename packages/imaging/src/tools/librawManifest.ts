@@ -50,11 +50,11 @@ const V = LIBRAW_VERSION;
 // workflow's printed checksums. gzip is not deterministic — pin the exact files
 // uploaded, do not regenerate.
 const SPECS: Record<string, LibrawPlatformSpec | undefined> = {
-  win32: { archive: `libraw-${V}-win32-x64.tar.gz`, sha256: '', bin: 'dcraw_emu.exe' },
+  win32: { archive: `libraw-${V}-win32-x64.tar.gz`, sha256: 'sha256:3cd53277e987e7d3614a6a2e8c5d8d14ae72e1d214f704368a45afe1458e2ff1', bin: 'dcraw_emu.exe' },
   // A single universal2 binary covers both Apple Silicon and Intel Macs.
-  darwin: { archive: `libraw-${V}-darwin-universal.tar.gz`, sha256: '', bin: 'dcraw_emu' },
-  'linux-x64': { archive: `libraw-${V}-linux-x64.tar.gz`, sha256: '', bin: 'dcraw_emu' },
-  'linux-arm64': { archive: `libraw-${V}-linux-arm64.tar.gz`, sha256: '', bin: 'dcraw_emu' },
+  darwin: { archive: `libraw-${V}-darwin-universal.tar.gz`, sha256: 'sha256:5340b6182304727ae3bc94a724b0e93b25036ffe8c89f40b3964185d2beb15cd', bin: 'dcraw_emu' },
+  'linux-x64': { archive: `libraw-${V}-linux-x64.tar.gz`, sha256: 'sha256:330d778fbe98ede5e3d1d81921a44d667f78bf5805f500477b958a0a79f5378c', bin: 'dcraw_emu' },
+  'linux-arm64': { archive: `libraw-${V}-linux-arm64.tar.gz`, sha256: 'sha256:7acd07ebd45d6d3f3908c4e4c1d9a4c34140ee288d6f315c1caea085c4b87d33', bin: 'dcraw_emu' },
 };
 
 /** Map (platform, arch) to a SPECS key — macOS is a single universal build. */
