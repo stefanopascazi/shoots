@@ -1,32 +1,32 @@
-# shoots-develop
+# shoots develop
 
-Personal **develop-setting predictor** for [Shoots](../../README.md) — the "local
-Lightroom AI" editor, limited to the *global look* (no local masks, no generative
-edits). It learns a photographer's develop style from their own catalog and
-predicts a per-image develop starting point for a new set.
+Personal **develop-setting predictor** for [Shoots](../../../../README.md) — the
+"local Lightroom AI" editor, limited to the *global look* (no local masks, no
+generative edits). It learns a photographer's develop style from their own catalog
+and predicts a per-image develop starting point for a new set.
 
-It is deliberately **separate from the Shoots monorepo**: its own `package.json`,
-its own build. It never loads onnxruntime — the heavy feature extraction (CLIP +
-color features + crs targets) lives in the `shoots develop-export` command; this
-tool only does the math (a multi-output ridge over develop-setting *deltas*).
+It lives inside the Shoots CLI as the `shoots develop` command group. The heavy
+feature extraction (CLIP + colour features + crs targets) is the `export`
+subcommand — the only step that touches onnx/exiftool; `train`, `predict` and
+`diagnose` are pure maths over the exported dataset (a multi-output ridge over
+develop-setting *deltas*), reusing no ML runtime.
 
-Licensed **PolyForm-Noncommercial-1.0.0** (inherited from the repo). The only
-runtime dependency is `commander` (MIT).
+Licensed **PolyForm-Noncommercial-1.0.0** (inherited from the repo).
 
 ## Pipeline
 
 ```
-# 1. In the Shoots CLI — build the training dataset from an edited catalog.
+# 1. Build the training dataset from an edited catalog.
 #    --edited-only reads crs from the (cheap) sidecars first and runs the
 #    expensive work only on files that actually carry develop settings:
-shoots develop-export <edited-catalog> --edited-only --out train.jsonl
+shoots develop export <edited-catalog> --edited-only --out train.jsonl
 
 # 2. Fit the per-catalog develop profile (prints the go/no-go evidence per branch):
-develop train --data train.jsonl --name my-style --out profiles/my-style.json
+shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json
 
 # 3. Export a NEW set, then predict — pick the treatment (colour/B&W) or auto:
-shoots develop-export <new-shoot> --out new.jsonl
-develop predict --data new.jsonl --profile profiles/my-style.json --treatment color --xmp out-xmp/
+shoots develop export <new-shoot> --out new.jsonl
+shoots develop predict --data new.jsonl --profile profiles/my-style.json --treatment color --xmp out-xmp/
 ```
 
 `predict --xmp` drops a Lightroom-readable `.xmp` sidecar next to each image — a
@@ -69,7 +69,7 @@ Two decisions are baked into the model:
 
 ## The go/no-go metric (Fase 0 GATE)
 
-`develop train` reports, per parameter, the held-out **MAE of the model** versus
+`shoots develop train` reports, per parameter, the held-out **MAE of the model** versus
 the **"apply my average edit"** baseline, and a **skill** score
 `1 − modelMae/baselineMae`. Skill > 0 means the model beats the mean. The headline
 number is the weighted skill over the image-dependent parameters. If that is not

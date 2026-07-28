@@ -1,5 +1,5 @@
 /**
- * shoots develop-export <path>
+ * shoots develop export <path>
  *
  * Fase 0/1 of the local "Lightroom AI" plan: build the training dataset the
  * `develop` tool consumes. For each image it emits, per file:
@@ -29,7 +29,6 @@ import path from 'node:path';
 import { existsSync, createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { once } from 'node:events';
-import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
 import { extractColorFeatures, COLOR_FEATURE_NAMES, readMetadata, isRawFile, type ExifRecord } from '@shoots/imaging';
 import { resolveRawDeveloper, withNeutralRender, type RawDeveloper } from '../rawDeveloper.js';
@@ -107,10 +106,10 @@ function developSource(file: string): string {
   return existsSync(sidecar) ? sidecar : file;
 }
 
-const BASELINES = ['embedded-preview', 'external'] as const;
+export const BASELINES = ['embedded-preview', 'external'] as const;
 type Baseline = (typeof BASELINES)[number];
 
-interface DevelopExportOptions {
+export interface DevelopExportOptions {
   model: string;
   concurrency: string;
   out: string;
@@ -149,21 +148,6 @@ function deriveTreatment(develop: Record<string, number>): 'color' | 'bw' {
   if (develop['ConvertToGrayscale'] === 1) return 'bw';
   if (Object.keys(develop).some((k) => k.startsWith('GrayMixer'))) return 'bw';
   return 'color';
-}
-
-export function registerDevelopExportCommand(program: Command): void {
-  program
-    .command('develop-export')
-    .description('Export a develop-prediction training dataset (CLIP + color features + crs targets) for the `develop` tool')
-    .argument('<path>', 'folder (or single file) of RAW/edited images carrying develop settings')
-    .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
-    .option('--concurrency <n>', 'max parallel jobs', '4')
-    .requiredOption('--out <file>', 'write the JSONL dataset to this path (one record per line + a trailing meta line)')
-    .option('--baseline <mode>', `baseline render strategy: ${BASELINES.join(' | ')}`, 'embedded-preview')
-    .option('--edited-only', 'only run the expensive embedding/render on files that carry develop settings (for training-set builds)')
-    .option('--json', 'machine-readable JSON output on stdout')
-    .option('--verbose', 'verbose logging on stderr')
-    .action(runDevelopExport);
 }
 
 /** Coerce an exiftool value to a finite number, or null. */
@@ -224,7 +208,7 @@ function readAsShot(crs: ExifRecord | undefined, exif: ExifRecord | undefined): 
   };
 }
 
-async function runDevelopExport(targetPath: string, options: DevelopExportOptions): Promise<void> {
+export async function runDevelopExport(targetPath: string, options: DevelopExportOptions): Promise<void> {
   const io = makeIo(options);
 
   const AVAILABLE_MODELS: ModelKind[] = ['onnx'];
