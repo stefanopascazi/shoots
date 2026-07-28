@@ -38,6 +38,16 @@ export const COMMANDS: CommandSpec[] = [
     usage: '/rate <path> [--profile street|generic|portrait|wildlife|wedding] [--write-xmp] [--dry-run] [--json]',
   },
   {
+    name: 'embeddings',
+    summary: 'Export raw CLIP embeddings (profile-neutral) for preference-learning tooling',
+    usage: '/embeddings <path> [--out <dir>] [--previews auto|always|never] [--preview-size 1024] [--preview-quality 82] [--json]',
+  },
+  {
+    name: 'develop',
+    summary: 'Personal develop-setting predictor (local "Lightroom AI", global look): export → train → predict',
+    usage: '/develop export <path> --out <f> [--edited-only] · train --data <f> --name <n> --out <f> · predict --data <f> --profile <f> [--xmp <dir>] · diagnose --data <f>',
+  },
+  {
     name: 'setup',
     summary: 'Download & verify external tools (exiftool) and the inference model into ~/.shoots',
     usage: '/setup [--json]',
