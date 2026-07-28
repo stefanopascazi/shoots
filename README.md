@@ -38,6 +38,19 @@ shoots update    # update the binary to the latest release
 
 Prefer building from source? See [Setup](#setup).
 
+## Documentation
+
+Full documentation lives in [`docs/`](./docs/README.md):
+
+- [Getting started](./docs/getting-started.md) — install, setup, first import
+- [Core concepts](./docs/concepts.md) — non-destructive rules, exit codes, JSON output
+- [Command reference](./docs/commands/README.md) — every command, every flag, with examples
+- [Interactive shell](./docs/shell.md) · [Filename templates](./docs/templates.md) · [Rating profiles](./docs/profiles.md)
+- [Preference learning](./docs/preference-learning.md) — train a rating profile on your own eye
+- [Develop predictor](./docs/develop-predictor.md) — the local "Lightroom AI"
+- [Scripting](./docs/scripting.md) · [Recipes](./docs/recipes.md) · [Troubleshooting](./docs/troubleshooting.md)
+- [Configuration](./docs/configuration.md) · [Development](./docs/development.md)
+
 ## Non-goals
 
 No RAW editing engine, no demosaicing, no GUI, no cloud backend (yet — the seams are there).
@@ -49,7 +62,7 @@ packages/
   cli/        Thin layer: Commander commands + Ink progress UI. The only package that knows about terminals.
   core/       Pipeline engine, filename templating, file discovery, job queue, YAML pipeline config. Pure TS, zero UI deps.
   imaging/    exiftool wrapper (metadata, RAW embedded-preview extraction), sharp thumbnails, Laplacian blur detection.
-  inference/  QualityModel interface + deterministic LocalStubModel. Future home of the onnxruntime-node backend.
+  inference/  QualityModel interface + the onnxruntime-node CLIP backend: aesthetics, keywords, rating profiles.
 ```
 
 Dependency direction: `cli → core/imaging/inference`, `imaging → core`. `core`, `imaging`, and `inference` never depend on `cli` or Ink — they are usable headlessly or from a future REST layer as-is.
@@ -164,14 +177,28 @@ shoots cull ./raw --no-focus-rescue                                # classify pu
 
 ### `shoots rate <path>`
 
-Scores focus/aesthetics and suggests keywords through the `@shoots/inference` `QualityModel` interface, mapping to a 1–5 star rating.
+Scores focus/aesthetics and suggests keywords via a local ONNX CLIP model, mapping to a strict 0–5 star rating shaped by a [rating profile](./docs/profiles.md).
 
 ```sh
-shoots rate ./raw                    # writes <file>.shoots.json sidecars
-shoots rate ./raw --write-xmp        # writes <file>.xmp sidecars (Rating + Subject) via exiftool
+shoots rate ./raw                              # writes <file>.shoots.json sidecars
+shoots rate ./raw --write-xmp                  # writes <file>.xmp sidecars (Rating + Subject)
+shoots rate ./raw --profile wedding            # street | generic | portrait | wildlife | wedding
+shoots rate ./raw --profile my-eye             # a learned profile from ~/.shoots/profiles
 ```
 
-Currently backed by `LocalStubModel` — **deterministic placeholder scores** (hash-derived, stable across runs). Swapping in a real onnxruntime-node model is a change inside `@shoots/inference` only: implement `QualityModel`, register it in `createQualityModel()`.
+Everything runs locally; nothing is uploaded. Only `street` is calibrated against a real hand-judged shoot — the rest are priors. To make the ratings genuinely yours, train a profile via [preference learning](./docs/preference-learning.md).
+
+### `shoots embeddings <path>`
+
+Profile-neutral CLIP export for preference-learning tooling. See [the command page](./docs/commands/embeddings.md).
+
+### `shoots develop <export|train|predict|diagnose>`
+
+Personal develop-setting predictor — the local "Lightroom AI", limited to the global look. See [the guide](./docs/develop-predictor.md).
+
+### `shoots setup` · `shoots doctor` · `shoots update`
+
+Provision external tools and the model, check the environment, self-update the binary. See [the command reference](./docs/commands/README.md).
 
 ## Pipelines (scaffolded, next stage)
 
