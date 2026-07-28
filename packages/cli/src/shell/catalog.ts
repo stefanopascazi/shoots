@@ -2,6 +2,7 @@
  * Command catalog for the interactive shell: drives `/` autocomplete,
  * the usage hint under the input, and `/help`.
  */
+import type { Command } from 'commander';
 
 export interface CommandSpec {
   name: string;
@@ -78,4 +79,42 @@ export function findCliCommand(name: string): CommandSpec | undefined {
 
 export function findCommand(name: string): CommandSpec | undefined {
   return COMMANDS.find((c) => c.name === name);
+}
+
+/**
+ * Commander commands that intentionally have no shell catalog entry: `shell`
+ * launches the shell (running it from inside the shell is meaningless) and
+ * `help` is commander's own implicit command.
+ */
+const NON_CATALOG_COMMANDS = new Set(['shell', 'help']);
+
+/**
+ * Enforce the convention "every CLI command also lives in the Ink shell".
+ *
+ * The commander `program` is the single source of truth; this asserts that the
+ * spawnable entries in {@link COMMANDS} match its top-level commands exactly
+ * (minus {@link NON_CATALOG_COMMANDS}). Called at startup so drift fails loudly
+ * with a precise diff instead of a command silently vanishing from the shell's
+ * `/` autocomplete, `/help` and dispatch. Builtins (cd/pwd/help/…) live only in
+ * the shell and are ignored here.
+ */
+export function assertShellCatalogInSync(program: Command): void {
+  const registered = program.commands.map((c) => c.name()).filter((n) => !NON_CATALOG_COMMANDS.has(n));
+  const cataloged = COMMANDS.filter((c) => !c.builtin).map((c) => c.name);
+
+  const registeredSet = new Set(registered);
+  const catalogedSet = new Set(cataloged);
+  const missing = registered.filter((n) => !catalogedSet.has(n)); // on the CLI, absent from the shell
+  const extra = cataloged.filter((n) => !registeredSet.has(n)); // in the shell, not a real CLI command
+
+  if (missing.length === 0 && extra.length === 0) return;
+
+  const problems: string[] = [];
+  if (missing.length > 0) {
+    problems.push(`missing from the shell catalog (add to COMMANDS in shell/catalog.ts): ${missing.join(', ')}`);
+  }
+  if (extra.length > 0) {
+    problems.push(`present in the shell catalog but not registered on the CLI: ${extra.join(', ')}`);
+  }
+  throw new Error(`shell command catalog out of sync — ${problems.join('; ')}`);
 }

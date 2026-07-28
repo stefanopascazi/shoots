@@ -15,6 +15,7 @@ import { registerDevelopCommand } from './commands/develop.js';
 import { registerSetupCommand } from './commands/setup.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerUpdateCommand } from './commands/update.js';
+import { assertShellCatalogInSync } from './shell/catalog.js';
 import { VERSION } from './version.js';
 
 const program = new Command();
@@ -99,6 +100,11 @@ function flushStdio(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // Fail loudly if a CLI command lacks its shell counterpart (see the
+  // "every command lives in the shell" convention). Cheap set compare; runs on
+  // every invocation so drift surfaces the moment any command is executed.
+  assertShellCatalogInSync(program);
+
   const args = process.argv.slice(2);
   if (args.length === 0) {
     if (process.stdout.isTTY && process.stdin.isTTY) {
