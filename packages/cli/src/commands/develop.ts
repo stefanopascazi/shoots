@@ -15,6 +15,7 @@
  */
 import type { Command } from 'commander';
 import { BASELINES, runDevelopExport } from '../develop/export.js';
+import { runRefreshTargets } from '../develop/commands/refresh.js';
 import { runTrain } from '../develop/commands/train.js';
 import { runPredict } from '../develop/commands/predict.js';
 import { runDiagnose } from '../develop/commands/diagnose.js';
@@ -36,6 +37,16 @@ export function registerDevelopCommand(program: Command): void {
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runDevelopExport);
+
+  develop
+    .command('refresh-targets')
+    .description('Re-read the develop targets of an existing dataset (keeps the embeddings — minutes, not hours)')
+    .requiredOption('--data <file>', 'dataset from `shoots develop export`')
+    .requiredOption('--out <file>', 'write the refreshed JSONL dataset here')
+    .option('--keep-unedited', 'keep records that no longer carry a real edit (default: drop, as export does)')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runRefreshTargets);
 
   develop
     .command('train')
