@@ -6,7 +6,7 @@
  * return false — after logging a clear error — when provisioning fails, so the
  * caller can abort cleanly. The same download UX is used by `shoots setup`.
  */
-import { ensureExiftool } from '@shoots/imaging';
+import { ensureExiftool, ensureLibraw, LibrawMirrorNotConfiguredError } from '@shoots/imaging';
 import { ensureClipModel, ModelMirrorNotConfiguredError } from '@shoots/inference';
 import { logError, logWarn, markFailure, type CliIo } from './io.js';
 
@@ -63,6 +63,30 @@ export async function tryEnsureExiftool(io: CliIo): Promise<boolean> {
       `exiftool unavailable (${err instanceof Error ? err.message : String(err)}). ` +
         'Falling back to file modification times.',
     );
+    return false;
+  }
+}
+
+/**
+ * Hard requirement: provision LibRaw (`dcraw_emu`) for the neutral RAW baseline
+ * (`develop export --baseline external`). On failure log a clear error, mark the
+ * run failed and return false so the caller aborts. When the libraw mirror is not
+ * pinned yet, the error points at the `SHOOTS_RAW_DEVELOPER` escape hatch.
+ */
+export async function ensureLibrawReady(io: CliIo): Promise<boolean> {
+  try {
+    await ensureLibraw(mirrorProgress(io));
+    return true;
+  } catch (err) {
+    if (err instanceof LibrawMirrorNotConfiguredError) {
+      logError(
+        `the neutral RAW baseline needs LibRaw, but its mirror is not configured yet (${err.message}). ` +
+          'Meanwhile point SHOOTS_RAW_DEVELOPER at a local dcraw_emu / rawtherapee-cli.',
+      );
+    } else {
+      logError(err instanceof Error ? err.message : String(err));
+    }
+    markFailure();
     return false;
   }
 }

@@ -89,10 +89,13 @@ Two strategies, editor-agnostic by design (no dependency on any host editor):
 
 - **`--baseline external`**: a stand-alone RAW developer produces a neutral,
   camera-independent render (standard color, camera WB, **no auto-brighten** so the
-  true scene exposure survives). Configure it via env — no editor involved:
+  true scene exposure survives). **Zero-config**: on first use it provisions the
+  LibRaw `dcraw_emu` binary into `~/.shoots` (checksum-verified from the mirror,
+  exactly like exiftool — `shoots setup` fetches it up front). Override with your
+  own developer via env — no editor involved:
 
   ```bash
-  # LibRaw dcraw_emu (fast, tiny; needs LibRaw ≥0.20 for CR3):
+  # A local LibRaw dcraw_emu (needs LibRaw ≥0.20 for CR3):
   export SHOOTS_RAW_DEVELOPER=dcraw_emu
   # default args already target dcraw_emu: -w -W -o 1 -q 0 -T -Z {out} {in}
 
@@ -103,8 +106,10 @@ Two strategies, editor-agnostic by design (no dependency on any host editor):
 
   `{in}` / `{out}` are substituted per file; the render goes to a temp dir. Only
   RAW files are re-rendered (rendered formats use their own pixels); CLIP stays on
-  the embedded preview (it is colour-invariant). A provisioned binary in `~/.shoots`
-  (like exiftool) is the planned follow-up once the lever is confirmed.
+  the embedded preview (it is colour-invariant). The provisioned LibRaw is
+  cross-built and mirrored by the `libraw-mirror` CI workflow (see
+  `scripts/prepare-libraw-mirror.ts`); until that mirror is published, set
+  `SHOOTS_RAW_DEVELOPER` to a local binary.
 
 The chosen strategy is recorded in the dataset and profile. Note: for proprietary
 RAW (CR3/NEF/ARW) the embedded preview is the camera JPEG — edit-independent, so no

@@ -1,0 +1,100 @@
+name: libraw-mirror
+
+# Cross-builds the LibRaw `dcraw_emu` binary (the neutral RAW-developer baseline
+# for `shoots develop export --baseline external`) for every supported platform,
+# repackages each into the normalized `.tar.gz` shoots downloads at runtime, and
+# publishes them to the shared `tools-v1` release alongside the exact LibRaw
+# source tarball (CDDL-1.0 source-availability).
+#
+# This is INFRASTRUCTURE, not a per-release step: run it manually when bumping
+# LIBRAW_VERSION. After it finishes, copy the printed SHA-256 sums into
+# packages/imaging/src/tools/librawManifest.ts and commit.
+#
+# LibRaw has no official prebuilt for macOS/Linux, so each leg compiles from
+# source on its own OS (see scripts/prepare-libraw-mirror.ts, which auto-detects
+# the OS and builds dependency-free via LibRaw's Makefile.dist / Makefile.msvc).
+# NOTE: the exact build flags are expected to need a first-run tune — treat the
+# initial dispatch as the validation of the native build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'LibRaw version to build (must match librawManifest.ts LIBRAW_VERSION)'
+        required: true
+        default: '0.21.5'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: win32-x64
+          - os: macos-latest # Apple Silicon; the script emits a universal2 binary
+            label: darwin-universal
+          - os: ubuntu-22.04
+            label: linux-x64
+          # arm64 runners are free for public repos only.
+          - os: ubuntu-24.04-arm
+            label: linux-arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      # Windows: put the MSVC toolchain (nmake / cl.exe) on PATH.
+      - if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # Linux: make + a C++ toolchain (present on the runners, but be explicit).
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - name: Build dcraw_emu
+        run: bun scripts/prepare-libraw-mirror.ts --version ${{ inputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: libraw-${{ matrix.label }}
+          path: dist-tools/libraw-*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # CDDL-1.0: publish the exact source we built from, beside the binaries.
+      - name: Fetch LibRaw source (CDDL source availability)
+        run: |
+          cd artifacts
+          curl -fSL -A curl/8 -O "https://www.libraw.org/data/LibRaw-${{ inputs.version }}.tar.gz"
+
+      - name: Generate + print checksums
+        run: |
+          cd artifacts
+          sha256sum libraw-*.tar.gz | tee SHA256SUMS-libraw.txt
+          echo "::notice::Paste these sha256 sums into packages/imaging/src/tools/librawManifest.ts"
+
+      # Appends to the existing tools-v1 release (does not touch exiftool assets).
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: tools-v1
+          files: |
+            artifacts/libraw-*.tar.gz
+            artifacts/LibRaw-*.tar.gz
+            artifacts/SHA256SUMS-libraw.txt
+          fail_on_unmatched_files: true

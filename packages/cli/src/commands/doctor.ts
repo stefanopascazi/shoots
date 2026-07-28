@@ -11,7 +11,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Command } from 'commander';
 import { shootsHome } from '@shoots/core';
-import { exiftoolManifest, exiftoolVersion, resolveExiftool, sharpVips } from '@shoots/imaging';
+import { exiftoolManifest, exiftoolVersion, resolveExiftool, resolveLibraw, librawManifest, sharpVips } from '@shoots/imaging';
 import { clipModelManifest, resolveClipModel } from '@shoots/inference';
 import { makeIo, printHuman, printJson } from '../io.js';
 
@@ -111,6 +111,24 @@ async function checkToolMirror(): Promise<CheckResult> {
   }
 }
 
+async function checkLibraw(): Promise<CheckResult> {
+  // Explicit external developer wins over the provisioned binary.
+  if (process.env.SHOOTS_RAW_DEVELOPER?.trim()) {
+    return { name: 'libraw', status: 'ok', detail: `SHOOTS_RAW_DEVELOPER=${process.env.SHOOTS_RAW_DEVELOPER}` };
+  }
+  const bin = resolveLibraw();
+  if (bin) return { name: 'libraw', status: 'ok', detail: bin };
+  try {
+    const m = librawManifest();
+    const configured = /^[0-9a-f]{64}$/.test(m.sha256);
+    return configured
+      ? { name: 'libraw', status: 'warn', detail: 'not provisioned — run `shoots setup`' }
+      : { name: 'libraw', status: 'warn', detail: `mirror not configured (base ${m.url})` };
+  } catch (err) {
+    return { name: 'libraw', status: 'warn', detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function checkSharp(): Promise<CheckResult> {
   const vips = sharpVips();
   return { name: 'sharp', status: 'ok', detail: vips ? `libvips ${vips}` : 'loaded' };
@@ -134,6 +152,7 @@ const CHECKS: ReadonlyArray<() => Promise<CheckResult>> = [
   checkPerl,
   checkToolMirror,
   checkExiftool,
+  checkLibraw,
   checkModel,
   checkSharp,
 ];

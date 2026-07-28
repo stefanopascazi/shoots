@@ -50,7 +50,7 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: 'setup',
-    summary: 'Download & verify external tools (exiftool) and the inference model into ~/.shoots',
+    summary: 'Download & verify external tools (exiftool, libraw) and the inference model into ~/.shoots',
     usage: '/setup [--json]',
   },
   {

@@ -48,7 +48,7 @@ import {
   printJson,
 } from '../io.js';
 import { startProgress } from '../progress.js';
-import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
+import { ensureClipModelReady, ensureExiftoolReady, ensureLibrawReady } from '../tools.js';
 
 /**
  * The develop-setting crs tags we pull from each sidecar, requested with the
@@ -224,15 +224,20 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   }
   const baseline = options.baseline as Baseline;
 
-  // The external neutral baseline needs a configured RAW developer (see
-  // rawDeveloper.ts). Resolve it up front so we fail fast, not 700 files in.
+  // The external neutral baseline needs a RAW developer (see rawDeveloper.ts).
+  // Unless the user pointed us at their own via SHOOTS_RAW_DEVELOPER, provision
+  // the bundled LibRaw dcraw_emu on first use. Resolve up front so we fail fast,
+  // not 700 files in.
   let developer: RawDeveloper | null = null;
   if (baseline === 'external') {
+    if (!process.env.SHOOTS_RAW_DEVELOPER?.trim()) {
+      if (!(await ensureLibrawReady(io))) return;
+    }
     developer = resolveRawDeveloper();
     if (!developer) {
       logError(
-        'baseline "external" needs a RAW developer: set SHOOTS_RAW_DEVELOPER to the binary ' +
-          '(e.g. dcraw_emu / rawtherapee-cli), optionally SHOOTS_RAW_DEVELOPER_ARGS to override the neutral args.',
+        'baseline "external" needs a RAW developer: run `shoots setup`, or set SHOOTS_RAW_DEVELOPER ' +
+          'to a binary (e.g. dcraw_emu / rawtherapee-cli), optionally SHOOTS_RAW_DEVELOPER_ARGS to override the neutral args.',
       );
       process.exitCode = 2;
       return;

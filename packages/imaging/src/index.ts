@@ -31,6 +31,19 @@ export {
   type ResolvedExiftoolManifest,
 } from './tools/exiftoolManifest.js';
 
+export {
+  resolveLibraw,
+  ensureLibraw,
+  LibrawMirrorNotConfiguredError,
+  type EnsureLibrawOptions,
+} from './tools/libraw.js';
+
+export {
+  librawManifest,
+  LIBRAW_VERSION,
+  type ResolvedLibrawManifest,
+} from './tools/librawManifest.js';
+
 export { sharpVips } from './health.js';
 
 export {
