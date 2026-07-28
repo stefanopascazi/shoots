@@ -133,8 +133,8 @@ const BW: DevelopParam[] = HSL_CHANNELS.map((ch) => slider(`GrayMixer${ch}`, 'gr
 /** The full ordered list (shared + colour + B&W). A param's index is its position. */
 export const DEVELOP_PARAMS: DevelopParam[] = [...SHARED, ...COLOR, ...BW];
 
-/** Bump when the param list / order / branches change so old profiles are rejected. */
-export const SCHEMA_VERSION = 2;
+/** Bump when the param list / order / branches / feature layout change. */
+export const SCHEMA_VERSION = 3;
 
 /** Parameters predicted for a given treatment: shared + that treatment's branch. */
 export function paramsForTreatment(treatment: Treatment): DevelopParam[] {

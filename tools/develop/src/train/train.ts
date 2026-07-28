@@ -16,7 +16,7 @@ import {
   type DevelopParam,
   type Treatment,
 } from '../develop/schema.js';
-import { assembleFeatures, targetDeltas, actualAbsVec } from '../develop/assemble.js';
+import { assembleFeatures, targetDeltas, actualAbsVec, profileOneHot } from '../develop/assemble.js';
 import { buildNormalEquations, solveRidge, predictStd } from './regress.js';
 import type { BranchModel, DevelopDataset, DevelopProfile, ParamEval } from '../types.js';
 
@@ -36,6 +36,14 @@ interface RawRow {
   develop: Record<string, number>;
   meta: AsShotMeta;
   treatment: Treatment;
+  baseProfile?: string;
+}
+
+/** Base-profile vocabulary: profiles used on ≥3 of the branch's images. */
+function buildProfileVocab(rows: RawRow[]): string[] {
+  const counts = new Map<string, number>();
+  for (const r of rows) if (r.baseProfile) counts.set(r.baseProfile, (counts.get(r.baseProfile) ?? 0) + 1);
+  return [...counts.entries()].filter(([, c]) => c >= 3).map(([k]) => k).sort();
 }
 
 interface BranchRow {
@@ -90,6 +98,7 @@ function buildRows(dataset: DevelopDataset): RawRow[] {
       develop: r.develop,
       meta: r.asShot,
       treatment: deriveTreatment(r),
+      baseProfile: r.baseProfile,
     });
   }
   return rows;
@@ -170,8 +179,9 @@ const round6 = (v: number): number => Math.round(v * 1e6) / 1e6;
 function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions): BranchModel {
   const params = paramsForTreatment(treatment);
   const folds = options.folds ?? 5;
+  const profileVocab = buildProfileVocab(raw);
   const rows: BranchRow[] = raw.map((r) => ({
-    x: assembleFeatures(r.embedding, r.features, r.meta),
+    x: [...assembleFeatures(r.embedding, r.features, r.meta), ...profileOneHot(r.baseProfile, profileVocab)],
     deltas: targetDeltas(params, r.develop, r.meta),
     abs: actualAbsVec(params, r.develop, r.meta),
     meta: r.meta,
@@ -202,6 +212,7 @@ function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions)
   return {
     treatment,
     params: params.map((p) => p.key),
+    profileVocab,
     ridgeLambda: chosenLambda,
     featureMean: featStats.mean.map(round6),
     featureStd: featStats.std.map(round6),

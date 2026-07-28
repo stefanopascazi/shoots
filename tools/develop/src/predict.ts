@@ -5,7 +5,7 @@
  * de-standardized, decoded to absolute ACR units and clamped.
  */
 import { SCHEMA_VERSION, decodeDelta, paramsForTreatment, type Treatment } from './develop/schema.js';
-import { assembleFeatures } from './develop/assemble.js';
+import { assembleFeatures, profileOneHot } from './develop/assemble.js';
 import type { DevelopExportResult, DevelopProfile } from './types.js';
 
 export interface Prediction {
@@ -44,7 +44,7 @@ export function predictOne(profile: DevelopProfile, result: DevelopExportResult,
   if (!branch) throw new Error(`profile has no '${treatment}' branch`);
   const params = paramsForTreatment(treatment);
   const meta = result.asShot;
-  const x = assembleFeatures(result.embedding, result.features, meta);
+  const x = [...assembleFeatures(result.embedding, result.features, meta), ...profileOneHot(result.baseProfile, branch.profileVocab)];
   const develop: Record<string, number> = {};
   for (let k = 0; k < params.length; k++) {
     const param = params[k]!;

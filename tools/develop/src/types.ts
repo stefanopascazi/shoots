@@ -55,6 +55,8 @@ export interface BranchModel {
   treatment: Treatment;
   /** Ordered crs param keys this branch predicts (shared + branch). */
   params: string[];
+  /** Base-profile vocabulary (crs CameraProfile) one-hot-appended to the features. */
+  profileVocab: string[];
   ridgeLambda: number;
   /** Per-feature standardization of the input X (length embeddingDim+colorDim+3). */
   featureMean: number[];

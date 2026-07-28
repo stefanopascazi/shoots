@@ -23,6 +23,21 @@ export function assembleFeatures(embedding: number[], color: number[], meta: AsS
   return [...embedding, ...color, ...asShotFeatures(meta)];
 }
 
+/**
+ * One-hot encode the base rendering profile (crs CameraProfile) against a
+ * per-branch vocabulary, appended to the feature vector as a conditioning signal.
+ * The profile sets the colour starting point before any slider; an unknown/absent
+ * profile maps to all-zeros (neutral). Vocabulary order is fixed by training.
+ */
+export function profileOneHot(profile: string | undefined, vocab: string[]): number[] {
+  const v = new Array<number>(vocab.length).fill(0);
+  if (profile) {
+    const i = vocab.indexOf(profile);
+    if (i >= 0) v[i] = 1;
+  }
+  return v;
+}
+
 /** The absolute develop value effectively applied for a param (present, or the ACR default). */
 export function actualAbsOne(param: DevelopParam, develop: Record<string, number>, meta: AsShotMeta): number {
   const present = develop[param.key];
