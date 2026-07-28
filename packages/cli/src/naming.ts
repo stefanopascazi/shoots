@@ -13,6 +13,7 @@ import {
   type ExifRecord,
 } from '@shoots/imaging';
 import { logVerbose, logWarn, type CliIo } from './io.js';
+import { startPhase } from './progress.js';
 
 export interface FileNamingInfo {
   file: ScannedFile;
@@ -28,16 +29,22 @@ export interface FileNamingInfo {
  */
 export async function collectNamingInfo(io: CliIo, files: ScannedFile[]): Promise<FileNamingInfo[]> {
   const byPath = new Map<string, ExifRecord>();
+  const phase = startPhase(io, 'Reading capture metadata');
   try {
     const records = await readMetadata(
       files.map((f) => f.path),
-      { tags: ['DateTimeOriginal', 'CreateDate', 'Model', 'LensModel', 'LensID'] },
+      {
+        tags: ['DateTimeOriginal', 'CreateDate', 'Model', 'LensModel', 'LensID'],
+        onProgress: (done, total) => phase.update(`${done}/${total}`),
+      },
     );
     for (const record of records) {
       byPath.set(path.resolve(record.SourceFile), record);
     }
+    phase.done(`${records.length}/${files.length} files`);
     logVerbose(io, `exiftool returned metadata for ${records.length}/${files.length} files`);
   } catch (err) {
+    phase.done('failed');
     if (err instanceof ExiftoolNotFoundError) {
       logWarn(`${err.message} Falling back to file modification times; {camera}/{lens} will be unknown.`);
     } else {

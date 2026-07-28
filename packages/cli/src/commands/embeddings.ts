@@ -38,7 +38,7 @@ import {
   printHuman,
   printJson,
 } from '../io.js';
-import { startProgress } from '../progress.js';
+import { startPhase, startProgress } from '../progress.js';
 import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 
 type PreviewMode = 'auto' | 'always' | 'never';
@@ -120,7 +120,11 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
   const profile = getProfile(DEFAULT_PROFILE_NAME)!;
   const model = createQualityModel(options.model as ModelKind, { profile });
 
-  const files = await scanFiles(targetPath);
+  const scanPhase = startPhase(io, 'Scanning');
+  const files = await scanFiles(targetPath, {
+    onProgress: (found) => scanPhase.update(`${found} files`),
+  });
+  scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
     if (io.json) printJson({ command: 'embeddings', model: model.name, dim: 0, results: [], summary: { total: 0, embedded: 0, failed: 0 } });

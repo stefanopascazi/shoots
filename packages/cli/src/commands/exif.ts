@@ -20,6 +20,7 @@ import {
   printHuman,
   printJson,
 } from '../io.js';
+import { startPhase } from '../progress.js';
 import { ensureExiftoolReady } from '../tools.js';
 
 interface ExifOptions {
@@ -111,7 +112,12 @@ function buildWriteTags(options: ExifOptions): Promise<Record<string, string | s
 
 async function runExif(targetPath: string, options: ExifOptions): Promise<void> {
   const io = makeIo(options);
-  const files = await scanFiles(targetPath, { recursive: options.recursive ?? true });
+  const scanPhase = startPhase(io, 'Scanning');
+  const files = await scanFiles(targetPath, {
+    recursive: options.recursive ?? true,
+    onProgress: (found) => scanPhase.update(`${found} files`),
+  });
+  scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
     if (io.json) printJson({ command: 'exif', files: [] });
@@ -137,7 +143,12 @@ async function runExif(targetPath: string, options: ExifOptions): Promise<void> 
     const tags = options.tags
       ? options.tags.split(',').map((t) => t.trim()).filter(Boolean)
       : DEFAULT_READ_TAGS;
-    const records = await readMetadata(paths, { tags });
+    const readPhase = startPhase(io, 'Reading metadata');
+    const records = await readMetadata(paths, {
+      tags,
+      onProgress: (done, total) => readPhase.update(`${done}/${total}`),
+    });
+    readPhase.done(`${records.length} files`);
     if (io.json) {
       printJson({ command: 'exif', mode: 'read', files: records });
     } else {

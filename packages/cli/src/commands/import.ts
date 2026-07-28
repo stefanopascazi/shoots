@@ -28,7 +28,7 @@ import {
   printJson,
 } from '../io.js';
 import { buildNamingPlan, collectNamingInfo, type FileNamingInfo } from '../naming.js';
-import { startProgress } from '../progress.js';
+import { startPhase, startProgress } from '../progress.js';
 import { tryEnsureExiftool } from '../tools.js';
 
 /** Applied with `--rename` when no explicit `--pattern` is given. */
@@ -101,7 +101,11 @@ async function runImport(source: string, options: ImportOptions): Promise<void> 
     }
   }
 
-  const files = await scanFiles(source);
+  const scanPhase = startPhase(io, 'Scanning');
+  const files = await scanFiles(source, {
+    onProgress: (found) => scanPhase.update(`${found} files`),
+  });
+  scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
     if (io.json) printJson({ command: 'import', dryRun: !!options.dryRun, files: [], errors: [], summary: { total: 0, succeeded: 0, failed: 0 } });

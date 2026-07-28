@@ -27,7 +27,7 @@ import {
   printHuman,
   printJson,
 } from '../io.js';
-import { startProgress } from '../progress.js';
+import { startPhase, startProgress } from '../progress.js';
 import { relocate } from '../relocate.js';
 import { ensureExiftoolReady } from '../tools.js';
 
@@ -120,7 +120,11 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   const scanRoot = statSync(targetPath).isDirectory()
     ? path.resolve(targetPath)
     : path.dirname(path.resolve(targetPath));
-  const scanned = await scanFiles(targetPath);
+  const scanPhase = startPhase(io, 'Scanning');
+  const scanned = await scanFiles(targetPath, {
+    onProgress: (found) => scanPhase.update(`${found} files`),
+  });
+  scanPhase.done(`${scanned.length} files`);
   const files = destRoot
     ? scanned.filter((f) => f.path !== destRoot && !f.path.startsWith(destRoot + path.sep))
     : scanned;

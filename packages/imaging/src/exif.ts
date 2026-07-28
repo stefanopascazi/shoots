@@ -93,7 +93,22 @@ const COMMON_ARGS = ['-charset', 'filename=UTF8'];
 export interface ReadMetadataOptions {
   /** Restrict output to these tag names (much faster on big batches). */
   tags?: string[];
+  /**
+   * Called after each internal batch with the number of files processed so far.
+   * A single exiftool run emits its JSON only at the end, so batching is what
+   * makes incremental reporting possible at all — see {@link READ_BATCH_SIZE}.
+   */
+  onProgress?: (done: number, total: number) => void;
 }
+
+/**
+ * Files per exiftool invocation. Paths reach exiftool through its `-@` argfile on
+ * stdin, so there is no command-line length limit to respect; the batching exists
+ * to bound the size of the JSON held in memory at once and to give callers a
+ * progress signal during the minutes-long reads a network catalog produces.
+ * Spawn cost amortizes fine at this size.
+ */
+const READ_BATCH_SIZE = 500;
 
 /**
  * Batch-read metadata for a set of files. Returns one record per readable file.
@@ -105,13 +120,19 @@ export async function readMetadata(
   options: ReadMetadataOptions = {},
 ): Promise<ExifRecord[]> {
   if (files.length === 0) return [];
-  const args = [...COMMON_ARGS, '-json', '-fast'];
-  for (const tag of options.tags ?? []) args.push(`-${tag}`);
-  args.push(...files);
-  const out = await runExiftool(args, { lenient: true });
-  const text = out.toString('utf8').trim();
-  if (!text) return [];
-  return JSON.parse(text) as ExifRecord[];
+
+  const baseArgs = [...COMMON_ARGS, '-json', '-fast'];
+  for (const tag of options.tags ?? []) baseArgs.push(`-${tag}`);
+
+  const records: ExifRecord[] = [];
+  for (let i = 0; i < files.length; i += READ_BATCH_SIZE) {
+    const batch = files.slice(i, i + READ_BATCH_SIZE);
+    const out = await runExiftool([...baseArgs, ...batch], { lenient: true });
+    const text = out.toString('utf8').trim();
+    if (text) records.push(...(JSON.parse(text) as ExifRecord[]));
+    options.onProgress?.(Math.min(i + batch.length, files.length), files.length);
+  }
+  return records;
 }
 
 export interface WriteMetadataOptions {

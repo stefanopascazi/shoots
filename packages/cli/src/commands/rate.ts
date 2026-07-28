@@ -33,7 +33,7 @@ import {
   printHuman,
   printJson,
 } from '../io.js';
-import { startProgress } from '../progress.js';
+import { startPhase, startProgress } from '../progress.js';
 import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 
 interface RateOptions {
@@ -97,7 +97,11 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     return;
   }
 
-  const files = await scanFiles(targetPath);
+  const scanPhase = startPhase(io, 'Scanning');
+  const files = await scanFiles(targetPath, {
+    onProgress: (found) => scanPhase.update(`${found} files`),
+  });
+  scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
     if (io.json) printJson({ command: 'rate', model: model.name, results: [], summary: { total: 0, rated: 0, failed: 0 } });

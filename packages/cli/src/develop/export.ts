@@ -47,7 +47,7 @@ import {
   printHuman,
   printJson,
 } from '../io.js';
-import { startProgress } from '../progress.js';
+import { startPhase, startProgress } from '../progress.js';
 import { ensureClipModelReady, ensureExiftoolReady, ensureLibrawReady } from '../tools.js';
 
 /**
@@ -247,7 +247,14 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   const profile = getProfile(DEFAULT_PROFILE_NAME)!;
   const model = createQualityModel(options.model as ModelKind, { profile });
 
-  const files = await scanFiles(targetPath);
+  // Everything from here to the per-file progress bar is bulk I/O with nothing to
+  // count yet. On a network catalog that is minutes of apparent silence, so each
+  // step announces itself.
+  const scanPhase = startPhase(io, 'Scanning');
+  const files = await scanFiles(targetPath, {
+    onProgress: (found) => scanPhase.update(`${found} files`),
+  });
+  scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
     if (io.json) printJson({ command: 'develop-export', model: model.name, dim: 0, results: [], summary: { total: 0, exported: 0, failed: 0, withDevelop: 0 } });
@@ -263,7 +270,12 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   const developSrcByFile = new Map(files.map((f) => [f.path, developSource(f.path)] as const));
   const crsPaths = [...new Set(developSrcByFile.values())];
   const crsTagArgs = [...CRS_TARGET_TAGS.map((t) => `XMP-crs:${t}`), 'XMP-crs:WhiteBalance', 'XMP-crs:ToneCurvePV2012', 'XMP-crs:CameraProfile'];
-  const crsRecords = await readMetadata(crsPaths, { tags: crsTagArgs });
+  const crsPhase = startPhase(io, 'Reading develop settings');
+  const crsRecords = await readMetadata(crsPaths, {
+    tags: crsTagArgs,
+    onProgress: (done, total) => crsPhase.update(`${done}/${total}`),
+  });
+  crsPhase.done(`${crsPaths.length} files`);
   const crsByPath = new Map<string, ExifRecord>();
   for (const rec of crsRecords) crsByPath.set(path.resolve(rec.SourceFile), rec);
   const crsFor = (file: string): ExifRecord | undefined => crsByPath.get(path.resolve(developSrcByFile.get(file)!));
@@ -276,7 +288,9 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     ? files.filter((f) => Object.keys(readDevelop(crsFor(f.path))).length > 0)
     : files;
   if (options.editedOnly) {
-    logVerbose(io, `edited-only: ${workFiles.length}/${files.length} files carry develop settings`);
+    // Worth surfacing outside --verbose: this is the number that decides how long
+    // the expensive pass will take, and a surprising 0 is the usual mistake.
+    printHuman(io, `edited-only: ${workFiles.length}/${files.length} files carry develop settings`);
   }
   if (workFiles.length === 0) {
     printHuman(io, options.editedOnly ? 'No edited files found (nothing carries develop settings).' : 'No files to process.');
@@ -285,7 +299,12 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
 
   // As-shot EXIF, read from the image files themselves — only for the files we
   // will actually process (opening RAWs is comparatively expensive).
-  const exifRecords = await readMetadata(workFiles.map((f) => f.path), { tags: [...META_TAGS] });
+  const exifPhase = startPhase(io, 'Reading capture metadata');
+  const exifRecords = await readMetadata(workFiles.map((f) => f.path), {
+    tags: [...META_TAGS],
+    onProgress: (done, total) => exifPhase.update(`${done}/${total}`),
+  });
+  exifPhase.done(`${workFiles.length} files`);
   const exifByPath = new Map<string, ExifRecord>();
   for (const rec of exifRecords) exifByPath.set(path.resolve(rec.SourceFile), rec);
 
@@ -303,7 +322,10 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   };
   const round5 = (v: number): number => Math.round(v * 1e5) / 1e5;
 
+  const modelPhase = startPhase(io, 'Loading inference model');
   await model.init();
+  modelPhase.done(model.name);
+
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
   const progress = await startProgress(io, workFiles.length, 'Develop-export');
 

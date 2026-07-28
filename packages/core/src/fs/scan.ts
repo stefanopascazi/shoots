@@ -61,6 +61,13 @@ export interface ScanOptions {
   kinds?: FileKind[];
   /** Override the extension allow-list entirely (lowercase, no dot). */
   extensions?: string[];
+  /**
+   * Called with the running match count as the walk progresses. Scanning a large
+   * catalog over a network share costs one round-trip per entry and can take
+   * minutes, so callers need a way to show liveness. Invoked frequently — keep it
+   * cheap (the CLI just stores the number and lets its own timer repaint).
+   */
+  onProgress?: (found: number) => void;
 }
 
 /** Classify a lowercase extension (no dot) as raw/processed, or null if not an image we handle. */
@@ -96,6 +103,7 @@ export async function scanFiles(root: string, options: ScanOptions = {}): Promis
     const kind = classifyExtension(ext) ?? (allowed ? 'processed' : null);
     if (kind === null || !kinds.includes(kind)) return;
     results.push({ path: filePath, name, ext, kind, size, mtime });
+    options.onProgress?.(results.length);
   };
 
   if (rootStat.isFile()) {

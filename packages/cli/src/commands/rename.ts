@@ -19,6 +19,7 @@ import {
   printJson,
 } from '../io.js';
 import { buildNamingPlan, collectNamingInfo } from '../naming.js';
+import { startPhase } from '../progress.js';
 import { ensureExiftoolReady } from '../tools.js';
 
 interface RenameOptions {
@@ -51,7 +52,12 @@ async function runRename(targetPath: string, options: RenameOptions): Promise<vo
     return;
   }
 
-  const files = await scanFiles(targetPath, { recursive: options.recursive ?? false });
+  const scanPhase = startPhase(io, 'Scanning');
+  const files = await scanFiles(targetPath, {
+    recursive: options.recursive ?? false,
+    onProgress: (found) => scanPhase.update(`${found} files`),
+  });
+  scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
     if (io.json) printJson({ command: 'rename', dryRun: !!options.dryRun, files: [], summary: { total: 0, renamed: 0, unchanged: 0, failed: 0 } });
