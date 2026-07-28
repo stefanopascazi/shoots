@@ -10,7 +10,7 @@
  *     invoked through the system Perl interpreter.
  */
 import path from 'node:path';
-import { toolDir } from '@shoots/core';
+import { toolDir, normalizeSha256 } from '@shoots/core';
 
 export const EXIFTOOL_VERSION = '13.59';
 
@@ -82,7 +82,7 @@ export function exiftoolManifest(platform: string = process.platform): ResolvedE
   return {
     version: EXIFTOOL_VERSION,
     url: `${MIRROR_BASE}/${spec.archive}`,
-    sha256: spec.sha256,
+    sha256: normalizeSha256(spec.sha256),
     installDir,
     binPath: path.join(installDir, spec.bin),
     viaPerl: spec.viaPerl,

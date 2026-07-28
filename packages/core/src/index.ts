@@ -8,7 +8,7 @@ export {
   type ScanOptions,
 } from './fs/scan.js';
 
-export { sha256File } from './checksum.js';
+export { sha256File, normalizeSha256 } from './checksum.js';
 
 export {
   shootsHome,

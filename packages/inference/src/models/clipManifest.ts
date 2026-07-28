@@ -11,7 +11,7 @@
  * machinery is `@shoots/core`'s `provisionArchive`.
  */
 import path from 'node:path';
-import { modelDir, provisionArchive, isProvisioned } from '@shoots/core';
+import { modelDir, provisionArchive, isProvisioned, normalizeSha256 } from '@shoots/core';
 
 /**
  * Model identity + our packaging revision. Bump when the archive contents change
@@ -78,7 +78,7 @@ export function clipModelManifest(): ResolvedModelManifest {
   return {
     version: CLIP_MODEL_VERSION,
     url: `${MIRROR_BASE}/${ARCHIVE}`,
-    sha256: SHA256,
+    sha256: normalizeSha256(SHA256),
     installDir,
     imageEncoderPath: path.join(installDir, IMAGE_ENCODER),
     vocabPath: path.join(installDir, VOCAB),

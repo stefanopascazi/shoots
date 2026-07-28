@@ -17,7 +17,7 @@
  * a separate process keeps it cleanly isolated from our own code.
  */
 import path from 'node:path';
-import { toolDir } from '@shoots/core';
+import { toolDir, normalizeSha256 } from '@shoots/core';
 import { UnsupportedPlatformError } from './exiftoolManifest.js';
 
 export const LIBRAW_VERSION = '0.21.5';
@@ -86,7 +86,7 @@ export function librawManifest(
   return {
     version: LIBRAW_VERSION,
     url: `${MIRROR_BASE}/${spec.archive}`,
-    sha256: spec.sha256,
+    sha256: normalizeSha256(spec.sha256),
     installDir,
     binPath: path.join(installDir, spec.bin),
   };
