@@ -95,7 +95,69 @@ Every command that produces a result supports `--json`. The shape is consistent:
 
 ---
 
-## 6. File discovery
+## 6. Progress, and the startup phases
+
+Every batch command has two distinct stages, and they report differently.
+
+### Stage 1 — startup phases
+
+Before there is anything to count, commands walk directories and batch-read
+metadata. On a large or network-mounted catalog this is **the majority of the
+wall-clock time**, and it happens before the progress bar can exist.
+
+Each of these steps announces itself on stderr with a spinner and elapsed time:
+
+```
+✓ Scanning — 2421 files (0.3s)
+⠹ Reading develop settings 1500/2421 — 47.2s
+✓ Reading capture metadata — 2421 files (74.2s)
+✓ Loading inference model — clip-vit-b32-int8 (1.1s)
+```
+
+Which phases appear depends on the command:
+
+| Phase | Appears in |
+| --- | --- |
+| `Scanning` | every command that takes a path |
+| `Reading capture metadata` | `import`, `rename` (template resolution), `develop export` |
+| `Reading metadata` | `exif` in read mode |
+| `Reading develop settings` | `develop export` |
+| `Loading inference model` | `develop export` |
+
+The counter (`1500/2421`) appears once a metadata read spans more than one
+internal batch; below that you get elapsed time only.
+
+### Stage 2 — per-file progress
+
+Once the file list is known, the interactive Ink progress view takes over, showing
+completed/total and the current filename.
+
+### Why this matters on a NAS
+
+Scanning costs one round-trip per directory entry, and the metadata pass opens
+every file to read its headers. Against an SMB share, `Reading capture metadata`
+over a few thousand RAWs is routinely **minutes** during which the only external
+symptom is sustained network traffic. The phase lines exist so that is
+distinguishable from a hang.
+
+If a phase seems stuck, the elapsed counter is the thing to watch: it keeps
+advancing while work is happening.
+
+### Where phases are written
+
+Same rules as everything else in section 3:
+
+| Context | Behaviour |
+| --- | --- |
+| **TTY**, no `--json` | Animated spinner on **stderr**, rewritten in place |
+| Not a TTY (pipe, cron, CI) | One plain line per phase on stderr, **only with `--verbose`** |
+| `--json` | **Completely silent** — stdout carries nothing but the JSON document |
+
+Phases never touch stdout, so `shoots exif ./raw --json | jq .` is unaffected.
+
+---
+
+## 7. File discovery
 
 Every command takes a **path** that may be a directory or a single file.
 Directories are scanned recursively (except `rename`, which needs `--recursive`
@@ -126,7 +188,7 @@ wants a *neutral* render and shells out to LibRaw's `dcraw_emu`.
 
 ---
 
-## 7. Concurrency
+## 8. Concurrency
 
 Commands that do per-file work accept `--concurrency <n>` (default `4`). This
 bounds parallel file operations / analyses / inference jobs.
@@ -138,7 +200,7 @@ bounds parallel file operations / analyses / inference jobs.
 
 ---
 
-## 8. Everything runs headless
+## 9. Everything runs headless
 
 There is **no GUI dependency**. The interactive Ink progress UI activates only on
 a TTY; in a pipe, a cron job or CI you get plain log lines on stderr and the same
@@ -150,7 +212,7 @@ tells you so.
 
 ---
 
-## 9. External dependencies live in `~/.shoots`
+## 10. External dependencies live in `~/.shoots`
 
 Nothing third-party is bundled into the binary. exiftool, LibRaw and the ONNX
 model are downloaded at runtime, verified against a pinned SHA-256, into
@@ -163,7 +225,7 @@ See [Configuration](./configuration.md) for the full directory layout.
 
 ---
 
-## 10. Package architecture
+## 11. Package architecture
 
 ```
 packages/

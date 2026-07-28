@@ -12,6 +12,51 @@ this page show up there first.
 
 ---
 
+## The CLI looks hung
+
+### No output for minutes, but disk or network activity is high
+
+**This is almost always normal.** Every batch command spends its first stage
+walking directories and batch-reading metadata, before there is anything to count.
+On a large or network-mounted catalog that stage dominates the wall-clock time.
+
+You should see a phase line with an advancing elapsed counter:
+
+```
+⠹ Reading capture metadata 1500/8420 — 96.4s
+```
+
+If the counter is advancing, it is working. Scanning costs one round-trip per
+directory entry, and the metadata pass opens every file to read its headers —
+against an SMB share, a few thousand RAWs is routinely minutes of sustained
+traffic with no other symptom.
+
+See [Progress and the startup phases](./concepts.md#6-progress-and-the-startup-phases).
+
+### No phase lines at all
+
+Phases render on stderr, and only when appropriate:
+
+| Context | Expected |
+| --- | --- |
+| Terminal, no `--json` | Animated spinner |
+| Piped / cron / CI | Plain lines, **only with `--verbose`** |
+| `--json` | Nothing, by design — stdout must stay clean |
+
+If you piped stderr away (`2>/dev/null`), you removed them. If you are in a pipe,
+add `--verbose`.
+
+### Speeding up the startup stage
+
+| Lever | Effect |
+| --- | --- |
+| `--edited-only` on `develop export` | Skips the expensive pass on files with no develop settings. Often the difference between hours and minutes. |
+| Point at a narrower subtree | Scanning a dated subfolder beats scanning the whole catalog. |
+| Work from a local copy | For repeated runs over a NAS, one `shoots import` then local processing wins. |
+| `--no-recursive` on `exif` | Limits the walk to one directory level. |
+
+---
+
 ## Installation
 
 ### `shoots: command not found`
