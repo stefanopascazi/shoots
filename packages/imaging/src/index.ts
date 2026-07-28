@@ -79,3 +79,13 @@ export {
   COLOR_FEATURE_NAMES,
   type ColorFeatures,
 } from './features.js';
+
+export {
+  readFloatDng,
+  isFloatDng,
+  floatDngToSrgb8,
+  renderFloatDngNeutral,
+  type DngCalibration,
+  type FloatDngImage,
+  type FloatDngOptions,
+} from './floatDng.js';

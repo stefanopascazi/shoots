@@ -30,7 +30,15 @@ import { existsSync, createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { once } from 'node:events';
 import { JobQueue, scanFiles } from '@shoots/core';
-import { extractColorFeatures, COLOR_FEATURE_NAMES, readMetadata, isRawFile, type ExifRecord } from '@shoots/imaging';
+import {
+  extractColorFeatures,
+  COLOR_FEATURE_NAMES,
+  readMetadata,
+  isRawFile,
+  isFloatDng,
+  renderFloatDngNeutral,
+  type ExifRecord,
+} from '@shoots/imaging';
 import { resolveRawDeveloper, withNeutralRender, type RawDeveloper } from '../rawDeveloper.js';
 import {
   createQualityModel,
@@ -49,6 +57,7 @@ import {
   printJson,
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
+import { DEVELOP_PARAMS } from './develop/schema.js';
 import { ensureClipModelReady, ensureExiftoolReady, ensureLibrawReady } from '../tools.js';
 
 /**
@@ -191,6 +200,59 @@ function readCurve(record: ExifRecord | undefined): number[] | undefined {
   return nums.length >= 4 ? nums : undefined;
 }
 
+/**
+ * Predicted targets whose neutral value is not zero. Lightroom writes these into
+ * every file it touches, so they must not be read as evidence of an edit.
+ *
+ * (The schema encodes deltas from zero for these, which is harmless: a constant
+ * offset vanishes under the per-parameter standardization applied at train time.)
+ */
+const NEUTRAL_DEFAULTS: Record<string, number> = {
+  ColorGradeBlending: 50,
+};
+
+/**
+ * True when a file carries an actual edit, not merely crs tags.
+ *
+ * Lightroom writes neutral crs defaults into any file it has touched — every
+ * DNG it creates gets Sharpness 40, ColorNoiseReduction 25, the parametric curve
+ * split points, and a full set of zeroed sliders. "Has develop settings" is
+ * therefore not "was edited": on a real catalog that let ~12% of files through
+ * as identity examples, teaching the model to predict "change nothing".
+ *
+ * Test the *predicted targets* against their neutral reference instead.
+ * {@link DEVELOP_PARAMS} is exactly that set, so the defaults Lightroom writes
+ * for non-target settings (sharpening, noise reduction, curve split points,
+ * vignette geometry) are excluded for free.
+ */
+function isEdited(
+  develop: Record<string, number>,
+  curve: number[] | undefined,
+  crs: ExifRecord | undefined,
+): boolean {
+  // Sliders: neutral is 0, so any non-zero target is a deliberate move — except
+  // where Lightroom's own neutral is not zero. ColorGradeBlending defaults to 50
+  // and is written into every file, so treating 0 as its neutral would mark the
+  // entire catalog as edited and defeat the whole check.
+  for (const param of DEVELOP_PARAMS) {
+    if (param.ref !== 'zero') continue; // WB is relative to as-shot; handled below
+    const value = develop[param.key];
+    if (value !== undefined && value !== (NEUTRAL_DEFAULTS[param.key] ?? 0)) return true;
+  }
+  // A black-and-white conversion is unambiguously an edit.
+  if (develop['ConvertToGrayscale'] === 1) return true;
+  // WB: neutral means the edit still says "As Shot".
+  const wb = crs?.['WhiteBalance'];
+  if (typeof wb === 'string' && wb !== 'As Shot') return true;
+  // Point curve: neutral is the identity line, which Lightroom still writes out.
+  if (curve && curve.length >= 4) {
+    for (let i = 0; i < curve.length; i += 2) {
+      if (curve[i] !== curve[i + 1]) return true;
+    }
+  }
+  return false;
+}
+
 function readAsShot(crs: ExifRecord | undefined, exif: ExifRecord | undefined): AsShot {
   const wb = typeof crs?.['WhiteBalance'] === 'string' ? (crs['WhiteBalance'] as string) : null;
   const chosenTemp = num(crs?.['Temperature']);
@@ -282,24 +344,59 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   const crsFor = (file: string): ExifRecord | undefined => crsByPath.get(path.resolve(developSrcByFile.get(file)!));
 
   // --edited-only: skip the expensive per-file work (embedding / neutral render /
-  // color features) AND the as-shot EXIF read for files with no develop settings.
+  // color features) AND the as-shot EXIF read for files that were never edited.
   // This is the right default for training-set builds (we train on edited photos
-  // only) and avoids opening thousands of large unedited RAWs.
+  // only) and avoids opening thousands of large untouched RAWs.
+  let untouched = 0;
+  let neutral = 0;
   const workFiles = options.editedOnly
-    ? files.filter((f) => Object.keys(readDevelop(crsFor(f.path))).length > 0)
+    ? files.filter((f) => {
+        const crs = crsFor(f.path);
+        const develop = readDevelop(crs);
+        if (Object.keys(develop).length === 0) {
+          untouched++;
+          return false;
+        }
+        // Carries crs tags but every predicted target sits at its neutral
+        // default — Lightroom wrote them, the photographer did not. Including
+        // these teaches the model to predict "change nothing".
+        if (!isEdited(develop, readCurve(crs), crs)) {
+          neutral++;
+          return false;
+        }
+        return true;
+      })
     : files;
   if (options.editedOnly) {
     // Worth surfacing outside --verbose: this is the number that decides how long
     // the expensive pass will take, and a surprising 0 is the usual mistake.
-    printHuman(io, `edited-only: ${workFiles.length}/${files.length} files carry develop settings`);
+    printHuman(io, `edited-only: ${workFiles.length}/${files.length} files carry a real edit`);
+    if (neutral > 0) {
+      printHuman(io, `  skipped ${neutral} with crs defaults only (never actually edited), ${untouched} with no crs at all`);
+    }
   }
   if (workFiles.length === 0) {
-    printHuman(io, options.editedOnly ? 'No edited files found (nothing carries develop settings).' : 'No files to process.');
+    printHuman(io, options.editedOnly ? 'No edited files found (crs settings are all at their neutral defaults).' : 'No files to process.');
     return;
   }
 
   // As-shot EXIF, read from the image files themselves — only for the files we
   // will actually process (opening RAWs is comparatively expensive).
+  // Lightroom HDR / panorama merges are floating-point DNGs. No RAW developer
+  // can unpack them (LibRaw expects a CFA and reports the file as corrupt), so
+  // they are decoded directly from their own scene-linear pyramid. Detect them up
+  // front so the per-file work can route accordingly, and so the count is visible.
+  const floatDngFiles = new Set<string>();
+  const dngCandidates = workFiles.filter((f) => /\.dng$/i.test(f.path));
+  if (dngCandidates.length > 0) {
+    const dngPhase = startPhase(io, 'Detecting HDR/pano merges');
+    for (const [i, f] of dngCandidates.entries()) {
+      dngPhase.update(`${i + 1}/${dngCandidates.length}`);
+      if (await isFloatDng(f.path)) floatDngFiles.add(f.path);
+    }
+    dngPhase.done(`${floatDngFiles.size} of ${dngCandidates.length} DNGs are float merges`);
+  }
+
   const exifPhase = startPhase(io, 'Reading capture metadata');
   const exifRecords = await readMetadata(workFiles.map((f) => f.path), {
     tags: [...META_TAGS],
@@ -337,8 +434,16 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     async (file): Promise<{ hasDevelop: boolean; dim: number }> => {
       // CLIP stays on the embedded preview (semantic, colour-invariant); only the
       // photometric color features move to the neutral render when requested.
-      const colorTask =
-        developer && isRawFile(file.path)
+      // Float DNGs (Lightroom HDR / panorama merges) carry their own neutral
+      // scene-linear pyramid, which no external developer can unpack — decode it
+      // directly. That IS the neutral baseline, so it applies under either
+      // --baseline mode rather than being tied to the external developer.
+      const colorTask = floatDngFiles.has(file.path)
+        ? renderFloatDngNeutral(file.path).then((raster) => {
+            if (!raster) throw new Error("float DNG decode produced no raster");
+            return extractColorFeatures(raster);
+          })
+        : developer && isRawFile(file.path)
           ? withNeutralRender(developer, file.path, (rendered) => extractColorFeatures(rendered))
           : extractColorFeatures(file.path);
       const [assessment, color] = await Promise.all([model.assess({ path: file.path }), colorTask]);
