@@ -15,7 +15,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ExifRecord } from '@shoots/imaging';
 import { logWarn, printHuman, type CliIo } from '../../../io.js';
-import { DEVELOP_PARAMS, type AsShotMeta, type Treatment } from '../../develop/schema.js';
+import { DEVELOP_PARAMS, treatmentFromDevelop, type AsShotMeta } from '../../develop/schema.js';
 
 /**
  * The develop-setting crs tags we pull from each sidecar, requested with the
@@ -200,12 +200,8 @@ export function readAsShot(crs: ExifRecord | undefined, exif: ExifRecord | undef
   };
 }
 
-/** Deterministic B&W vs colour from the edit structure. */
-export function deriveTreatment(develop: Record<string, number>): Treatment {
-  if (develop['ConvertToGrayscale'] === 1) return 'bw';
-  if (Object.keys(develop).some((k) => k.startsWith('GrayMixer'))) return 'bw';
-  return 'color';
-}
+/** Deterministic B&W vs colour — canonical logic, shared with training. */
+export const deriveTreatment = treatmentFromDevelop;
 
 /**
  * Predicted targets whose neutral value is not zero. Lightroom writes these into
@@ -278,6 +274,11 @@ export function warnNeverSeenTargets(io: CliIo, records: ExifRecord[]): void {
       if (rec[exifToolTag(tag)] !== undefined) seen.add(tag);
     }
   }
+  // Not one target on any file: these images were simply never edited, which is
+  // the normal shape of a set you are exporting in order to *predict* on it.
+  // Listing all ninety-odd tags there would be pure noise, and would train the
+  // reader to ignore the one warning that matters.
+  if (seen.size === 0) return;
   const missing = CRS_TARGET_TAGS.filter((t) => !seen.has(t));
   if (missing.length === 0) return;
   logWarn(

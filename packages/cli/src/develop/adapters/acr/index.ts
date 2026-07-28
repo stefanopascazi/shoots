@@ -85,8 +85,8 @@ export const acrAdapter: EditAdapter = {
   label: 'Adobe Camera Raw / Lightroom (XMP crs sidecars)',
   readEdits,
   readCapture,
-  async writeEdit(develop, targetPath) {
-    await writeFile(targetPath, buildXmpSidecar(develop), 'utf8');
+  async writeEdit(edit, targetPath) {
+    await writeFile(targetPath, buildXmpSidecar(edit.develop, edit.treatment), 'utf8');
   },
   sidecarPathFor(sourceFile, outputDir) {
     return path.join(outputDir, `${path.parse(sourceFile).name}.xmp`);

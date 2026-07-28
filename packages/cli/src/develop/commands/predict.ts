@@ -5,6 +5,7 @@
  * Lightroom-readable `.xmp` sidecar per image (a non-destructive starting point).
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { assertApplicable, predictOne, resolveTreatment } from '../predict.js';
 import { assertCanEmit, DEFAULT_EDITOR, resolveAdapter } from '../adapters/registry.js';
 import { loadDataset } from '../dataset/load.js';
@@ -39,10 +40,19 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     const adapter = resolveAdapter(args.editor ?? DEFAULT_EDITOR);
     assertCanEmit(adapter);
     await mkdir(args.xmp, { recursive: true });
+    let replaced = 0;
     for (const p of predictions) {
-      await adapter.writeEdit!(p.develop, adapter.sidecarPathFor!(p.file, args.xmp));
+      const target = adapter.sidecarPathFor!(p.file, args.xmp);
+      if (existsSync(target)) replaced++;
+      await adapter.writeEdit!({ develop: p.develop, treatment: p.treatment }, target);
     }
     process.stderr.write(`Wrote ${predictions.length} ${adapter.id} sidecars to ${args.xmp}\n`);
+    // The sidecar is named after the image, so a second run with a different
+    // --treatment lands on the same files. Say so: the colour set silently
+    // becoming the B&W set is a surprising way to lose work.
+    if (replaced > 0) {
+      process.stderr.write(`  (${replaced} replaced sidecars already in that directory — use a separate --xmp dir per treatment)\n`);
+    }
   }
 
   const payload = { command: 'develop-predict' as const, profile: profile.name, count: predictions.length, predictions };

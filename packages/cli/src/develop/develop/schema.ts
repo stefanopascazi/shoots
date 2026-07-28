@@ -148,6 +148,24 @@ export function paramsForTreatment(treatment: Treatment): DevelopParam[] {
   return DEVELOP_PARAMS.filter((p) => p.branch === 'shared' || p.branch === treatment);
 }
 
+/**
+ * B&W vs colour, read off a canonical develop map.
+ *
+ * The explicit grayscale flag wins whenever present, in *both* directions.
+ * Falling through to "a GrayMixer exists, therefore B&W" would misread a colour
+ * photo that merely carries mixer values — the shape of a file where a B&W look
+ * was tried and then switched back off.
+ *
+ * Lives here rather than in an adapter: the treatment is a property of the
+ * canonical vocabulary, and both ingest and training must agree on it.
+ */
+export function treatmentFromDevelop(develop: Record<string, number>): Treatment {
+  const flag = develop['ConvertToGrayscale'];
+  if (flag !== undefined) return flag === 1 ? 'bw' : 'color';
+  if (Object.keys(develop).some((k) => k.startsWith('GrayMixer'))) return 'bw';
+  return 'color';
+}
+
 /** As-shot metadata that anchors the WB delta (and feeds the feature vector). */
 export interface AsShotMeta {
   tempAsShot: number | null;

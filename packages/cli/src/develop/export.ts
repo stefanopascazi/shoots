@@ -328,8 +328,15 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   if (io.json) printJson({ command: 'develop-export', model: model.name, dim, colorDim: COLOR_FEATURE_NAMES.length, baseline, out: options.out, summary });
 
   if (withDevelop === 0 && ok.length > 0) {
-    logError('No develop settings found on any file — check that XMP sidecars / crs metadata are present.');
-    markFailure();
+    // Only a failure when this was meant to be a training set. Exporting
+    // untouched RAWs is exactly how you build the input to `develop predict`,
+    // so treating "no edits" as an error there rejects the normal path.
+    if (options.editedOnly) {
+      logError('No develop settings found on any file — check that XMP sidecars / crs metadata are present.');
+      markFailure();
+    } else {
+      printHuman(io, '  (no develop settings on these files — the expected shape of a set to predict on)');
+    }
   }
   for (const e of errors) logError(`${e.file}: ${oneLine(e.error)}`);
   if (errors.length > 0) markFailure();

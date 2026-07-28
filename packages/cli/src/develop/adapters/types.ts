@@ -48,6 +48,12 @@ export interface EditRecord {
   context?: unknown;
 }
 
+/** A model prediction ready to be written back out. */
+export interface PredictedEdit {
+  develop: Record<string, number>;
+  treatment: Treatment;
+}
+
 export interface EditAdapter {
   /** Stable id used by `--editor`. */
   id: string;
@@ -83,8 +89,12 @@ export interface EditAdapter {
   /**
    * Serialize a predicted canonical edit into this editor's own format.
    * Absent on ingest-only sources (a catalog database we must never write to).
+   *
+   * The treatment travels with the values because it is routing rather than a
+   * predicted parameter, and an editor generally needs it stated: a B&W edit
+   * whose "convert to grayscale" is missing renders in colour.
    */
-  writeEdit?(develop: Record<string, number>, targetPath: string): Promise<void>;
+  writeEdit?(edit: PredictedEdit, targetPath: string): Promise<void>;
 
   /** Where {@link writeEdit} should put the sidecar for a given source image. */
   sidecarPathFor?(sourceFile: string, outputDir: string): string;

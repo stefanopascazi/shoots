@@ -20,8 +20,8 @@ import {
   DEVELOP_PARAMS,
   SCHEMA_VERSION,
   paramsForTreatment,
+  treatmentFromDevelop,
   type AsShotMeta,
-  type DevelopParam,
   type Treatment,
 } from '../develop/schema.js';
 import { assembleFeatures, targetDeltas, actualAbsVec, profileOneHot } from '../develop/assemble.js';
@@ -71,12 +71,9 @@ function buildProfileVocab(rows: RawRow[]): string[] {
   return [...counts.entries()].filter(([, c]) => c >= 3).map(([k]) => k).sort();
 }
 
-/** B&W vs colour, from the explicit field or the edit structure (GrayMixer/flag). */
+/** B&W vs colour, from the explicit field or the edit structure. */
 function deriveTreatment(r: { treatment?: Treatment; develop: Record<string, number> }): Treatment {
-  if (r.treatment) return r.treatment;
-  if (r.develop['ConvertToGrayscale'] === 1) return 'bw';
-  if (Object.keys(r.develop).some((k) => k.startsWith('GrayMixer'))) return 'bw';
-  return 'color';
+  return r.treatment ?? treatmentFromDevelop(r.develop);
 }
 
 function buildRows(dataset: DevelopDataset): RawRow[] {
