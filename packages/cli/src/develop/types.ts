@@ -45,6 +45,8 @@ export interface ParamEval {
   group: string;
   branch: string;
   weight: number;
+  /** Ridge strength this parameter is fitted with (chosen by held-out skill). */
+  lambda: number;
   /** Held-out MAE with whole capture sessions kept out of training — the gate. */
   modelMae: number;
   /** Same policy, for "apply my average edit" (the mean target delta). */
@@ -72,7 +74,14 @@ export interface BranchModel {
   params: string[];
   /** Base-profile vocabulary (crs CameraProfile) one-hot-appended to the features. */
   profileVocab: string[];
-  ridgeLambda: number;
+  /**
+   * Ridge strength per parameter, index-aligned with {@link params}.
+   *
+   * Not one λ for the whole vector: exposure and the HSL sliders need different
+   * amounts of shrinkage, and forcing them to share one lets the unpredictable
+   * majority pick it for everybody.
+   */
+  paramLambda: number[];
   /** Per-feature standardization of the input X (length embeddingDim+colorDim+3). */
   featureMean: number[];
   featureStd: number[];

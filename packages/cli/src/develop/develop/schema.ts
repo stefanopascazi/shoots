@@ -140,8 +140,14 @@ export const DEVELOP_PARAMS: DevelopParam[] = [...SHARED, ...COLOR, ...BW];
  * v4: per-parameter gating. A profile carries `gatedParams`, and prediction
  * falls back to the photographer's constant for those — a v3 profile has no
  * such list, so it would silently emit model output the evidence rejected.
+ *
+ * v5: per-parameter ridge strength. `ridgeLambda` (one λ for the whole vector)
+ * became `paramLambda` (one per parameter), and the weights of a v4 profile were
+ * all fitted at the single λ that the unpredictable majority of parameters
+ * chose. Inference reads no λ, so the numbers would still decode — which is the
+ * problem: a v4 profile would keep serving its collapsed predictions in silence.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 /** Parameters predicted for a given treatment: shared + that treatment's branch. */
 export function paramsForTreatment(treatment: Treatment): DevelopParam[] {

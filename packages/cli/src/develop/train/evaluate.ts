@@ -28,6 +28,7 @@
 import path from 'node:path';
 import { decodeDelta, type AsShotMeta, type DevelopParam } from '../develop/schema.js';
 import { buildNormalEquations, solveRidge, predictStd } from './regress.js';
+import { dot } from '../math/linalg.js';
 
 export const LAMBDA_GRID = [100, 300, 1000, 3000, 10000, 30000];
 export const EPS = 1e-6;
@@ -211,6 +212,140 @@ export function crossValidate(
     }));
   }
   return out;
+}
+
+/**
+ * Fold-by-fold held-out error for a per-parameter λ, accumulated into stats.
+ *
+ * `lambdasFor` is handed each fold's *training* rows and returns the λ vector to
+ * fit them with. That indirection is the whole point: passing a fixed vector
+ * measures a known model, while re-selecting inside the callback measures the
+ * *procedure* that picks λ — and only the second one is honest about a search.
+ */
+function accumulateFolds(
+  rows: EvalRow[],
+  params: DevelopParam[],
+  options: { folds: number; groupBy: GroupBy },
+  lambdasFor: (train: EvalRow[]) => number[],
+): ParamStats[] {
+  const P = params.length;
+  const fold = assignFolds(rows, options.folds, options.groupBy);
+  const modelErr = new Array<number>(P).fill(0);
+  const baseErr = new Array<number>(P).fill(0);
+  let counted = 0;
+
+  for (let f = 0; f < options.folds; f++) {
+    const train = rows.filter((_, i) => fold[i] !== f);
+    const val = rows.filter((_, i) => fold[i] === f);
+    if (train.length < 2 || val.length === 0) continue;
+
+    const lambdas = lambdasFor(train);
+    const fs = columnStats(train.map((r) => r.x));
+    const ds = columnStats(train.map((r) => r.deltas));
+    const ne = buildNormalEquations(train.map((r) => standardize(r.x, fs)), train.map((r) => standardize(r.deltas, ds)));
+
+    // "Apply my average edit", in delta space (see the module header).
+    const meanDelta = new Array<number>(P).fill(0);
+    for (const r of train) for (let k = 0; k < P; k++) meanDelta[k]! += r.deltas[k]!;
+    for (let k = 0; k < P; k++) meanDelta[k]! /= train.length;
+    for (const r of val) {
+      for (let k = 0; k < P; k++) {
+        baseErr[k]! += Math.abs(decodeDelta(params[k]!, meanDelta[k]!, r.meta) - r.abs[k]!);
+      }
+    }
+    counted += val.length;
+
+    // One Cholesky per *distinct* λ, not per parameter: the normal equations are
+    // shared, so a per-parameter λ costs no more than the size of the grid.
+    const valStd = val.map((r) => standardize(r.x, fs));
+    for (const lambda of new Set(lambdas)) {
+      const { weights, bias } = solveRidge(ne, lambda);
+      for (let k = 0; k < P; k++) {
+        if (lambdas[k] !== lambda) continue;
+        for (let i = 0; i < val.length; i++) {
+          const delta = (dot(weights[k]!, valStd[i]!) + bias[k]!) * ds.std[k]! + ds.mean[k]!;
+          modelErr[k]! += Math.abs(decodeDelta(params[k]!, delta, val[i]!.meta) - val[i]!.abs[k]!);
+        }
+      }
+    }
+  }
+
+  const n = Math.max(1, counted);
+  return params.map((_, k) => {
+    const modelMae = modelErr[k]! / n;
+    const baselineMae = baseErr[k]! / n;
+    return { modelMae, baselineMae, skill: baselineMae > EPS ? 1 - modelMae / baselineMae : 0 };
+  });
+}
+
+/**
+ * The λ each parameter is best fitted with, chosen by held-out skill.
+ *
+ * One λ for the whole vector is the wrong shape for this problem: exposure and
+ * the HSL sliders do not want the same amount of shrinkage, and a shared λ is
+ * picked by an average that the unpredictable majority dominates. On a real
+ * catalog that pinned λ to the top of the grid and collapsed *every* parameter
+ * onto the photographer's mean — which is exactly what a flat, "same settings
+ * for every photo" prediction looks like from the outside.
+ *
+ * Ties go to the larger λ: same held-out evidence, less variance.
+ */
+export function selectLambdas(
+  rows: EvalRow[],
+  params: DevelopParam[],
+  options: { folds: number; groupBy: GroupBy; grid?: number[] },
+): number[] {
+  const grid = options.grid ?? LAMBDA_GRID;
+  const cv = crossValidate(rows, params, options);
+  return params.map((_, k) => {
+    let best = grid[0]!;
+    let bestSkill = -Infinity;
+    for (const lambda of grid) {
+      const skill = cv.get(lambda)![k]!.skill;
+      if (skill >= bestSkill - EPS) {
+        bestSkill = Math.max(bestSkill, skill);
+        best = lambda;
+      }
+    }
+    return best;
+  });
+}
+
+/** Held-out stats for a λ vector fixed in advance (no search happens here). */
+export function evaluateWithLambda(
+  rows: EvalRow[],
+  params: DevelopParam[],
+  options: { folds: number; groupBy: GroupBy },
+  lambdas: number[],
+): ParamStats[] {
+  return accumulateFolds(rows, params, options, () => lambdas);
+}
+
+/**
+ * Held-out stats for the whole "choose λ per parameter, then fit" procedure.
+ *
+ * λ is re-selected on an inner CV over each outer fold's training rows, so the
+ * validation fold never took part in the choice. Selecting on the same folds you
+ * then report would hand every parameter the best of |grid| tries and quietly
+ * inflate the gate — with ~90 parameters and a gate threshold of a couple of
+ * percent, that is enough noise to let unpredictable sliders through as if the
+ * model had learned them.
+ */
+export function nestedEvaluate(
+  rows: EvalRow[],
+  params: DevelopParam[],
+  options: { folds: number; groupBy: GroupBy; grid?: number[]; innerFolds?: number },
+): ParamStats[] {
+  const innerFolds = options.innerFolds ?? options.folds;
+  const grid = options.grid ?? LAMBDA_GRID;
+  // Too little data to select on: fall back to the strongest shrinkage in the
+  // grid rather than the weakest, so a fold with no evidence cannot invent any.
+  const noEvidence = grid[grid.length - 1]!;
+  return accumulateFolds(rows, params, options, (train) =>
+    train.length >= innerFolds * 4
+      ? selectLambdas(train, params, { folds: innerFolds, groupBy: options.groupBy, grid })
+      : params.map(() => noEvidence),
+  );
 }
 
 /**

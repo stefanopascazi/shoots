@@ -25,7 +25,7 @@ export interface PredictArgs {
 export async function runPredict(args: PredictArgs): Promise<void> {
   const dataset = await loadDataset(args.data);
   const profile = JSON.parse(await readFile(args.profile, 'utf8')) as DevelopProfile;
-  assertApplicable(profile, dataset.model, dataset.dim, dataset.colorDim);
+  assertApplicable(profile, dataset);
 
   const requested = args.treatment as Treatment | 'auto';
   if (!['auto', 'color', 'bw'].includes(requested)) {

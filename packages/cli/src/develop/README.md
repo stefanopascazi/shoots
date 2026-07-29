@@ -19,13 +19,15 @@ Licensed **PolyForm-Noncommercial-1.0.0** (inherited from the repo).
 # 1. Build the training dataset from an edited catalog.
 #    --edited-only reads crs from the (cheap) sidecars first and runs the
 #    expensive work only on files that actually carry develop settings:
-shoots develop export <edited-catalog> --edited-only --out train.jsonl
+shoots develop export <edited-catalog> --edited-only --baseline external --out train.jsonl
 
 # 2. Fit the per-catalog develop profile (prints the go/no-go evidence per branch):
 shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json
 
-# 3. Export a NEW set, then predict — pick the treatment (colour/B&W) or auto:
-shoots develop export <new-shoot> --out new.jsonl
+# 3. Export a NEW set, then predict — pick the treatment (colour/B&W) or auto.
+#    --baseline MUST match the one the profile was trained on; predict refuses
+#    the pair otherwise (the colour features are not comparable across baselines).
+shoots develop export <new-shoot> --baseline external --out new.jsonl
 shoots develop predict --data new.jsonl --profile profiles/my-style.json --treatment color --xmp out-xmp/
 
 # Changed the target side (a tag, a new parameter, a stricter "edited" test)?
@@ -96,7 +98,7 @@ versus the **"apply my average edit"** baseline, and a **skill** score
 `1 − modelMae/baselineMae`. The headline is the weighted skill over the
 image-dependent parameters.
 
-Two things make that number mean what it says, both learned by getting it wrong:
+Three things make that number mean what it says, all learned by getting it wrong:
 
 - **Whole capture sessions are held out** (`--group-by folder`, the default). A
   catalog is not i.i.d.: a shoot is dozens of near-identical frames, routinely
@@ -107,6 +109,10 @@ Two things make that number mean what it says, both learned by getting it wrong:
 - **The baseline lives in delta space** — the average *move*, decoded per image,
   not the average absolute value. Averaging absolute Kelvin charges the baseline
   with the spread of the as-shot anchor instead of the spread of the edit.
+- **λ is re-chosen inside every held-out fold.** Regularization is picked per
+  parameter (see below), and selecting it on the same folds that report the score
+  hands each of ~90 parameters the best of six tries. That is enough noise on its
+  own to push unpredictable sliders past a gate set at a couple of percent.
 
 Targets that never move across the catalog are flagged `[never moves]` and kept
 out of the headline: a constant is predicted perfectly by anything, so scoring it
@@ -115,6 +121,24 @@ rewards an exporter bug rather than a model.
 If the grouped number is not clearly positive on a real catalog, the signal is
 too weak to build the plugin on — stop and reconsider the baseline render
 strategy.
+
+## Regularization is per parameter
+
+Exposure and the HSL sliders do not want the same amount of shrinkage. One λ for
+the whole vector is chosen by an average that the unpredictable majority
+dominates, and on a real catalog that pinned λ to the top of the grid and
+collapsed *every* parameter onto the photographer's mean — which from the outside
+is indistinguishable from "it predicts the same settings for every photo".
+
+So `--lambda auto` picks a λ per parameter. The normal equations do not depend on
+λ, so this costs one Cholesky per *distinct* λ, never one per parameter. The
+branch header reports how the choice came out:
+
+```
+λ per param (auto): 30000×62 100×6
+```
+
+Everything at the top of the grid means the model cannot read this catalog.
 
 ## Gating
 

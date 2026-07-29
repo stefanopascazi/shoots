@@ -28,7 +28,10 @@ export async function loadDataset(file: string): Promise<DevelopDataset> {
   try {
     const obj = JSON.parse(text) as Partial<DevelopDataset>;
     if (obj && obj.command === 'develop-export' && Array.isArray(obj.results)) {
-      return obj as DevelopDataset;
+      // Older exports kept the baseline on every record instead of on the
+      // dataset. Lift it up, so the applicability guard has the real value to
+      // compare rather than `undefined` (which reads as a mismatch).
+      return { ...obj, baseline: obj.baseline ?? obj.results[0]?.baseline } as DevelopDataset;
     }
   } catch {
     // Not a single JSON object → JSONL below.

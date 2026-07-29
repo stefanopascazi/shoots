@@ -156,11 +156,34 @@ shoots develop train --data <file> --name <name> --out <file> [options]
 | `--data <file>` | **required** | Dataset from `develop export` |
 | `--name <name>` | **required** | Profile name |
 | `--out <file>` | **required** | Output profile JSON path |
-| `--lambda <n>` | `auto` | Ridge strength, or `auto` to pick by cross-validation |
+| `--lambda <n>` | `auto` | Ridge strength for every parameter, or `auto` to choose one **per parameter** by cross-validation |
 | `--folds <k>` | `5` | Cross-validation folds |
 
 One model is trained **per treatment** over `shared + <branch>`, so a
 high-contrast B&W edit and a light colour edit never average into a mush.
+
+### Regularization is per parameter
+
+Exposure and the HSL sliders do not want the same amount of shrinkage. Under a
+single shared λ the choice is made by an average that the unpredictable majority
+of parameters dominates — on a real catalog that pinned λ to the top of the grid
+and collapsed *every* parameter onto the photographer's mean, which from the
+outside looks like "it predicts the same settings for every photo".
+
+`--lambda auto` therefore picks a λ per parameter, reported in the `λ` column of
+the table and summarised in the branch header:
+
+```
+λ per param (auto): 30000×62 100×6
+```
+
+Everything piling onto the top of the grid means the model cannot read this
+catalog — the same information the skill column carries, one line earlier.
+
+The gate pays for that search: λ is re-chosen inside each held-out fold, so no
+parameter is ever scored on the split that picked its own λ. Selecting on the
+folds you then report would hand each of ~90 parameters the best of six tries,
+and that alone is enough noise to push unpredictable sliders past the gate.
 
 ### Reading the output — the go/no-go GATE
 
@@ -213,11 +236,28 @@ shoots develop predict --data <file> --profile <file> [options]
 `--treatment` is a genuine creative choice at inference time — at train time it is
 read off the edit, but for a new frame nobody has decided colour vs B&W yet.
 
+### The new set must use the same `--baseline` as the profile
+
+An embedded camera JPEG and a neutral external render put the same photograph at
+a different luminance, contrast and white point. A profile trained on one and
+applied to the other reads a feature vector from a space it has never seen, and
+the dimensions match either way, so nothing else can catch it. `predict` refuses
+the pair outright:
+
+```
+error: profile was trained on baseline 'external' but the dataset was exported
+with 'embedded-preview' — the colour features are not comparable across
+baselines. Re-export with `--baseline external`.
+```
+
+The profile records which baseline it was trained on; pass the same flag when
+exporting the set you want to predict on.
+
 ### Examples
 
 ```sh
-# Export the new shoot, then predict
-shoots develop export ~/Shoots/2026-07-new --out new.jsonl
+# Export the new shoot, then predict. --baseline must match the profile's.
+shoots develop export ~/Shoots/2026-07-new --baseline external --out new.jsonl
 
 # Colour treatment, XMP sidecars for Lightroom
 shoots develop predict --data new.jsonl --profile profiles/my-style.json \

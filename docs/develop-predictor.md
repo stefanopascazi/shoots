@@ -97,9 +97,15 @@ parameters (HSL, colour grading) to collapse to your mean.
 
 - the held-out **MAE of the model**,
 - the MAE of the **"apply my average edit"** baseline,
-- a **skill** score: `1 − modelMae / baselineMae`.
+- a **skill** score: `1 − modelMae / baselineMae`,
+- the **ridge strength λ** that parameter was fitted with.
 
 `skill > 0` means the model beats simply applying your mean edit.
+
+λ is chosen **per parameter**, because exposure and the HSL sliders do not want
+the same amount of shrinkage and one shared λ is picked by an average the
+unpredictable majority dominates. The gate pays for that search: λ is re-chosen
+inside each held-out fold, so no parameter is scored on the split that picked it.
 
 **The headline number is the weighted skill over the image-dependent parameters.**
 
@@ -159,7 +165,19 @@ are re-rendered — rendered formats use their own pixels. CLIP always stays on 
 embedded preview, because it is colour-invariant and the extra render would buy
 nothing.
 
-The chosen strategy is recorded in both the dataset and the profile.
+The chosen strategy is recorded in both the dataset and the profile — and
+`predict` **refuses** a profile and a dataset that disagree. The two renders put
+the same photograph at a different luminance, contrast and white point, so a
+profile trained on one reads a feature vector from a space it never saw. The
+dimensions match either way, which is precisely why nothing else can catch it:
+
+```
+error: profile was trained on baseline 'external' but the dataset was exported
+with 'embedded-preview' — the colour features are not comparable across
+baselines. Re-export with `--baseline external`.
+```
+
+Export the set you predict on with the same `--baseline` you trained with.
 
 ### Target leak
 
@@ -179,13 +197,15 @@ result.
 # 1. Training dataset from an edited catalog.
 #    --edited-only reads crs from the cheap sidecars first and runs the expensive
 #    work only on files that actually carry develop settings.
-shoots develop export ~/Catalogs/2025-edited --edited-only --out train.jsonl
+shoots develop export ~/Catalogs/2025-edited --edited-only \
+  --baseline external --out train.jsonl
 
 # 2. Fit the profile. Read the GATE output.
 shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json
 
 # 3. Export the NEW set (no --edited-only — nothing is edited yet).
-shoots develop export ~/Shoots/2026-07-new --out new.jsonl
+#    Same --baseline as step 1, or predict will refuse the pair.
+shoots develop export ~/Shoots/2026-07-new --baseline external --out new.jsonl
 
 # 4. Predict — pick the treatment, write XMP sidecars.
 shoots develop predict --data new.jsonl --profile profiles/my-style.json \

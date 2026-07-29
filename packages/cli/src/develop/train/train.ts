@@ -4,8 +4,9 @@
  * Edited photos are split by treatment (colour vs B&W, deterministic from the
  * edit), and ONE ridge model is trained per treatment over its shared+branch
  * parameters — so a high-contrast B&W edit and a light colour edit never average
- * into a mushy mean. Each model picks λ by k-fold CV and reports per-parameter
- * held-out MAE vs the "apply my average edit" baseline (the go/no-go metric).
+ * into a mushy mean. Each model picks λ *per parameter* by k-fold CV and reports
+ * per-parameter held-out MAE vs the "apply my average edit" baseline (the go/no-go
+ * metric).
  *
  * The evaluation itself lives in `evaluate.ts` — sessions held out, baseline in
  * delta space — and is shared with `diagnose` so the two cannot disagree about
@@ -30,8 +31,10 @@ import {
   EPS,
   LAMBDA_GRID,
   columnStats,
-  crossValidate,
   degenerateTargets,
+  evaluateWithLambda,
+  nestedEvaluate,
+  selectLambdas,
   sessionKey,
   standardize,
   weightedSkill,
@@ -117,22 +120,22 @@ function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions)
 
   let gateStats: ParamStats[] = [];
   let randomStats: ParamStats[] = [];
-  let chosenLambda = options.lambda ?? DEFAULT_FALLBACK_LAMBDA;
+  // λ per parameter. A fixed --lambda applies to all of them; otherwise each one
+  // gets the shrinkage its own held-out evidence asks for.
+  let lambdas = params.map(() => options.lambda ?? DEFAULT_FALLBACK_LAMBDA);
   let heldOut = 0;
 
   if (rows.length >= folds * 4) {
-    const grid = options.lambda !== undefined ? [options.lambda] : LAMBDA_GRID;
-    const gateCv = crossValidate(rows, params, { folds, groupBy, grid });
     if (options.lambda === undefined) {
-      let best = -Infinity;
-      for (const [lambda, stats] of gateCv) {
-        const s = weightedSkill(stats, params, degenerate) ?? -Infinity;
-        if (s > best) { best = s; chosenLambda = lambda; }
-      }
+      lambdas = selectLambdas(rows, params, { folds, groupBy, grid: LAMBDA_GRID });
+      // The gate has to pay for that search: λ is re-chosen inside each outer
+      // fold, so no parameter is scored on the split that picked its λ.
+      gateStats = nestedEvaluate(rows, params, { folds, groupBy, grid: LAMBDA_GRID });
+    } else {
+      gateStats = evaluateWithLambda(rows, params, { folds, groupBy }, lambdas);
     }
-    gateStats = gateCv.get(chosenLambda) ?? [];
     // The leakage-prone split, at the same λ, purely for contrast in the report.
-    randomStats = crossValidate(rows, params, { folds, groupBy: 'none', grid: [chosenLambda] }).get(chosenLambda) ?? [];
+    randomStats = evaluateWithLambda(rows, params, { folds, groupBy: 'none' }, lambdas);
     heldOut = rows.length;
   }
 
@@ -148,6 +151,7 @@ function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions)
       group: param.group,
       branch: param.branch,
       weight: param.weight,
+      lambda: lambdas[k]!,
       modelMae: round4(gate?.modelMae ?? 0),
       baselineMae: round4(gate?.baselineMae ?? 0),
       skill: round4(gate?.skill ?? 0),
@@ -161,7 +165,12 @@ function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions)
   const featStats = columnStats(rows.map((r) => r.x));
   const deltaStats = columnStats(rows.map((r) => r.deltas));
   const ne = buildNormalEquations(rows.map((r) => standardize(r.x, featStats)), rows.map((r) => standardize(r.deltas, deltaStats)));
-  const { weights, bias } = solveRidge(ne, chosenLambda);
+  // The normal equations are shared across λ, so each parameter can take its own
+  // row out of the solution fitted at its own shrinkage for one Cholesky per
+  // distinct λ — never one per parameter.
+  const solved = new Map(([...new Set(lambdas)]).map((lambda) => [lambda, solveRidge(ne, lambda)]));
+  const weights = params.map((_, k) => solved.get(lambdas[k]!)!.weights[k]!);
+  const bias = params.map((_, k) => solved.get(lambdas[k]!)!.bias[k]!);
 
   const skillOf = (stats: ParamStats[]): number | null =>
     stats.length > 0 ? round4(weightedSkill(stats, params, degenerate) ?? 0) : null;
@@ -170,7 +179,7 @@ function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions)
     treatment,
     params: params.map((p) => p.key),
     profileVocab,
-    ridgeLambda: chosenLambda,
+    paramLambda: lambdas,
     featureMean: featStats.mean.map(round6),
     featureStd: featStats.std.map(round6),
     deltaMean: deltaStats.mean.map(round6),

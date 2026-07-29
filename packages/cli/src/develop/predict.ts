@@ -6,7 +6,7 @@
  */
 import { SCHEMA_VERSION, decodeDelta, paramsForTreatment, type Treatment } from './develop/schema.js';
 import { assembleFeatures, profileOneHot } from './develop/assemble.js';
-import type { DevelopExportResult, DevelopProfile } from './types.js';
+import type { DevelopDataset, DevelopExportResult, DevelopProfile } from './types.js';
 
 export interface Prediction {
   file: string;
@@ -14,18 +14,41 @@ export interface Prediction {
   develop: Record<string, number>;
 }
 
-export function assertApplicable(profile: DevelopProfile, model: string, embeddingDim: number, colorDim: number): void {
+/** The dataset-level facts a profile has to agree with to be applicable. */
+type DatasetGuards = Pick<DevelopDataset, 'model' | 'dim' | 'colorDim' | 'baseline'>;
+
+export function assertApplicable(profile: DevelopProfile, dataset: DatasetGuards): void {
   if (profile.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(`profile schema v${profile.schemaVersion} != tool schema v${SCHEMA_VERSION}; retrain`);
   }
-  if (profile.embeddingModel !== model) {
-    throw new Error(`profile embedding model '${profile.embeddingModel}' != dataset model '${model}'`);
+  if (profile.embeddingModel !== dataset.model) {
+    throw new Error(`profile embedding model '${profile.embeddingModel}' != dataset model '${dataset.model}'`);
   }
-  if (profile.embeddingDim !== embeddingDim) {
-    throw new Error(`profile embedding dim ${profile.embeddingDim} != dataset dim ${embeddingDim}`);
+  if (profile.embeddingDim !== dataset.dim) {
+    throw new Error(`profile embedding dim ${profile.embeddingDim} != dataset dim ${dataset.dim}`);
   }
-  if (profile.colorDim !== colorDim) {
-    throw new Error(`profile color dim ${profile.colorDim} != dataset color dim ${colorDim}`);
+  if (profile.colorDim !== dataset.colorDim) {
+    throw new Error(`profile color dim ${profile.colorDim} != dataset color dim ${dataset.colorDim}`);
+  }
+  // The photometric features are only comparable within one baseline render
+  // strategy: an embedded camera JPEG and a neutral external render put the same
+  // photograph at different luminance, contrast and white point. Mixing them
+  // silently feeds the model a feature vector from a space it never saw, and
+  // nothing downstream fails loudly — the predictions just come out wrong. The
+  // dimensions match either way, so this is the only place it can be caught.
+  if (!dataset.baseline) {
+    throw new Error(
+      `dataset does not record which baseline render it was exported with, so it cannot be ` +
+        `checked against the profile's ('${profile.baseline}') — re-export it with ` +
+        `\`--baseline ${profile.baseline}\``,
+    );
+  }
+  if (profile.baseline !== dataset.baseline) {
+    throw new Error(
+      `profile was trained on baseline '${profile.baseline}' but the dataset was exported with ` +
+        `'${dataset.baseline}' — the colour features are not comparable across baselines. ` +
+        `Re-export with \`--baseline ${profile.baseline}\`.`,
+    );
   }
 }
 

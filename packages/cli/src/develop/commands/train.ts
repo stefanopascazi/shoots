@@ -27,8 +27,25 @@ export interface TrainArgs {
 
 const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
 
+/**
+ * How the per-parameter λ came out, most-used first — e.g. `30000×61 1000×12`.
+ *
+ * Worth a line of its own: everything piling onto the top of the grid is the
+ * signature of a catalog the model cannot read, and it is the difference between
+ * "the predictions are flat" and knowing *why* they are flat.
+ */
+function lambdaSpread(b: BranchModel): string {
+  const counts = new Map<number, number>();
+  for (const lambda of b.paramLambda) counts.set(lambda, (counts.get(lambda) ?? 0) + 1);
+  return [...counts.entries()]
+    .sort((x, y) => y[1] - x[1] || x[0] - y[0])
+    .map(([lambda, count]) => `${lambda}×${count}`)
+    .join(' ');
+}
+
 function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boolean, all: boolean): void {
-  w.write(`\n  ── ${b.treatment.toUpperCase()} branch — ${b.samples} images, λ=${b.ridgeLambda}${lambdaAuto ? ' (auto)' : ''} ──\n`);
+  w.write(`\n  ── ${b.treatment.toUpperCase()} branch — ${b.samples} images ──\n`);
+  w.write(`  λ per param${lambdaAuto ? ' (auto)' : ''}: ${lambdaSpread(b)}\n`);
   const gate = b.imageDependentSkill;
   const rand = b.imageDependentSkillRandom;
   w.write(`  image-dependent skill: ${gate === null ? 'n/a (too little data)' : gate.toFixed(4)}`);
@@ -43,12 +60,13 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
   const shown = b.perParam.filter((p) => all || p.weight >= 1.5);
   const rows = shown.slice().sort((x, y) => y.skill - x.skill);
   if (rows.length > 0) {
-    w.write('  param                 skill   random    model MAE   baseline MAE\n');
+    w.write('  param                 skill   random    model MAE   baseline MAE        λ\n');
     for (const p of rows) {
       const note = p.degenerate ? '  [never moves]' : p.gated ? '  [gated → constant]' : '';
       w.write(
         `  ${p.key.padEnd(20)} ${pct(p.skill).padStart(7)} ${pct(p.skillRandom).padStart(8)} ` +
-          `${p.modelMae.toFixed(3).padStart(12)} ${p.baselineMae.toFixed(3).padStart(14)}${note}\n`,
+          `${p.modelMae.toFixed(3).padStart(12)} ${p.baselineMae.toFixed(3).padStart(14)} ` +
+          `${String(p.lambda).padStart(8)}${note}\n`,
       );
     }
   }
