@@ -49,6 +49,37 @@ export function profilesDir(): string {
   return path.join(shootsHome(), 'profiles');
 }
 
+/**
+ * Root for the develop predictor's own working files.
+ *
+ * Namespaced under `develop/` rather than sitting beside {@link profilesDir}:
+ * `profiles/` already holds *rating* profiles, and a sibling `profile/` telling
+ * a different story one letter apart is a trap for whoever reads it next.
+ */
+export function developHome(): string {
+  return path.join(shootsHome(), 'develop');
+}
+
+/** The training dataset `develop init` builds, unless told otherwise. */
+export function developExportPath(): string {
+  return path.join(developHome(), 'export', 'export.jsonl');
+}
+
+/** The style profile `develop init` fits, unless told otherwise. */
+export function developProfilePath(): string {
+  return path.join(developHome(), 'profile', 'export.json');
+}
+
+/** Root under which each shoot `develop edit` touches keeps its working files. */
+export function developShootsDir(): string {
+  return path.join(developHome(), 'export', 'shooting');
+}
+
+/** Working directory for one shoot, named after the folder it came from. */
+export function developShootDir(folderName: string): string {
+  return path.join(developShootsDir(), folderName);
+}
+
 /** Root for log files. */
 export function logsDir(): string {
   return path.join(shootsHome(), 'logs');

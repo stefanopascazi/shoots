@@ -2,7 +2,16 @@
  * shoots develop — personal develop-setting prediction (the local "Lightroom AI"
  * editor, limited to the global look).
  *
- * A single command group over the whole pipeline:
+ * Two levels, on purpose. The everyday pair wraps the steps with conventional
+ * paths under `~/.shoots/develop`, because nobody should have to remember where
+ * last week's dataset went:
+ *   init     export + train, from an edited catalog → a reusable style profile.
+ *   edit     export + predict, over one shoot → sidecars next to the photographs.
+ *   feedback how much of that prediction survived contact with the photographer.
+ *   status   what this machine holds.   clean  drop the per-shoot working files.
+ *
+ * …over the individual steps, which stay available whenever the convention is
+ * not what you want:
  *   export   build a training dataset from an edited catalog (CLIP + colour
  *            features + crs targets); the only step that touches onnx/exiftool.
  *   train    fit a per-catalog develop profile (multi-output ridge over deltas).
@@ -21,11 +30,68 @@ import { runTrain } from '../develop/commands/train.js';
 import { runPredict } from '../develop/commands/predict.js';
 import { runFeedback } from '../develop/commands/feedback.js';
 import { runDiagnose } from '../develop/commands/diagnose.js';
+import { runInit, runEdit } from '../develop/commands/pipeline.js';
+import { runClean } from '../develop/commands/clean.js';
+import { runStatus } from '../develop/commands/status.js';
 
 export function registerDevelopCommand(program: Command): void {
   const develop = program
     .command('develop')
-    .description('Personal develop prediction: export → train → predict (local "Lightroom AI", global look only)');
+    .description('Personal develop prediction: init → edit → feedback (local "Lightroom AI", global look only)');
+
+  develop
+    .command('init')
+    .description('Learn your style from an edited catalog (export + train) into ~/.shoots/develop')
+    .argument('<path>', 'folder of RAW/edited images carrying your develop settings')
+    .option('--out-export <file>', 'training dataset path (default: ~/.shoots/develop/export/export.jsonl)')
+    .option('--out-train <file>', 'profile path (default: ~/.shoots/develop/profile/export.json)')
+    .option('--name <name>', 'profile name', 'my-style')
+    .option('--baseline <mode>', `baseline render: ${BASELINES.join(' | ')}`, 'external')
+    .option('--everything', 'export every file, not only those carrying an edit')
+    .option('--model <kind>', 'inference backend', 'onnx')
+    .option('--concurrency <n>', 'max parallel jobs', '4')
+    .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
+    .option('--lambda <n>', "ridge strength, or 'auto' to pick one per parameter", 'auto')
+    .option('--folds <k>', 'cross-validation folds', (v) => parseInt(v, 10), 5)
+    .option('--group-by <mode>', 'held-out folds: folder (capture sessions) | none (leakage-prone)', 'folder')
+    .option('--gate-threshold <n>', 'skill at or below which a param falls back to your constant', (v) => parseFloat(v), 0.02)
+    .option('--embedding-dim <k>', 'CLIP components to keep (0 drops it)', (v) => parseInt(v, 10))
+    .option('--all', 'report every parameter, not just the image-dependent ones')
+    .option('--dry-run', 'print the steps and the paths, write nothing')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runInit);
+
+  develop
+    .command('edit')
+    .description('Develop a shoot with your profile (export + predict) — sidecars land next to the photographs')
+    .argument('<path>', 'folder of the shoot to develop')
+    .option('--profile <file>', 'profile to apply (default: the one `develop init` wrote)')
+    .option('--treatment <t>', 'which branch to apply: auto | color | bw', 'auto')
+    .option('--camera-profile <name>', "base rendering to assume and write out, overriding the catalog's own")
+    .option('--baseline <mode>', `baseline render: ${BASELINES.join(' | ')}`, 'external')
+    .option('--model <kind>', 'inference backend', 'onnx')
+    .option('--concurrency <n>', 'max parallel jobs', '4')
+    .option('--editor <id>', `which editor's format to read/write: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
+    .option('--force', 'overwrite sidecars that already carry a real edit')
+    .option('--dry-run', 'print the steps and the paths, write nothing')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runEdit);
+
+  develop
+    .command('status')
+    .description('What this machine holds: the dataset, the profile and the cached shoots')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .action(runStatus);
+
+  develop
+    .command('clean')
+    .description('Remove the per-shoot working files under ~/.shoots/develop (the profile survives)')
+    .option('--all', 'also remove the training dataset and the fitted profile')
+    .option('--dry-run', 'list what would be removed, remove nothing')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .action(runClean);
 
   develop
     .command('export')

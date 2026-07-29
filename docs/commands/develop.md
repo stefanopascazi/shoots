@@ -8,13 +8,25 @@ per-image starting point for a new shoot.
 shoots develop <subcommand> [options]
 ```
 
+**Everyday pair** — these wrap the steps below with conventional paths under
+`~/.shoots/develop`, so nothing has to be remembered between sessions:
+
+| Subcommand | Purpose |
+| --- | --- |
+| [`init`](#shoots-develop-init) | Learn your style from an edited catalog (`export` + `train`) |
+| [`edit`](#shoots-develop-edit) | Develop a shoot with it (`export` + `predict`) |
+| [`feedback`](#shoots-develop-feedback) | How much of that prediction you kept |
+| [`status`](#shoots-develop-status) | What this machine holds |
+| [`clean`](#shoots-develop-clean) | Drop the per-shoot working files |
+
+**The individual steps**, still there whenever the convention is not what you want:
+
 | Subcommand | Purpose |
 | --- | --- |
 | [`export`](#shoots-develop-export) | Build a training dataset from an edited catalog |
 | [`refresh-targets`](#shoots-develop-refresh-targets) | Re-read an existing dataset's targets without recomputing pixels |
 | [`train`](#shoots-develop-train) | Fit a per-catalog develop profile |
 | [`predict`](#shoots-develop-predict) | Apply a profile → predicted develop vector / XMP sidecar |
-| [`feedback`](#shoots-develop-feedback) | Compare a prediction against what you actually kept |
 | [`diagnose`](#shoots-develop-diagnose) | Style-clustering diagnostic |
 
 `export` is the only step that touches ONNX / exiftool for pixels;
@@ -23,6 +35,110 @@ shoots develop <subcommand> [options]
 
 For the conceptual background — what is predicted, why deltas, how to read the
 go/no-go metric — see the [Develop predictor guide](../develop-predictor.md).
+
+---
+
+## The everyday pipeline
+
+```sh
+# once, from a catalog you have already developed
+shoots develop init ~/Catalogs/2025
+
+# per shoot — sidecars land next to the photographs
+shoots develop edit ~/Shoots/2026-07-19
+
+# after developing them in Lightroom
+shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-19/prediction.json
+
+# when the working files pile up
+shoots develop clean
+```
+
+Everything lives under `~/.shoots/develop` (override the root with `SHOOTS_HOME`):
+
+```
+develop/
+  export/export.jsonl              the training dataset      ← init
+  profile/export.json              the fitted style profile  ← init
+  export/shooting/<folder>/        one directory per shoot   ← edit
+    export.jsonl                     what the shoot looks like
+    prediction.json                  what we proposed        → feedback
+```
+
+Every one of these accepts `--dry-run`.
+
+---
+
+## `shoots develop init`
+
+`export --edited-only` + `train`, into the conventional paths.
+
+```
+shoots develop init <path> [options]
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--out-export <file>` | `~/.shoots/develop/export/export.jsonl` | Training dataset path |
+| `--out-train <file>` | `~/.shoots/develop/profile/export.json` | Profile path |
+| `--name <name>` | `my-style` | Profile name |
+| `--baseline <mode>` | `external` | Baseline render (note: **not** the `export` default) |
+| `--everything` | off | Export every file, not only those carrying an edit |
+| `--dry-run` | off | Print the steps and the paths, write nothing |
+
+It also takes every `train` flag — `--lambda`, `--folds`, `--group-by`,
+`--gate-threshold`, `--embedding-dim`, `--all` — plus `--model`,
+`--concurrency` and `--editor`. If the export fails it stops rather than
+training on a half-written dataset.
+
+---
+
+## `shoots develop edit`
+
+`export` + `predict` over one shoot. The sidecars are written **next to the
+photographs**, which is where Lightroom looks for them.
+
+```
+shoots develop edit <path> [options]
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--profile <file>` | the one `init` wrote | Profile to apply |
+| `--treatment <t>` | `auto` | `auto` \| `color` \| `bw` |
+| `--camera-profile <name>` | catalog's own | Base rendering to assume and write out |
+| `--baseline <mode>` | `external` | Must match the profile's, or `predict` refuses |
+| `--force` | off | Overwrite sidecars that already carry a real edit |
+| `--dry-run` | off | Print the steps and the paths, write nothing |
+
+> **It refuses to overwrite your work.** Writing into the photo folder means an
+> existing edit would be replaced, so it counts the sidecars that carry one and
+> stops. `--force` proceeds; `--dry-run` shows the plan first.
+
+---
+
+## `shoots develop status`
+
+What is on this machine: the dataset, the profile (name, age, skill, how many
+parameters are gated) and the cached shoots.
+
+```
+shoots develop status [--json]
+```
+
+---
+
+## `shoots develop clean`
+
+Removes the per-shoot working directories. Both files in them are regenerable —
+the dataset from the photographs, the record by predicting again.
+
+```
+shoots develop clean [--all] [--dry-run] [--json]
+```
+
+`--all` also removes the training dataset and the profile, which cost a full
+export and a train to rebuild. The profile is **not** touched otherwise.
 
 ---
 

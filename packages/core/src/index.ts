@@ -18,6 +18,11 @@ export {
   modelDir,
   cacheDir,
   profilesDir,
+  developHome,
+  developExportPath,
+  developProfilePath,
+  developShootsDir,
+  developShootDir,
   logsDir,
   configPath,
 } from './paths.js';
