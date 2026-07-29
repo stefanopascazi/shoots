@@ -35,7 +35,7 @@
  */
 
 export type Transform = 'linear' | 'logK';
-export type DeltaRef = 'zero' | 'asShotTemp' | 'asShotTint';
+export type DeltaRef = 'zero' | 'asShotTemp' | 'asShotTint' | 'const';
 export type Branch = 'shared' | 'color' | 'bw';
 export type Treatment = 'color' | 'bw';
 
@@ -48,10 +48,54 @@ export interface DevelopParam {
   absMax: number;
   transform: Transform;
   ref: DeltaRef;
+  /** The neutral value, for `ref: 'const'` — a tone-curve knot's own input. */
+  refConst?: number;
   weight: number;
 }
 
 const HSL_CHANNELS = ['Red', 'Orange', 'Yellow', 'Green', 'Aqua', 'Blue', 'Purple', 'Magenta'] as const;
+
+/**
+ * Inputs at which the point tone curve is sampled, and therefore predicted.
+ *
+ * The *point* curve, not the parametric one. Which of the two a photographer
+ * uses is a habit, not a preference the tool gets to have: on the catalog this
+ * was built against, all four `Parametric*` sliders are zero on all 553 edits
+ * while a third of them carry a non-identity `ToneCurvePV2012` — so the schema
+ * was predicting the mechanism its photographer never touches and ignoring the
+ * one carrying the look. On black-and-white it is not a garnish but the
+ * conversion itself (mean |error| against the identity curve: 9.6 for B&W
+ * against 1.5 for colour).
+ *
+ * Nine knots is a compromise measured on that catalog: the curve's deviation
+ * from linear peaks around x≈48 and x≈176, which five knots blur and fourteen
+ * would only fit more noise with.
+ */
+export const CURVE_KNOTS = [0, 32, 64, 96, 128, 160, 192, 224, 255] as const;
+
+/**
+ * The synthetic param key for one knot.
+ *
+ * Synthetic because a curve is not a crs *attribute*: ACR stores it as an
+ * rdf:Seq of "x, y" points, and no per-knot tag exists to name. Sampling it onto
+ * a fixed grid is what turns it into something a fixed-width regressor can
+ * predict at all, and the keys never collide with real crs tags because no crs
+ * tag is spelled this way. The emitter turns them back into the Seq.
+ */
+export const curveParamKey = (knot: number): string => `ToneCurvePoint${knot}`;
+
+/** One knot as a develop parameter: neutral is the identity curve, y = x. */
+const curveParam = (knot: number): DevelopParam => ({
+  key: curveParamKey(knot),
+  group: 'toneCurve',
+  branch: 'shared',
+  absMin: 0,
+  absMax: 255,
+  transform: 'linear',
+  ref: 'const',
+  refConst: knot,
+  weight: 1.0,
+});
 
 /** Shorthand for a plain −100..100 linear slider. */
 const slider = (key: string, group: string, branch: Branch, weight: number, min = -100, max = 100): DevelopParam => ({
@@ -98,6 +142,8 @@ const SHARED: DevelopParam[] = [
   // Effects — part of the look, apply in colour and B&W.
   slider('PostCropVignetteAmount', 'effects', 'shared', 0.5),
   slider('GrainAmount', 'effects', 'shared', 0.5, 0, 100),
+
+  ...CURVE_KNOTS.map(curveParam),
 ];
 
 // ── Colour branch: predicted only for colour photos ──────────────────────────
@@ -152,8 +198,12 @@ export const DEVELOP_PARAMS: DevelopParam[] = [...SHARED, ...COLOR, ...BW];
  * `defaultRender` is what inference now substitutes for an unedited file (and
  * writes into the sidecar). A v5 profile's vocabulary merges every Adobe Color
  * photograph with the plain-profile ones it was rendered nothing like.
+ *
+ * v7: the point tone curve joined the target vector as nine per-knot parameters,
+ * so the param list and its order changed — and a v6 profile's weights are
+ * indexed by the old list.
  */
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 /** Parameters predicted for a given treatment: shared + that treatment's branch. */
 export function paramsForTreatment(treatment: Treatment): DevelopParam[] {
@@ -233,6 +283,8 @@ function refValue(param: DevelopParam, meta: AsShotMeta): number {
       return meta.tempAsShot ?? 5500;
     case 'asShotTint':
       return meta.tintAsShot ?? 0;
+    case 'const':
+      return param.refConst ?? 0;
     default:
       return 0;
   }
@@ -252,4 +304,74 @@ export function decodeDelta(param: DevelopParam, delta: number, meta: AsShotMeta
   const ref = refValue(param, meta);
   const abs = param.transform === 'logK' ? Math.max(ref, 1) * Math.exp(delta) : delta + ref;
   return Math.min(param.absMax, Math.max(param.absMin, abs));
+}
+
+/**
+ * Sample a flattened point curve `[x0,y0,x1,y1,…]` at {@link CURVE_KNOTS}.
+ *
+ * Absent or degenerate curve ⇒ the identity, which is exactly what "the
+ * photographer left the curve alone" means.
+ */
+export function sampleCurve(curve: number[] | undefined): number[] {
+  if (!curve || curve.length < 4) return CURVE_KNOTS.map((x) => x);
+  const points: [number, number][] = [];
+  for (let i = 0; i + 1 < curve.length; i += 2) points.push([curve[i]!, curve[i + 1]!]);
+  points.sort((a, b) => a[0] - b[0]);
+  return CURVE_KNOTS.map((x) => {
+    if (x <= points[0]![0]) return points[0]![1];
+    const last = points[points.length - 1]!;
+    if (x >= last[0]) return last[1];
+    for (let i = 0; i + 1 < points.length; i++) {
+      const [x0, y0] = points[i]!;
+      const [x1, y1] = points[i + 1]!;
+      if (x >= x0 && x <= x1) return y0 + ((x - x0) / (x1 - x0 || 1)) * (y1 - y0);
+    }
+    return x;
+  });
+}
+
+/**
+ * A develop map with the tone curve materialized as per-knot targets.
+ *
+ * Done here rather than in the exporter so the dataset format stays put: the
+ * full curve is already in every record, and turning it into knots is a pure
+ * function of it. Everything downstream — delta encoding, the never-moves test,
+ * evaluation, gating — then treats the curve like any other parameter.
+ */
+export function withCurveTargets(
+  develop: Record<string, number>,
+  curve: number[] | undefined,
+): Record<string, number> {
+  const out = { ...develop };
+  const sampled = sampleCurve(curve);
+  CURVE_KNOTS.forEach((knot, i) => { out[curveParamKey(knot)] = sampled[i]!; });
+  return out;
+}
+
+/** How far a knot may sit from identity and still count as "curve untouched". */
+const CURVE_IDENTITY_TOLERANCE = 0.5;
+
+/**
+ * Rebuild a flattened point curve from predicted knots, or undefined when the
+ * prediction is the identity (writing out a pointless straight line would tell
+ * the editor a decision was made where none was).
+ *
+ * Outputs are forced non-decreasing. A regressor fits each knot independently
+ * and nothing stops it returning a curve that dips backwards; ACR would accept
+ * that and render a solarized frame, which is never what a starting point means.
+ */
+export function curveFromDevelop(develop: Record<string, number>): number[] | undefined {
+  const ys: number[] = [];
+  let previous = 0;
+  let moved = false;
+  for (const knot of CURVE_KNOTS) {
+    const raw = develop[curveParamKey(knot)];
+    if (raw === undefined || !Number.isFinite(raw)) return undefined;
+    const y = Math.max(previous, Math.min(255, Math.round(raw)));
+    if (Math.abs(y - knot) > CURVE_IDENTITY_TOLERANCE) moved = true;
+    ys.push(y);
+    previous = y;
+  }
+  if (!moved) return undefined;
+  return CURVE_KNOTS.flatMap((x, i) => [x, ys[i]!]);
 }

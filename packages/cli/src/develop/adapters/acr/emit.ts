@@ -7,8 +7,35 @@
  * accept or discard.
  */
 
-import type { Treatment } from '../../develop/schema.js';
+import { CURVE_KNOTS, curveFromDevelop, curveParamKey, type Treatment } from '../../develop/schema.js';
 import type { PredictedEdit } from '../types.js';
+
+/** The synthetic per-knot keys, which are rebuilt into a Seq rather than emitted. */
+const CURVE_KEYS = new Set(CURVE_KNOTS.map(curveParamKey));
+
+/**
+ * The point tone curve as ACR stores it: an rdf:Seq of "x, y" points, not an
+ * attribute. Emitted for all four channels ACR expects, with RGB left linear —
+ * the schema predicts the composite curve only.
+ */
+function curveElements(develop: Record<string, number>): string {
+  const curve = curveFromDevelop(develop);
+  if (!curve) return '';
+  const points: string[] = [];
+  for (let i = 0; i + 1 < curve.length; i += 2) points.push(`      <rdf:li>${curve[i]}, ${curve[i + 1]}</rdf:li>`);
+  const seq = (tag: string, items: string[]): string =>
+    `   <crs:${tag}>\n    <rdf:Seq>\n${items.join('\n')}\n    </rdf:Seq>\n   </crs:${tag}>`;
+  const linear = ['      <rdf:li>0, 0</rdf:li>', '      <rdf:li>255, 255</rdf:li>'];
+  return (
+    '\n' +
+    [
+      seq('ToneCurvePV2012', points),
+      seq('ToneCurvePV2012Red', linear),
+      seq('ToneCurvePV2012Green', linear),
+      seq('ToneCurvePV2012Blue', linear),
+    ].join('\n')
+  );
+}
 
 const CRS_NS = 'http://ns.adobe.com/camera-raw-settings/1.0/';
 
@@ -47,8 +74,10 @@ export function buildXmpSidecar(
   render?: PredictedEdit['render'],
 ): string {
   const attrs = Object.entries(develop)
+    .filter(([k]) => !CURVE_KEYS.has(k))
     .map(([k, v]) => `    crs:${k}="${formatValue(k, v)}"`)
     .join('\n');
+  const curve = curveElements(develop);
   // Without an explicit CameraProfile, Lightroom renders the file on its own
   // legacy default (Adobe Standard) — so a style learned on top of Adobe Color
   // arrives sitting on a different base, and every predicted slider is measured
@@ -71,7 +100,7 @@ export function buildXmpSidecar(
     crs:ProcessVersion="11.0"
     crs:WhiteBalance="Custom"
     crs:ConvertToGrayscale="${grayscale ? 'True' : 'False'}"${profileAttr}
-${attrs}>${lookElement}
+${attrs}>${curve}${lookElement}
   </rdf:Description>
  </rdf:RDF>
 </x:xmpmeta>

@@ -23,6 +23,7 @@ import {
   paramsForTreatment,
   renderKey,
   treatmentFromDevelop,
+  withCurveTargets,
   type AsShotMeta,
   type RenderProfile,
   type Treatment,
@@ -119,7 +120,9 @@ function buildRows(dataset: DevelopDataset): RawRow[] {
       file: r.file,
       embedding: r.embedding,
       features: r.features,
-      develop: r.develop,
+      // The point tone curve becomes per-knot targets here, from the curve the
+      // dataset already carries — no re-export needed to start predicting it.
+      develop: withCurveTargets(r.develop, r.curve),
       meta: r.asShot,
       treatment: deriveTreatment(r),
       render: { profile: r.baseProfile, look: r.look },

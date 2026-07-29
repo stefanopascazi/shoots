@@ -48,8 +48,9 @@ vector, split into two branches by treatment (deterministic from the edit —
 black-and-white uses the GrayMixer, colour uses HSL; they are mutually exclusive):
 
 - **shared** (every photo): tone (exposure, contrast, highlights/shadows/whites/
-  blacks), presence (texture/clarity/dehaze), white balance, the parametric tone
-  curve, camera calibration, vignette/grain.
+  blacks), presence (texture/clarity/dehaze), white balance, **both** tone curves
+  — parametric sliders and the point curve as nine knots, because which of the
+  two a photographer uses is a habit — camera calibration, vignette/grain.
 - **colour** only: vibrance/saturation, the 24 HSL adjustments, colour grading
   (shadow/mid/highlight/global) and split toning.
 - **B&W** only: the 8-channel grayscale mixer.
@@ -58,10 +59,11 @@ One ridge model is trained per treatment over `shared + <branch>`, so a
 high-contrast B&W edit and a light colour edit never average into a mush. See
 `src/develop/schema.ts` for the exact list, ranges, branches and loss weights.
 
-The full edit is *captured* (incl. sharpening / noise reduction and the base
-`CameraProfile`) but only the look above is *predicted* — the goal is the best
-starting point to refine, not the finished edit. Sharpening/noise are finishing,
-not starting point, so they are recorded in the dataset but not learned as targets.
+The full edit is *captured* (incl. sharpening / noise reduction) but only the look
+above is *predicted* — the goal is the best starting point to refine, not the
+finished edit. Sharpening/noise are finishing, not starting point, so they are
+recorded in the dataset but not learned as targets. The base rendering is the
+third case: not a target, but conditioned on and written out (see below).
 
 Two decisions are baked into the model:
 
@@ -121,6 +123,32 @@ rewards an exporter bug rather than a model.
 If the grouped number is not clearly positive on a real catalog, the signal is
 too weak to build the plugin on — stop and reconsider the baseline render
 strategy.
+
+## The point tone curve
+
+Predicted as **nine knots** (`ToneCurvePoint0` … `ToneCurvePoint255`), sampled
+onto a fixed grid so a fixed-width regressor can touch it at all, with the
+identity curve (`y = x`) as each knot's neutral. The emitter turns them back into
+the `rdf:Seq` of `"x, y"` points ACR actually stores, forcing the outputs
+non-decreasing — a regressor fits each knot independently and nothing else stops
+it returning a curve that dips backwards, which ACR would happily render as a
+solarized frame.
+
+The **point** curve, not the parametric one. Which of the two a photographer uses
+is a habit, and the schema originally guessed wrong: on the catalog this was
+built against, all four `Parametric*` sliders are zero on all 553 edits while a
+third carry a non-identity `ToneCurvePV2012`. It was predicting the mechanism its
+photographer never touches and ignoring the one carrying the look.
+
+Curve knots carry a small loss weight and stay out of the headline, which
+measures image-*dependence* — but the report always shows them, because on a
+black-and-white edit the curve is not a garnish, it is the conversion. That shows
+up in the numbers: on the reference catalog the colour knots all gate out, while
+the B&W shoulder predicts (`ToneCurvePoint192` 16%, `224` 14%, `160` 6%).
+
+A gated knot still emits the photographer's mean curve rather than nothing, which
+is the whole gain for a catalog whose B&W look lives here: mean |error| against
+the identity curve was 9.6 on B&W.
 
 ## The base rendering: profile + Look
 

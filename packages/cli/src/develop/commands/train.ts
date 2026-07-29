@@ -57,7 +57,12 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
   // Image-dependent params always; the rest only on request. Degenerate targets
   // are listed too — a target that never moves is evidence about the *export*,
   // and hiding it is how a misread tag stays hidden.
-  const shown = b.perParam.filter((p) => all || p.weight >= 1.5);
+  //
+  // The tone curve is shown regardless of its weight. It is a major style
+  // vehicle (on a black-and-white edit it *is* the look), so burying it in the
+  // "not shown" tail would hide the one block a photographer most wants to check
+  // — while keeping it out of the headline, which measures image-dependence.
+  const shown = b.perParam.filter((p) => all || p.weight >= 1.5 || p.group === 'toneCurve');
   const rows = shown.slice().sort((x, y) => y.skill - x.skill);
   if (rows.length > 0) {
     w.write('  param                 skill   random    model MAE   baseline MAE        λ\n');
@@ -71,7 +76,7 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
     }
   }
   if (!all) {
-    const hidden = b.perParam.filter((p) => p.weight < 1.5);
+    const hidden = b.perParam.filter((p) => p.weight < 1.5 && p.group !== 'toneCurve');
     const negative = hidden.filter((p) => p.skill < 0).length;
     if (hidden.length > 0) {
       w.write(`  … ${hidden.length} style params not shown (${negative} with negative skill) — pass --all\n`);

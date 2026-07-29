@@ -35,8 +35,21 @@ HSL, and they are mutually exclusive.
 | Presence | `Texture`, `Clarity2012`, `Dehaze` |
 | White balance | `Temperature`, `Tint` |
 | Parametric curve | `ParametricHighlights`, `ParametricLights`, `ParametricDarks`, `ParametricShadows` |
+| Point curve | `ToneCurvePoint0` … `ToneCurvePoint255` — nine knots (see below) |
 | Calibration | `ShadowTint`, `RedHue`, `RedSaturation`, `GreenHue`, `GreenSaturation`, `BlueHue`, `BlueSaturation` |
 | Effects | `PostCropVignetteAmount`, `GrainAmount` |
+
+**Both curves, because which one you use is a habit.** The parametric sliders and
+the point curve do the same job through different controls, and a schema that
+bets on one is blind to the photographer who uses the other. The nine point-curve
+knots are synthetic keys — ACR stores the curve as an `rdf:Seq` of `"x, y"`
+points, with no per-knot tag to name — sampled onto a fixed grid so a
+fixed-width regressor can predict it, each with the identity curve as its
+neutral. `predict` rebuilds the Seq and forces the outputs non-decreasing.
+
+On black-and-white the curve is not a garnish, it *is* the conversion, so the
+report always shows these knots even though their loss weight keeps them out of
+the headline (which measures image-dependence, a different question).
 
 ### `color` — colour photos only
 
@@ -298,8 +311,9 @@ Minutes instead of hours — see
 - **Hue parameters are modelled linearly** although they are circular (0–360°) —
   colour grade, calibration and split-tone hues. Acceptable while they are
   near-constant per catalog, wrong if you swing hue wildly per image.
-- **The point tone curve is captured, not predicted.** It is recorded in the
-  dataset as `curve` but is not a target in v1.
+- **The tone curve is predicted as nine sampled knots**, not as the arbitrary
+  point list a photographer can drag. A curve whose shape lives between the knots
+  is approximated; the RGB channel curves are not predicted at all.
 - **Global look only.** No local adjustments, no masks, no AI subject selection.
 - **One profile per style.** The model has no per-image style routing; at
   inference you choose the treatment.

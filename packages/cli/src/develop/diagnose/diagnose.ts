@@ -14,7 +14,7 @@
  * *execution* gain from the separate *routing* problem (predicting the style from
  * content / a human pick), which this diagnostic does not attempt.
  */
-import { DEVELOP_PARAMS, decodeDelta, type AsShotMeta } from '../develop/schema.js';
+import { DEVELOP_PARAMS, decodeDelta, withCurveTargets, type AsShotMeta } from '../develop/schema.js';
 import { assembleFeatures, targetDeltas, actualAbsVec } from '../develop/assemble.js';
 import { buildNormalEquations, solveRidge, predictStd } from '../train/regress.js';
 // Same held-out policy as `train`: whole capture sessions kept out, baseline in
@@ -72,8 +72,10 @@ function buildRows(dataset: DevelopDataset): DRow[] {
     if (Object.keys(r.develop).length === 0) continue; // edited only
     rows.push({
       x: assembleFeatures(r.embedding, r.features, r.asShot),
-      deltas: targetDeltas(DEVELOP_PARAMS, r.develop, r.asShot),
-      abs: actualAbsVec(DEVELOP_PARAMS, r.develop, r.asShot),
+      // Same materialization as training (see withCurveTargets): the diagnostic
+      // has to score the parameters the trainer actually fits.
+      deltas: targetDeltas(DEVELOP_PARAMS, withCurveTargets(r.develop, r.curve), r.asShot),
+      abs: actualAbsVec(DEVELOP_PARAMS, withCurveTargets(r.develop, r.curve), r.asShot),
       meta: r.asShot,
       develop: r.develop,
       curve: r.curve,
