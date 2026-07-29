@@ -78,11 +78,12 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
   const shown = b.perParam.filter((p) => all || p.weight >= 1.5 || p.group === 'toneCurve');
   const rows = shown.slice().sort((x, y) => y.skill - x.skill);
   if (rows.length > 0) {
-    w.write('  param                 skill   random    model MAE   baseline MAE        λ\n');
+    w.write('  param                 skill  ± fold   random    model MAE   baseline MAE        λ\n');
     for (const p of rows) {
       const note = p.degenerate ? '  [never moves]' : p.gated ? '  [gated → constant]' : '';
       w.write(
-        `  ${p.key.padEnd(20)} ${pct(p.skill).padStart(7)} ${pct(p.skillRandom).padStart(8)} ` +
+        `  ${p.key.padEnd(20)} ${pct(p.skill).padStart(7)} ${pct(p.skillSd).padStart(7)} ` +
+          `${pct(p.skillRandom).padStart(8)} ` +
           `${p.modelMae.toFixed(3).padStart(12)} ${p.baselineMae.toFixed(3).padStart(14)} ` +
           `${String(p.lambda).padStart(8)}${note}\n`,
       );
@@ -131,4 +132,7 @@ export async function runTrain(args: TrainArgs): Promise<void> {
   }
   w.write('\n  skill > 0 means the model beats "apply my average edit" on photographs\n');
   w.write('  from shoots it has never seen. That is the number that decides.\n');
+  w.write('  "± fold" is how far that skill moves between held-out folds: a change\n');
+  w.write('  smaller than it is not a change. Single per-parameter figures on a few\n');
+  w.write('  hundred images routinely swing several points on their own.\n');
 }

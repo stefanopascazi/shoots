@@ -267,6 +267,7 @@ function trainBranch(
       modelMae: round4(gate?.modelMae ?? 0),
       baselineMae: round4(gate?.baselineMae ?? 0),
       skill: round4(gate?.skill ?? 0),
+      skillSd: round4(gate?.skillSd ?? 0),
       skillRandom: round4(rand?.skill ?? 0),
       degenerate: isDegenerate,
       gated,

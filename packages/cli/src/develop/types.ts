@@ -62,6 +62,15 @@ export interface ParamEval {
   baselineMae: number;
   skill: number;
   /**
+   * Spread of {@link skill} across the held-out folds — its error bar.
+   *
+   * A single per-parameter figure invites conclusions it cannot support. On the
+   * reference catalog `Shadows2012` swung between −5% and +14% across repeated
+   * fold assignments with no change to the model, which read as a regression the
+   * one time it landed low. Compare parameters, and versions, against this.
+   */
+  skillSd: number;
+  /**
    * Skill with folds drawn at random instead of by session. Near-duplicate
    * frames from one shoot then sit on both sides of the split, so this measures
    * "finish a shoot already under way" — a real scenario, but not the one the
