@@ -11,11 +11,13 @@ shoots develop <subcommand> [options]
 | Subcommand | Purpose |
 | --- | --- |
 | [`export`](#shoots-develop-export) | Build a training dataset from an edited catalog |
+| [`refresh-targets`](#shoots-develop-refresh-targets) | Re-read an existing dataset's targets without recomputing pixels |
 | [`train`](#shoots-develop-train) | Fit a per-catalog develop profile |
 | [`predict`](#shoots-develop-predict) | Apply a profile → predicted develop vector / XMP sidecar |
 | [`diagnose`](#shoots-develop-diagnose) | Style-clustering diagnostic |
 
-`export` is the only step that touches ONNX / exiftool. `train`, `predict` and
+`export` is the only step that touches ONNX / exiftool for pixels;
+`refresh-targets` needs exiftool but no image decoding. `train`, `predict` and
 `diagnose` are pure maths over the exported dataset.
 
 For the conceptual background — what is predicted, why deltas, how to read the
@@ -125,7 +127,8 @@ the model, dimensions, baseline and summary.
     "iso": 800, "exposureComp": -0.33, "camera": "Canon EOS R5"
   },
   "treatment": "color",
-  "baseProfile": "Camera Faithful v2",
+  "baseProfile": "Adobe Standard v2",
+  "look": "Adobe Color",
   "curve": [0, 0, 32, 22, 128, 128, 255, 255]
 }
 ```
@@ -135,8 +138,74 @@ the model, dimensions, baseline and summary.
 | `develop` | The `crs` settings present on the file. Absent keys are neutral. |
 | `asShot` | Camera reference state — the delta reference for white balance |
 | `treatment` | `color` or `bw`, derived deterministically from the edit (GrayMixer ⇒ bw) |
-| `baseProfile` | The `crs:CameraProfile` the edit sat on |
+| `baseProfile` | The `crs:CameraProfile` the edit sat on — the *base* only |
+| `look` | The creative profile layered over it, e.g. `Adobe Color` (see below) |
 | `curve` | Flattened point tone curve `[x0,y0,x1,y1,…]`; absent when linear/default |
+
+The trailing meta line additionally carries `looks`: each distinct Look's own
+serialization, stored once for the whole dataset rather than on every record.
+
+---
+
+## `shoots develop refresh-targets`
+
+Re-read an existing dataset's supervised targets **without recomputing a single
+pixel**.
+
+```
+shoots develop refresh-targets --data <file> --out <file> [options]
+```
+
+### Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--data <file>` | **required** | Existing dataset from `develop export` |
+| `--out <file>` | **required** | Write the refreshed JSONL dataset here |
+| `--editor <id>` | `acr` | Which editor's develop settings to read |
+| `--keep-unedited` | off | Keep records that no longer carry a real edit (default: drop, as `export` does) |
+| `--json` | off | Machine-readable JSON on stdout |
+| `--verbose` | off | Verbose logging on stderr |
+
+### Why it exists
+
+The expensive half of `export` is the CLIP embedding and the neutral baseline
+render. The targets are a cheap pass over the editor's sidecars. When the
+**target side** changes, re-exporting recomputes hours of features that did not
+change — on a 1045-image catalog, 7 minutes instead of hours.
+
+Reach for it whenever the target side moves:
+
+- a `crs` tag was read under the wrong name and is now fixed,
+- the schema gained a parameter, or the base rendering gained the Look,
+- the definition of "edited" got stricter.
+
+It rebuilds `develop` / `asShot` / `baseProfile` / `look` / `curve` / `treatment`
+and keeps `embedding` / `features` exactly as they were. The output is the
+dataset a fresh export *would* have produced today, so records that no longer
+qualify as edited are dropped — and counted, never silently.
+
+Files it cannot read (moved, or the share is offline) are carried through
+untouched and reported, rather than silently turning a real edit into an empty
+one.
+
+### Examples
+
+```sh
+# After a fix to the target side — then retrain on the refreshed dataset
+shoots develop refresh-targets --data train.jsonl --out train-v2.jsonl
+shoots develop train --data train-v2.jsonl --name my-style --out profiles/my-style.json
+```
+
+```
+Refreshed 553/553 records → train-v2.jsonl
+```
+
+Records that no longer carry a real edit are reported on their own line
+(`dropped N no longer carrying a real edit`), as are files that could not be read.
+
+> `refresh-targets` never touches your catalog. It reads sidecars and writes one
+> new dataset file.
 
 ---
 
@@ -341,7 +410,8 @@ shoots develop diagnose --data train.jsonl --max-k 6 --folds 10
 
 ```sh
 # 1. Training dataset from your edited catalog
-shoots develop export ~/Catalogs/2025-edited --edited-only --out train.jsonl
+shoots develop export ~/Catalogs/2025-edited --edited-only \
+  --baseline external --out train.jsonl
 
 # 2. Fit the profile — read the GATE output carefully
 shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json
@@ -349,12 +419,21 @@ shoots develop train --data train.jsonl --name my-style --out profiles/my-style.
 # 2b. Weak result? Check whether you have multiple styles
 shoots develop diagnose --data train.jsonl
 
-# 3. Export the new shoot
-shoots develop export ~/Shoots/2026-07-new --out new.jsonl
+# 3. Export the new shoot. Same --baseline as step 1, or predict refuses the pair.
+shoots develop export ~/Shoots/2026-07-new --baseline external --out new.jsonl
 
 # 4. Predict, as XMP sidecars
 shoots develop predict --data new.jsonl --profile profiles/my-style.json \
   --treatment color --xmp ./out-xmp/
+```
+
+Upgrading, rather than starting fresh? When the *target* side changed — a fixed
+tag, a new schema parameter, a stricter "edited" test — step 1 is
+`refresh-targets` instead of a re-export, and the features are reused:
+
+```sh
+shoots develop refresh-targets --data train.jsonl --out train-v2.jsonl
+shoots develop train --data train-v2.jsonl --name my-style --out profiles/my-style.json
 ```
 
 ---

@@ -119,9 +119,9 @@ Which phases appear depends on the command:
 | Phase | Appears in |
 | --- | --- |
 | `Scanning` | every command that takes a path |
-| `Reading capture metadata` | `import`, `rename` (template resolution), `develop export` |
+| `Reading capture metadata` | `import`, `rename` (template resolution), `develop export`, `develop refresh-targets` |
 | `Reading metadata` | `exif` in read mode |
-| `Reading develop settings` | `develop export` |
+| `Reading develop settings` | `develop export`, `develop refresh-targets` |
 | `Loading inference model` | `develop export` |
 
 The counter (`1500/2421`) appears once a metadata read spans more than one

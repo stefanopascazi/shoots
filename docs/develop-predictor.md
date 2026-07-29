@@ -221,6 +221,14 @@ shoots develop predict --data new.jsonl --profile profiles/my-style.json \
 Import the sidecars in Lightroom and every frame opens on your look, ready to
 refine.
 
+Already have a dataset and only the *target* side changed — a fixed tag, a new
+schema parameter, a stricter "edited" test? Step 1 becomes a refresh, and the
+embeddings and neutral renders are reused:
+
+```sh
+shoots develop refresh-targets --data train.jsonl --out train-v2.jsonl
+```
+
 ---
 
 ## When the result is weak
@@ -263,6 +271,25 @@ edits will not produce a stable model.
 
 If you genuinely edit each image on its own terms with no through-line, there may
 be no style to learn. That is a legitimate finding, not a bug.
+
+### 5. Suspect a target that was never read
+
+A `crs` tag requested under the wrong name comes back as *silence*, not an error,
+and silence reads downstream as "the photographer never touched this" — a
+constant target the trainer then scores as perfectly predicted. `train` flags
+these as `[never moves]`, and `export` warns about tags absent from every file.
+
+When you fix the target side, you do **not** need to re-export. The embeddings
+and the neutral renders did not change; only the targets did:
+
+```sh
+shoots develop refresh-targets --data train.jsonl --out train-v2.jsonl
+shoots develop train --data train-v2.jsonl --name my-style-v2 \
+  --out profiles/my-style-v2.json
+```
+
+Minutes instead of hours — see
+[`refresh-targets`](commands/develop.md#shoots-develop-refresh-targets).
 
 ---
 

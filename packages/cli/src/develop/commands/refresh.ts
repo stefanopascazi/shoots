@@ -48,7 +48,7 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
   const edits = await adapter.readEdits(files, io, (done, total) => editPhase.update(`${done}/${total}`));
   editPhase.done(`${files.length} files`);
 
-  const capturePhase = startPhase(io, 'Reading as-shot metadata');
+  const capturePhase = startPhase(io, 'Reading capture metadata');
   const capture = await adapter.readCapture(files, edits, io, (done, total) => capturePhase.update(`${done}/${total}`));
   capturePhase.done(`${files.length} files`);
 

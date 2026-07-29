@@ -227,13 +227,25 @@ shoots develop train --data train-neutral.jsonl --name my-style-v2 \
 # 2c. Still weak? Check whether you have multiple distinct looks
 shoots develop diagnose --data train-neutral.jsonl
 
-# 3. New shoot → XMP starting points
-shoots develop export ~/Shoots/2026-07-new --out new.jsonl
+# 3. New shoot → XMP starting points.
+#    --baseline must match the profile's, or predict refuses the pair.
+shoots develop export ~/Shoots/2026-07-new --baseline external --out new.jsonl
 shoots develop predict --data new.jsonl --profile profiles/my-style-v2.json \
   --treatment color --xmp ./out-xmp/
 ```
 
 Import the sidecars in Lightroom and every frame opens on your look.
+
+Upgrading an existing dataset after a fix to the **target** side — a `crs` tag
+read under the wrong name, a new schema parameter, a stricter "edited" test —
+does not need a re-export. `refresh-targets` re-reads the targets from the
+sidecars and reuses the embeddings and neutral renders:
+
+```sh
+shoots develop refresh-targets --data train-neutral.jsonl --out train-v3.jsonl
+shoots develop train --data train-v3.jsonl --name my-style-v3 \
+  --out profiles/my-style-v3.json
+```
 
 Full guide: [Develop predictor](./develop-predictor.md).
 
