@@ -144,11 +144,16 @@ Three things follow, all of them consequences rather than choices:
   in its folder. That is legitimate — you export a whole shoot, then predict on
   it — but predicting on one file in isolation is a weaker regime, and `predict`
   says so rather than leaving it to be discovered.
-- **It is edit-independent**, computed from the baseline render only. So it can
-  be built from unedited frames too, and exporting the whole folder rather than
-  `--edited-only` describes the session better: more frames, and no survivorship
-  from "only the ones I kept". The trainer builds it from *every* record in the
-  dataset, not only the rows it trains on.
+- **It is edit-independent**, computed from the baseline render only, so the
+  trainer builds it from *every* record in the dataset rather than only the rows
+  it trains on. Whether it is worth exporting the unedited frames as well is a
+  separate question, and on the reference catalog the answer is **no**:
+  describing each session from all 2421 frames instead of the 553 edited ones
+  moved the weighted skill by 0.02pp. Exposure gained 2.6pp on 12 shuffles out of
+  12 — the rejects widen the session's dynamic range — while Vibrance,
+  Saturation, Dehaze and Whites each lost a little just as consistently. Use
+  `--edited-only` unless you have another reason not to; it is four times faster
+  here for no measurable loss.
 - **A small branch cannot afford it.** The descriptor doubles the photometric
   block, so a branch needs images to estimate the extra columns — 428 colour
   images gained, 125 B&W ones lost. The rule is four samples per feature, tested

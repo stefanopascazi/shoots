@@ -19,6 +19,17 @@ export interface DevelopExportResult {
   asShot: AsShotMeta;
   /** Black-and-white vs colour, read deterministically off the edit. */
   treatment?: Treatment;
+  /**
+   * The file carries a deliberate edit, not merely the neutral defaults the
+   * editor writes into everything it touches.
+   *
+   * Recorded per file rather than filtered at export time, because the two uses
+   * of a record pull in opposite directions: only a real edit is a valid
+   * *training target*, but every frame — edited or not — describes its
+   * *session*. Absent on datasets exported before this existed, where
+   * `--edited-only` was the only filter available.
+   */
+  edited?: boolean;
   /** Base rendering profile (crs CameraProfile), e.g. "Camera Faithful v2". */
   baseProfile?: string;
   /** Creative profile layered over it (crs Look name), e.g. "Adobe Color". */
@@ -169,5 +180,7 @@ export interface DevelopProfile {
     edited: number;
     color: number;
     bw: number;
+    /** Records that fed the session description — edited or not. */
+    described?: number;
   };
 }

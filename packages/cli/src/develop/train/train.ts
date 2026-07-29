@@ -158,7 +158,12 @@ function buildRows(dataset: DevelopDataset): RawRow[] {
   const rows: RawRow[] = [];
   for (const r of dataset.results) {
     if (!r.embedding?.length || !r.features?.length) continue;
-    if (Object.keys(r.develop).length === 0) continue; // edited-only
+    if (Object.keys(r.develop).length === 0) continue; // never touched at all
+    // Carries crs tags but every one of them sits at its neutral default: the
+    // editor wrote them, the photographer did not. Training on those teaches the
+    // model to predict "change nothing". Older datasets have no flag, and were
+    // filtered at export time by --edited-only instead.
+    if (r.edited === false) continue;
     rows.push({
       sessionMean: contextFor(context, r.file, r.features),
       file: r.file,
@@ -354,7 +359,12 @@ export function train(dataset: DevelopDataset, options: TrainOptions): DevelopPr
     baseline: dataset.baseline,
     branches,
     trainedAt: new Date().toISOString(),
-    stats: { edited: rows.length, color: byTreatment.color.length, bw: byTreatment.bw.length },
+    stats: {
+      edited: rows.length,
+      color: byTreatment.color.length,
+      bw: byTreatment.bw.length,
+      described: dataset.results.filter((r) => r.features?.length).length,
+    },
   };
 }
 

@@ -26,8 +26,15 @@ export interface RefreshArgs {
   out: string;
   /** Which editor's develop settings to read (see adapters/registry.ts). */
   editor?: string;
-  /** Keep records that no longer look edited (default: drop them, like export). */
-  keepUnedited?: boolean;
+  /**
+   * Drop records that no longer look edited instead of marking them.
+   *
+   * Off by default: an unedited frame is not a training target but it does
+   * describe its session, which is where most of a develop decision lives. The
+   * trainer filters on the `edited` flag, so keeping them costs nothing and
+   * throwing them away costs the session description.
+   */
+  dropUnedited?: boolean;
   json?: boolean;
   verbose?: boolean;
 }
@@ -60,6 +67,7 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
   let refreshed = 0;
   let unreadable = 0;
   let dropped = 0;
+  let unedited = 0;
   /** Distinct Looks seen, name → the editor's own serialization (see the meta line). */
   const looks = new Map<string, string>(Object.entries(dataset.looks ?? {}));
   for (const record of dataset.results) {
@@ -73,11 +81,17 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
       await write(JSON.stringify(record) + '\n');
       continue;
     }
-    if (!args.keepUnedited && !edit?.edited) {
-      dropped++;
-      continue;
+    // No edit at all is a normal state for a whole-folder export: the file was
+    // never touched. It still describes its session, so it is kept (and marked)
+    // rather than dropped.
+    if (!edit?.edited) {
+      if (args.dropUnedited) {
+        dropped++;
+        continue;
+      }
+      unedited++;
     }
-    if (edit!.look && edit!.lookXml) looks.set(edit!.look, edit!.lookXml);
+    if (edit?.look && edit.lookXml) looks.set(edit.look, edit.lookXml);
     // Spread last so a field the editor no longer reports is dropped rather than
     // surviving from the old record: a refresh must produce what a fresh export
     // would have, not a merge of the two.
@@ -85,18 +99,19 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
     await write(
       JSON.stringify({
         ...carried,
-        develop: edit!.develop,
+        develop: edit?.develop ?? {},
         ...(asShot ? { asShot } : {}),
-        treatment: edit!.treatment,
-        ...(edit!.baseProfile ? { baseProfile: edit!.baseProfile } : {}),
-        ...(edit!.look ? { look: edit!.look } : {}),
-        ...(edit!.curve ? { curve: edit!.curve } : {}),
+        treatment: edit?.treatment ?? 'color',
+        edited: edit?.edited ?? false,
+        ...(edit?.baseProfile ? { baseProfile: edit.baseProfile } : {}),
+        ...(edit?.look ? { look: edit.look } : {}),
+        ...(edit?.curve ? { curve: edit.curve } : {}),
       }) + '\n',
     );
     refreshed++;
   }
 
-  const summary = { total: dataset.results.length, refreshed, dropped, unreadable };
+  const summary = { total: dataset.results.length, refreshed, dropped, unedited, unreadable };
   await write(
     JSON.stringify({
       _type: 'develop-meta',
@@ -122,6 +137,8 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
   }
   printHuman(io, `Refreshed ${refreshed}/${dataset.results.length} records → ${args.out}`);
   if (dropped > 0) {
-    printHuman(io, `  dropped ${dropped} no longer carrying a real edit (pass --keep-unedited to retain them)`);
+    printHuman(io, `  dropped ${dropped} no longer carrying a real edit`);
+  } else if (unedited > 0) {
+    printHuman(io, `  ${unedited} carry no real edit: kept to describe their session, not trained on`);
   }
 }

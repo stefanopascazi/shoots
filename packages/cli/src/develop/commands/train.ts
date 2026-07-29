@@ -123,6 +123,10 @@ export async function runTrain(args: TrainArgs): Promise<void> {
 
   const w = process.stderr;
   w.write(`\nDevelop profile '${profile.name}' → ${args.out}\n`);
+  const described = profile.stats.described ?? profile.stats.edited;
+  if (described > profile.stats.edited) {
+    w.write(`  ${described} images describe their sessions; ${described - profile.stats.edited} carry no edit and are context only\n`);
+  }
   w.write(`  ${profile.stats.edited} edited images: ${profile.stats.color} colour + ${profile.stats.bw} B&W (${args.folds}-fold CV, `);
   w.write(groupBy === 'folder' ? 'capture sessions held out)\n' : 'random folds — leakage-prone)\n');
 

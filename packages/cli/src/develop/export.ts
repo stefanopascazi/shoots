@@ -94,6 +94,8 @@ interface DatasetRecord {
   asShot: AsShotMeta;
   /** Black-and-white vs colour, read deterministically off the edit (HSL ↔ GrayMixer). */
   treatment: Treatment;
+  /** A deliberate edit, not just the neutral defaults the editor writes everywhere. */
+  edited: boolean;
   /** Base rendering profile (crs CameraProfile), e.g. "Camera Faithful v2". */
   baseProfile?: string;
   /** Creative profile layered over it (crs Look name), e.g. "Adobe Color". */
@@ -290,6 +292,11 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
         develop,
         asShot: capture.get(file.path) ?? EMPTY_AS_SHOT,
         treatment: edit?.treatment ?? 'color',
+        // Carried rather than filtered on: only a real edit is a valid training
+        // target, but every frame describes its session. Without the flag the
+        // trainer has to guess, and a whole-folder export quietly teaches it to
+        // predict "change nothing" from the files the editor merely touched.
+        edited: edit?.edited ?? false,
         ...(edit?.baseProfile ? { baseProfile: edit.baseProfile } : {}),
         ...(edit?.look ? { look: edit.look } : {}),
         ...(edit?.curve ? { curve: edit.curve } : {}),

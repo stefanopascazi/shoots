@@ -46,7 +46,7 @@ export function registerDevelopCommand(program: Command): void {
     .requiredOption('--data <file>', 'dataset from `shoots develop export`')
     .requiredOption('--out <file>', 'write the refreshed JSONL dataset here')
     .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
-    .option('--keep-unedited', 'keep records that no longer carry a real edit (default: drop, as export does)')
+    .option('--drop-unedited', 'drop records that carry no real edit instead of keeping them for session context')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runRefreshTargets);

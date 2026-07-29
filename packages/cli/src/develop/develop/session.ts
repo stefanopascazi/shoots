@@ -21,9 +21,16 @@
  *    different, weaker regime, and the caller is told so rather than left to
  *    wonder why the numbers moved.
  *  - It is **edit-independent**, computed from the baseline render only, so it
- *    can be built from unedited frames too. Exporting the whole folder rather
- *    than `--edited-only` therefore describes the session better — with more
- *    frames, and without the survivorship of "only the ones I kept".
+ *    can be built from unedited frames too — which the trainer does, from every
+ *    record in the dataset rather than only the rows it trains on.
+ *
+ * Whether feeding it the *unedited* frames as well is worth the export is a
+ * separate question, and the answer measured on the reference catalog is no:
+ * describing each session from all 2421 frames instead of the 553 edited ones
+ * moved the weighted skill by 0.02pp. Exposure2012 gained 2.6pp and won on 12
+ * shuffles out of 12 — plausibly because the rejects widen the description of
+ * the session's dynamic range — while Vibrance, Saturation, Dehaze and Whites
+ * each lost a little on 11 or 12 out of 12. It nets out to nothing.
  */
 import path from 'node:path';
 

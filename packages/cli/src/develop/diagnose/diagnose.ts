@@ -73,7 +73,8 @@ function buildRows(dataset: DevelopDataset): DRow[] {
   const rows: DRow[] = [];
   for (const r of dataset.results) {
     if (!r.embedding?.length || !r.features?.length) continue;
-    if (Object.keys(r.develop).length === 0) continue; // edited only
+    if (Object.keys(r.develop).length === 0) continue; // never touched at all
+    if (r.edited === false) continue; // editor defaults only — same filter as train
     rows.push({
       x: assembleFeatures(r.embedding, r.features, contextFor(context, r.file, r.features), r.asShot),
       // Same materialization as training (see withCurveTargets): the diagnostic

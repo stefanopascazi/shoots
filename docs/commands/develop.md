@@ -58,11 +58,11 @@ Reads `crs` settings from the (cheap) sidecars **first**, and runs the expensive
 embedding + render only on files that carry develop settings. On a mixed catalog
 this is the difference between minutes and hours.
 
-**There is now a real cost to it.** Unedited frames carry no target, but they do
-describe the *session*, and the session is where most of the develop decision
-lives. Skipping them gives a thinner and survivorship-biased picture of each
-shoot. Use `--edited-only` when the expensive pass would otherwise be
-prohibitive; export the whole folder when you can afford it.
+Unedited frames carry no target, but they do describe the *session*. Whether
+that is worth exporting them is a measured question, and on the reference catalog
+the answer is **no**: session descriptions built from all 2421 frames instead of
+the 553 edited ones moved the weighted skill by 0.02pp. Keep using it — it is
+four times faster here for no measurable loss.
 
 Do *not* use it when exporting a new,
 unedited shoot to predict on — there is nothing to filter on yet, and you would
@@ -169,7 +169,7 @@ shoots develop refresh-targets --data <file> --out <file> [options]
 | `--data <file>` | **required** | Existing dataset from `develop export` |
 | `--out <file>` | **required** | Write the refreshed JSONL dataset here |
 | `--editor <id>` | `acr` | Which editor's develop settings to read |
-| `--keep-unedited` | off | Keep records that no longer carry a real edit (default: drop, as `export` does) |
+| `--drop-unedited` | off | Drop records carrying no real edit instead of keeping them for session context |
 | `--json` | off | Machine-readable JSON on stdout |
 | `--verbose` | off | Verbose logging on stderr |
 
@@ -247,10 +247,9 @@ single accuracy gain in this tool.
 
 Two consequences worth knowing:
 
-- **Export whole folders, not just the edited frames.** The description is
-  computed from the baseline render, so unedited frames contribute to it even
-  though they carry no target. `--edited-only` gives a thinner, survivorship-
-  biased picture of the shoot.
+- **The description uses every record in the dataset**, edited or not. Exporting
+  the unedited frames as well is therefore possible, but measured neutral on the
+  reference catalog (0.02pp) — so `--edited-only` remains the sensible default.
 - **Predict on a shoot, not on a file.** A frame's prediction depends on what
   else is in its folder. `predict` warns when images sit alone in theirs.
 
@@ -447,10 +446,8 @@ shoots develop diagnose --data train.jsonl --max-k 6 --folds 10
 ## Complete pipeline
 
 ```sh
-# 1. Training dataset from your edited catalog. Export the WHOLE folder when you
-#    can afford it: unedited frames carry no target but do describe the session,
-#    which is where most of the develop decision lives.
-shoots develop export ~/Catalogs/2025-edited --baseline external --out train.jsonl
+# 1. Training dataset from your edited catalog.
+shoots develop export ~/Catalogs/2025-edited --edited-only   --baseline external --out train.jsonl
 
 # 2. Fit the profile — read the GATE output carefully
 shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json
