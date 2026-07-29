@@ -14,6 +14,7 @@ import {
   type Treatment,
 } from './develop/schema.js';
 import { assembleFeatures, renderOneHot } from './develop/assemble.js';
+import { applyPca } from './train/pca.js';
 import type { PredictedEdit } from './adapters/types.js';
 import type { BranchModel, DevelopDataset, DevelopExportResult, DevelopProfile } from './types.js';
 
@@ -105,10 +106,17 @@ export function resolveRender(
   };
 }
 
+/** The embedding block as this branch consumes it: raw, projected, or dropped. */
+function embeddingFor(branch: BranchModel, embedding: number[]): number[] {
+  if (branch.embeddingFeatures === 0) return [];
+  return branch.embeddingPca ? applyPca(embedding, branch.embeddingPca) : embedding;
+}
+
 export function predictOne(
   profile: DevelopProfile,
   result: DevelopExportResult,
   treatment: Treatment,
+  sessionMean: number[],
   renderOverride?: string,
 ): Prediction {
   const branch = profile.branches[treatment];
@@ -116,7 +124,15 @@ export function predictOne(
   const params = paramsForTreatment(treatment);
   const meta = result.asShot;
   const render = resolveRender(branch, result, renderOverride);
-  const x = [...assembleFeatures(result.embedding, result.features, meta), ...renderOneHot(renderKey(render), branch.renderVocab)];
+  const x = [
+    ...assembleFeatures(
+      embeddingFor(branch, result.embedding),
+      result.features,
+      branch.sessionFeatures > 0 ? sessionMean : [],
+      meta,
+    ),
+    ...renderOneHot(renderKey(render), branch.renderVocab),
+  ];
   const gated = new Set(branch.gatedParams ?? []);
   const develop: Record<string, number> = {};
   for (let k = 0; k < params.length; k++) {

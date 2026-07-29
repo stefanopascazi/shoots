@@ -29,7 +29,9 @@ import {
   type Treatment,
 } from '../develop/schema.js';
 import { assembleFeatures, targetDeltas, actualAbsVec, renderOneHot } from '../develop/assemble.js';
+import { buildSessionContext, contextFor, sessionKey } from '../develop/session.js';
 import { buildNormalEquations, solveRidge } from './regress.js';
+import { fitPca, applyPca } from './pca.js';
 import {
   EPS,
   LAMBDA_GRID,
@@ -38,12 +40,12 @@ import {
   evaluateWithLambda,
   nestedEvaluate,
   selectLambdas,
-  sessionKey,
   standardize,
   weightedSkill,
   type EvalRow,
   type GroupBy,
   type ParamStats,
+  type RowTransform,
 } from './evaluate.js';
 import type { BranchModel, DevelopDataset, DevelopProfile, ParamEval } from '../types.js';
 
@@ -55,15 +57,50 @@ export interface TrainOptions {
   groupBy?: GroupBy;
   /** Skill at or below which a parameter falls back to the constant. 0 = off. */
   gateThreshold?: number;
+  /**
+   * Embedding features to keep: 0 drops it, a value below the embedding's own
+   * dimension projects onto that many principal components, anything else keeps
+   * it raw. See {@link DEFAULT_EMBEDDING_DIM}.
+   */
+  embeddingDim?: number;
+  /** Describe each image's whole shoot alongside it (see develop/session.ts). */
+  sessionContext?: boolean;
 }
 
 const DEFAULT_FALLBACK_LAMBDA = 1000;
 const DEFAULT_GATE_THRESHOLD = 0.02;
 
+/**
+ * Principal components kept from the CLIP embedding.
+ *
+ * Raw 512 dimensions on a few hundred photographs is p≫n, and on the reference
+ * catalog carrying them cost more than dropping them outright (colour skill
+ * 0.019 raw against 0.046 dropped, losing on 12 fold shuffles out of 12). That
+ * catalog's colour branch would in fact do marginally better at 0 — but its
+ * black-and-white branch would not, and neither would a photographer whose style
+ * genuinely follows the subject. Sixteen components keep the semantic input
+ * available at a cost that measures as zero here, rather than baking one
+ * catalog's answer into everybody's tool.
+ */
+export const DEFAULT_EMBEDDING_DIM = 16;
+
+/**
+ * Photographs required per session-context feature before a branch uses it.
+ *
+ * The descriptor doubles the photometric block, and a branch has to have enough
+ * images to estimate those columns. On the reference catalog the colour branch
+ * (428 images, 44 context features) gained — headline 0.008 → 0.014, Contrast
+ * 3% → 24% — while the black-and-white one (125) lost. Four samples per feature
+ * puts the cut between them; it is a rule about sample count, not about which
+ * side scored better, so it stays honest on a catalog shaped differently.
+ */
+export const SESSION_CONTEXT_SAMPLES_PER_FEATURE = 4;
+
 interface RawRow {
   file: string;
   embedding: number[];
   features: number[];
+  sessionMean: number[];
   develop: Record<string, number>;
   meta: AsShotMeta;
   treatment: Treatment;
@@ -112,11 +149,18 @@ function deriveTreatment(r: { treatment?: Treatment; develop: Record<string, num
 }
 
 function buildRows(dataset: DevelopDataset): RawRow[] {
+  // Session context comes from EVERY record, not just the edited ones. An
+  // unedited frame carries no target but describes the shoot just as well, and a
+  // session mean built only from the frames that survived the cull is a biased
+  // picture of the light the photographer was working in. Exporting the whole
+  // folder therefore improves the model without adding a single training row.
+  const context = buildSessionContext(dataset.results);
   const rows: RawRow[] = [];
   for (const r of dataset.results) {
     if (!r.embedding?.length || !r.features?.length) continue;
     if (Object.keys(r.develop).length === 0) continue; // edited-only
     rows.push({
+      sessionMean: contextFor(context, r.file, r.features),
       file: r.file,
       embedding: r.embedding,
       features: r.features,
@@ -147,8 +191,28 @@ function trainBranch(
   const gateThreshold = options.gateThreshold ?? DEFAULT_GATE_THRESHOLD;
   const renderVocab = buildRenderVocab(raw);
 
+  // The embedding block leads the feature vector so a fold-local projection can
+  // replace exactly that slice (see assemble.ts). `keep` is how many of its
+  // features survive; 0 means the block is dropped before it is ever assembled.
+  const embeddingDim = raw[0]?.embedding.length ?? 0;
+  const requested = options.embeddingDim ?? DEFAULT_EMBEDDING_DIM;
+  const keep = Math.max(0, Math.min(requested, embeddingDim));
+  const compress = keep > 0 && keep < embeddingDim;
+
+  // Describing the shoot doubles the photometric block, which a small branch
+  // cannot pay for: it needs enough photographs to estimate the extra columns.
+  // Measured on the reference catalog — 428 colour images gained, 125 B&W ones
+  // lost. The test is on sample count alone, never on the resulting score, so it
+  // cannot quietly turn into "keep whichever way scored better".
+  const contextWidth = raw[0]?.sessionMean.length ?? 0;
+  const wantContext = options.sessionContext ?? true;
+  const useContext = wantContext && contextWidth > 0 && raw.length >= contextWidth * SESSION_CONTEXT_SAMPLES_PER_FEATURE;
+
   const rows: EvalRow[] = raw.map((r) => ({
-    x: [...assembleFeatures(r.embedding, r.features, r.meta), ...renderOneHot(renderKey(r.render), renderVocab)],
+    x: [
+      ...assembleFeatures(keep > 0 ? r.embedding : [], r.features, useContext ? r.sessionMean : [], r.meta),
+      ...renderOneHot(renderKey(r.render), renderVocab),
+    ],
     deltas: targetDeltas(params, r.develop, r.meta),
     abs: actualAbsVec(params, r.develop, r.meta),
     meta: r.meta,
@@ -156,6 +220,15 @@ function trainBranch(
   }));
 
   const degenerate = degenerateTargets(rows, params.length);
+
+  // Refitted inside every fold. The projection never sees a target, but one
+  // chosen with the held-out fold in hand still flatters the score it produces.
+  const transform: RowTransform | undefined = compress
+    ? (train) => {
+        const model = fitPca(train.map((r) => r.x.slice(0, embeddingDim)), keep);
+        return (x) => [...applyPca(x.slice(0, embeddingDim), model), ...x.slice(embeddingDim)];
+      }
+    : undefined;
 
   let gateStats: ParamStats[] = [];
   let randomStats: ParamStats[] = [];
@@ -166,15 +239,15 @@ function trainBranch(
 
   if (rows.length >= folds * 4) {
     if (options.lambda === undefined) {
-      lambdas = selectLambdas(rows, params, { folds, groupBy, grid: LAMBDA_GRID });
+      lambdas = selectLambdas(rows, params, { folds, groupBy, grid: LAMBDA_GRID, transform });
       // The gate has to pay for that search: λ is re-chosen inside each outer
       // fold, so no parameter is scored on the split that picked its λ.
-      gateStats = nestedEvaluate(rows, params, { folds, groupBy, grid: LAMBDA_GRID });
+      gateStats = nestedEvaluate(rows, params, { folds, groupBy, grid: LAMBDA_GRID, transform });
     } else {
-      gateStats = evaluateWithLambda(rows, params, { folds, groupBy }, lambdas);
+      gateStats = evaluateWithLambda(rows, params, { folds, groupBy, transform }, lambdas);
     }
     // The leakage-prone split, at the same λ, purely for contrast in the report.
-    randomStats = evaluateWithLambda(rows, params, { folds, groupBy: 'none' }, lambdas);
+    randomStats = evaluateWithLambda(rows, params, { folds, groupBy: 'none', transform }, lambdas);
     heldOut = rows.length;
   }
 
@@ -201,9 +274,16 @@ function trainBranch(
     };
   });
 
-  const featStats = columnStats(rows.map((r) => r.x));
+  // The shipped model: the projection is refitted one last time on everything,
+  // and stored, because inference has to reproduce it exactly.
+  const pca = compress ? fitPca(rows.map((r) => r.x.slice(0, embeddingDim)), keep) : undefined;
+  const finalX = rows.map((r) =>
+    pca ? [...applyPca(r.x.slice(0, embeddingDim), pca), ...r.x.slice(embeddingDim)] : r.x,
+  );
+
+  const featStats = columnStats(finalX);
   const deltaStats = columnStats(rows.map((r) => r.deltas));
-  const ne = buildNormalEquations(rows.map((r) => standardize(r.x, featStats)), rows.map((r) => standardize(r.deltas, deltaStats)));
+  const ne = buildNormalEquations(finalX.map((x) => standardize(x, featStats)), rows.map((r) => standardize(r.deltas, deltaStats)));
   // The normal equations are shared across λ, so each parameter can take its own
   // row out of the solution fitted at its own shrinkage for one Cholesky per
   // distinct λ — never one per parameter.
@@ -220,6 +300,9 @@ function trainBranch(
     renderVocab,
     defaultRender: defaultRenderFor(raw),
     looks: looksFor(raw, looks),
+    embeddingFeatures: keep,
+    sessionFeatures: useContext ? contextWidth : 0,
+    ...(pca ? { embeddingPca: { mean: pca.mean.map(round6), components: pca.components.map((c) => c.map(round6)) } } : {}),
     paramLambda: lambdas,
     featureMean: featStats.mean.map(round6),
     featureStd: featStats.std.map(round6),

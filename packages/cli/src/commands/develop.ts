@@ -61,10 +61,11 @@ export function registerDevelopCommand(program: Command): void {
     .option('--folds <k>', 'cross-validation folds', (v) => parseInt(v, 10), 5)
     .option('--group-by <mode>', 'held-out folds: folder (whole capture sessions) | none (random, leakage-prone)', 'folder')
     .option('--gate-threshold <n>', 'skill at or below which a param falls back to your constant (0 disables)', (v) => parseFloat(v), 0.02)
+    .option('--embedding-dim <k>', 'CLIP components to keep (0 drops it, high values keep it raw)', (v) => parseInt(v, 10))
     .option('--all', 'report every parameter, not just the image-dependent ones')
     .action((opts) => runTrain({
       data: opts.data, name: opts.name, out: opts.out, lambda: opts.lambda, folds: opts.folds,
-      groupBy: opts.groupBy, gateThreshold: opts.gateThreshold, all: opts.all,
+      groupBy: opts.groupBy, gateThreshold: opts.gateThreshold, embeddingDim: opts.embeddingDim, all: opts.all,
     }));
 
   develop

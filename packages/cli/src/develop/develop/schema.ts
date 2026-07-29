@@ -202,8 +202,12 @@ export const DEVELOP_PARAMS: DevelopParam[] = [...SHARED, ...COLOR, ...BW];
  * v7: the point tone curve joined the target vector as nine per-knot parameters,
  * so the param list and its order changed — and a v6 profile's weights are
  * indexed by the old list.
+ *
+ * v8: the feature vector gained the session mean and the embedding block became
+ * variable-width (dropped, projected, or raw). Both change the layout the
+ * weights are indexed by, and a v7 profile has no projection to reproduce.
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 /** Parameters predicted for a given treatment: shared + that treatment's branch. */
 export function paramsForTreatment(treatment: Treatment): DevelopParam[] {

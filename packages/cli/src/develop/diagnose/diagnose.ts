@@ -20,7 +20,8 @@ import { buildNormalEquations, solveRidge, predictStd } from '../train/regress.j
 // Same held-out policy as `train`: whole capture sessions kept out, baseline in
 // delta space. A diagnostic scoring itself differently from the gate would send
 // us chasing a style-clustering lever the gate cannot see.
-import { EPS, assignFolds, columnStats, sessionKey, standardize, type ColStats } from '../train/evaluate.js';
+import { EPS, assignFolds, columnStats, standardize, type ColStats } from '../train/evaluate.js';
+import { buildSessionContext, contextFor, sessionKey } from '../develop/session.js';
 import { kmeans } from './kmeans.js';
 import type { DevelopDataset } from '../types.js';
 
@@ -66,12 +67,15 @@ function sampleCurve(curve: number[] | undefined): number[] {
 }
 
 function buildRows(dataset: DevelopDataset): DRow[] {
+  // Same session context the trainer builds, and from the same place: every
+  // record, edited or not (see develop/session.ts).
+  const context = buildSessionContext(dataset.results);
   const rows: DRow[] = [];
   for (const r of dataset.results) {
     if (!r.embedding?.length || !r.features?.length) continue;
     if (Object.keys(r.develop).length === 0) continue; // edited only
     rows.push({
-      x: assembleFeatures(r.embedding, r.features, r.asShot),
+      x: assembleFeatures(r.embedding, r.features, contextFor(context, r.file, r.features), r.asShot),
       // Same materialization as training (see withCurveTargets): the diagnostic
       // has to score the parameters the trainer actually fits.
       deltas: targetDeltas(DEVELOP_PARAMS, withCurveTargets(r.develop, r.curve), r.asShot),

@@ -124,6 +124,55 @@ If the grouped number is not clearly positive on a real catalog, the signal is
 too weak to build the plugin on — stop and reconsider the baseline render
 strategy.
 
+## Session context — what the rest of the shoot looks like
+
+A catalog is not a bag of independent photographs. On the reference catalog the
+*session* accounts for 26–67% of the variance of the develop targets (Saturation
+67%, Shadows 57%, Highlights 49%, Exposure 26%): most of the decision is "this
+shoot", not "this frame". So every image carries the mean photometric
+description of its own folder alongside its own.
+
+Measured across 12 independent session→fold shuffles, this is the largest single
+gain found in this tool — colour skill 0.046 → 0.079 and Contrast2012 9% → 36%,
+winning on 12 shuffles out of 12. Under the tool's own (nested, stricter)
+measurement the colour headline went 0.0076 → 0.0144 with Contrast at 24%, and
+predicted exposure went from a flat constant to a ±1.9-stop range.
+
+Three things follow, all of them consequences rather than choices:
+
+- **It is transductive.** A frame's prediction depends on which other frames are
+  in its folder. That is legitimate — you export a whole shoot, then predict on
+  it — but predicting on one file in isolation is a weaker regime, and `predict`
+  says so rather than leaving it to be discovered.
+- **It is edit-independent**, computed from the baseline render only. So it can
+  be built from unedited frames too, and exporting the whole folder rather than
+  `--edited-only` describes the session better: more frames, and no survivorship
+  from "only the ones I kept". The trainer builds it from *every* record in the
+  dataset, not only the rows it trains on.
+- **A small branch cannot afford it.** The descriptor doubles the photometric
+  block, so a branch needs images to estimate the extra columns — 428 colour
+  images gained, 125 B&W ones lost. The rule is four samples per feature, tested
+  on sample count alone so it can never become "keep whichever scored better".
+  The report says which branches got it.
+
+A compact 8-number summary was tried and is worse (colour 0.060 against 0.079):
+the signal is in the shape of the session's histogram, not in its averages.
+
+## The CLIP embedding is compressed, not raw
+
+512 dimensions against a few hundred photographs is p≫n, and carrying them raw
+was worse than dropping them outright: colour skill 0.019 raw against 0.046
+dropped, losing on 12 shuffles out of 12. Ridge cannot rescue 512 noisy
+directions estimated from 428 samples.
+
+`--embedding-dim` (default 16) projects onto that many principal components,
+refitted inside every fold so the projection never sees the fold it is scored on.
+0 drops the embedding entirely. This catalog's colour branch would do marginally
+better at 0 — but its B&W branch would not (the embedding genuinely carries the
+conversion decision there), and neither would a photographer whose style follows
+the subject. The default keeps the semantic input available at a cost that
+measures as zero here rather than baking one catalog's answer into the tool.
+
 ## The point tone curve
 
 Predicted as **nine knots** (`ToneCurvePoint0` … `ToneCurvePoint255`), sampled

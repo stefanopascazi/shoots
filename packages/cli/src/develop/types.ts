@@ -84,6 +84,18 @@ export interface BranchModel {
   /** Base-rendering vocabulary (camera profile + Look) one-hot-appended to the features. */
   renderVocab: string[];
   /**
+   * How many embedding features this branch consumes: 0 when the embedding is
+   * dropped, the PCA rank when it is projected, the full dim when it is raw.
+   */
+  embeddingFeatures: number;
+  /**
+   * Width of the session-context block, 0 when this branch had too few images to
+   * afford describing the whole shoot. Inference must match it exactly.
+   */
+  sessionFeatures: number;
+  /** The fitted projection, present only when the embedding is compressed. */
+  embeddingPca?: { mean: number[]; components: number[][] };
+  /**
    * The rendering to assume, and to write out, when the image being predicted
    * does not state one — which is every unedited file, i.e. the whole point of
    * the tool. It is the branch's most common rendering, because that is the one

@@ -58,7 +58,13 @@ Reads `crs` settings from the (cheap) sidecars **first**, and runs the expensive
 embedding + render only on files that carry develop settings. On a mixed catalog
 this is the difference between minutes and hours.
 
-**Use it for training-set builds.** Do *not* use it when exporting a new,
+**There is now a real cost to it.** Unedited frames carry no target, but they do
+describe the *session*, and the session is where most of the develop decision
+lives. Skipping them gives a thinner and survivorship-biased picture of each
+shoot. Use `--edited-only` when the expensive pass would otherwise be
+prohibitive; export the whole folder when you can afford it.
+
+Do *not* use it when exporting a new,
 unedited shoot to predict on — there is nothing to filter on yet, and you would
 export an empty dataset.
 
@@ -227,9 +233,41 @@ shoots develop train --data <file> --name <name> --out <file> [options]
 | `--out <file>` | **required** | Output profile JSON path |
 | `--lambda <n>` | `auto` | Ridge strength for every parameter, or `auto` to choose one **per parameter** by cross-validation |
 | `--folds <k>` | `5` | Cross-validation folds |
+| `--embedding-dim <k>` | `16` | CLIP components to keep; `0` drops the embedding, a high value keeps it raw |
 
 One model is trained **per treatment** over `shared + <branch>`, so a
 high-contrast B&W edit and a light colour edit never average into a mush.
+
+### Each image is described alongside its whole shoot
+
+Most of a develop decision is "this shoot", not "this frame" — on a real catalog
+the session accounts for 26–67% of the variance of the targets. So every image
+also carries the mean photometric description of its folder, which is the largest
+single accuracy gain in this tool.
+
+Two consequences worth knowing:
+
+- **Export whole folders, not just the edited frames.** The description is
+  computed from the baseline render, so unedited frames contribute to it even
+  though they carry no target. `--edited-only` gives a thinner, survivorship-
+  biased picture of the shoot.
+- **Predict on a shoot, not on a file.** A frame's prediction depends on what
+  else is in its folder. `predict` warns when images sit alone in theirs.
+
+A branch with too few images cannot afford the extra columns and skips them; the
+report says which did:
+
+```
+  session context: 44 features describing each image's whole shoot
+  session context: off — too few images in this branch to afford it
+```
+
+### The CLIP embedding is compressed
+
+512 dimensions against a few hundred photographs is p≫n, and carrying them raw
+measured *worse* than dropping them. `--embedding-dim` (default 16) projects onto
+that many principal components, refitted inside every fold. `0` drops the
+embedding; a value at or above its dimension keeps it raw.
 
 ### Regularization is per parameter
 
@@ -409,9 +447,10 @@ shoots develop diagnose --data train.jsonl --max-k 6 --folds 10
 ## Complete pipeline
 
 ```sh
-# 1. Training dataset from your edited catalog
-shoots develop export ~/Catalogs/2025-edited --edited-only \
-  --baseline external --out train.jsonl
+# 1. Training dataset from your edited catalog. Export the WHOLE folder when you
+#    can afford it: unedited frames carry no target but do describe the session,
+#    which is where most of the develop decision lives.
+shoots develop export ~/Catalogs/2025-edited --baseline external --out train.jsonl
 
 # 2. Fit the profile — read the GATE output carefully
 shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json

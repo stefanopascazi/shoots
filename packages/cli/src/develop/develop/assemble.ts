@@ -4,9 +4,15 @@
  * (a treatment's shared+branch list). Shared by training and inference so the two
  * never drift.
  *
- * Feature vector layout: [ CLIP embedding | color features | as-shot scalars ].
+ * Feature vector layout:
+ *   [ CLIP embedding | colour features | session mean | as-shot scalars ]
+ *
+ * The embedding comes **first** so a fold-local projection can replace that block
+ * without knowing anything about the rest (see the PCA transform in train.ts).
  * The as-shot scalars (log WB temperature, log ISO, exposure compensation) make
- * the capture state explicit — the accuracy lever for WB and exposure.
+ * the capture state explicit — the accuracy lever for WB and exposure. The
+ * session mean says what the rest of the shoot looks like, which is where most
+ * of the target variance actually lives (see develop/session.ts).
  */
 import { encodeDelta, decodeDelta, type AsShotMeta, type DevelopParam } from './schema.js';
 
@@ -19,8 +25,13 @@ export function asShotFeatures(meta: AsShotMeta): number[] {
   return [Math.log(temp), Math.log(iso), meta.exposureComp ?? 0];
 }
 
-export function assembleFeatures(embedding: number[], color: number[], meta: AsShotMeta): number[] {
-  return [...embedding, ...color, ...asShotFeatures(meta)];
+export function assembleFeatures(
+  embedding: number[],
+  color: number[],
+  sessionMean: number[],
+  meta: AsShotMeta,
+): number[] {
+  return [...embedding, ...color, ...sessionMean, ...asShotFeatures(meta)];
 }
 
 /**

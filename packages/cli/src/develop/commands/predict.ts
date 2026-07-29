@@ -10,6 +10,7 @@ import { assertApplicable, predictOne, resolveTreatment } from '../predict.js';
 import { assertCanEmit, DEFAULT_EDITOR, resolveAdapter } from '../adapters/registry.js';
 import { loadDataset } from '../dataset/load.js';
 import { renderKey, type Treatment } from '../develop/schema.js';
+import { buildSessionContext, contextFor, soloSessionCount } from '../develop/session.js';
 import type { DevelopProfile } from '../types.js';
 
 export interface PredictArgs {
@@ -34,9 +35,28 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     throw new Error(`invalid --treatment '${args.treatment}' (use auto | color | bw)`);
   }
 
-  const predictions = dataset.results
-    .filter((r) => r.embedding?.length && r.features?.length)
-    .map((r) => predictOne(profile, r, resolveTreatment(profile, r, requested), args.cameraProfile));
+  // Session context is transductive by design: a frame's prediction depends on
+  // what else is in its folder (see develop/session.ts). Built from every record
+  // in the set, including any that carry no edit.
+  const context = buildSessionContext(dataset.results);
+  const usable = dataset.results.filter((r) => r.embedding?.length && r.features?.length);
+  const solo = soloSessionCount(context, usable.map((r) => r.file));
+  if (solo > 0) {
+    process.stderr.write(
+      `warn: ${solo}/${usable.length} images sit alone in their folder — the model was fitted with a whole shoot ` +
+        `to describe the session, and a lone frame can only describe itself\n`,
+    );
+  }
+
+  const predictions = usable.map((r) =>
+    predictOne(
+      profile,
+      r,
+      resolveTreatment(profile, r, requested),
+      contextFor(context, r.file, r.features),
+      args.cameraProfile,
+    ),
+  );
 
   // Which rendering the values are meant to sit on decides what every slider
   // means, and it is invisible in the numbers — so say it out loud rather than

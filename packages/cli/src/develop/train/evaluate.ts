@@ -25,7 +25,6 @@
  * legitimate second scenario (finishing a shoot already under way), and the gap
  * between them is the leakage meter.
  */
-import path from 'node:path';
 import { decodeDelta, type AsShotMeta, type DevelopParam } from '../develop/schema.js';
 import { buildNormalEquations, solveRidge, predictStd } from './regress.js';
 import { dot } from '../math/linalg.js';
@@ -55,6 +54,19 @@ export interface ParamStats {
   skill: number;
 }
 
+/**
+ * A feature transform fitted on a fold's *training* rows, then applied to every
+ * row of that fold.
+ *
+ * Exists so a learned projection (the embedding PCA) is refitted inside each
+ * fold instead of once over everything. It never sees a target, but a projection
+ * chosen with the held-out fold in hand still flatters the score it then
+ * produces — the same reason λ is re-selected per fold.
+ */
+export type RowTransform = (train: EvalRow[]) => (x: number[]) => number[];
+
+const IDENTITY_TRANSFORM = (x: number[]): number[] => x;
+
 export interface ColStats { mean: number[]; std: number[] }
 
 export function columnStats(rows: number[][]): ColStats {
@@ -82,15 +94,10 @@ export function shuffled<T>(items: T[], seed = 12345): T[] {
   return a;
 }
 
-/**
- * The session a photograph belongs to: its containing folder.
- *
- * A capture folder is the closest thing a catalog offers to "one shoot" without
- * reading timestamps, and it is what the photographer organises by anyway.
- */
-export function sessionKey(file: string): string {
-  return path.dirname(file);
-}
+// The fold policy and the session-context feature must agree on what a session
+// IS, or a shoot could be held out under one definition and described under
+// another. One definition, re-exported for callers that only import from here.
+export { sessionKey } from '../develop/session.js';
 
 /**
  * Assign each row to a fold. Under `folder`, whole sessions land in the same
@@ -155,7 +162,7 @@ export function degenerateTargets(rows: EvalRow[], paramCount: number): boolean[
 export function crossValidate(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; grid?: number[] },
+  options: { folds: number; groupBy: GroupBy; grid?: number[]; transform?: RowTransform },
 ): Map<number, ParamStats[]> {
   const grid = options.grid ?? LAMBDA_GRID;
   const P = params.length;
@@ -169,9 +176,12 @@ export function crossValidate(
     const val = rows.filter((_, i) => fold[i] === f);
     if (train.length < 2 || val.length === 0) continue;
 
-    const fs = columnStats(train.map((r) => r.x));
+    const apply = options.transform ? options.transform(train) : IDENTITY_TRANSFORM;
+    const trainX = train.map((r) => apply(r.x));
+    const valX = val.map((r) => apply(r.x));
+    const fs = columnStats(trainX);
     const ds = columnStats(train.map((r) => r.deltas));
-    const ne = buildNormalEquations(train.map((r) => standardize(r.x, fs)), train.map((r) => standardize(r.deltas, ds)));
+    const ne = buildNormalEquations(trainX.map((x) => standardize(x, fs)), train.map((r) => standardize(r.deltas, ds)));
 
     // "Apply my average edit", in delta space.
     const meanDelta = new Array<number>(P).fill(0);
@@ -184,16 +194,17 @@ export function crossValidate(
     }
     counted += val.length;
 
+    const valStd = valX.map((x) => standardize(x, fs));
     for (const lambda of grid) {
       const { weights, bias } = solveRidge(ne, lambda);
       const err = modelErr.get(lambda)!;
-      for (const r of val) {
-        const predStd = predictStd(weights, bias, standardize(r.x, fs));
+      val.forEach((r, i) => {
+        const predStd = predictStd(weights, bias, valStd[i]!);
         for (let k = 0; k < P; k++) {
           const delta = predStd[k]! * ds.std[k]! + ds.mean[k]!;
           err[k]! += Math.abs(decodeDelta(params[k]!, delta, r.meta) - r.abs[k]!);
         }
-      }
+      });
     }
   }
 
@@ -225,7 +236,7 @@ export function crossValidate(
 function accumulateFolds(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy },
+  options: { folds: number; groupBy: GroupBy; transform?: RowTransform },
   lambdasFor: (train: EvalRow[]) => number[],
 ): ParamStats[] {
   const P = params.length;
@@ -240,9 +251,12 @@ function accumulateFolds(
     if (train.length < 2 || val.length === 0) continue;
 
     const lambdas = lambdasFor(train);
-    const fs = columnStats(train.map((r) => r.x));
+    const apply = options.transform ? options.transform(train) : IDENTITY_TRANSFORM;
+    const trainX = train.map((r) => apply(r.x));
+    const valX = val.map((r) => apply(r.x));
+    const fs = columnStats(trainX);
     const ds = columnStats(train.map((r) => r.deltas));
-    const ne = buildNormalEquations(train.map((r) => standardize(r.x, fs)), train.map((r) => standardize(r.deltas, ds)));
+    const ne = buildNormalEquations(trainX.map((x) => standardize(x, fs)), train.map((r) => standardize(r.deltas, ds)));
 
     // "Apply my average edit", in delta space (see the module header).
     const meanDelta = new Array<number>(P).fill(0);
@@ -257,7 +271,7 @@ function accumulateFolds(
 
     // One Cholesky per *distinct* λ, not per parameter: the normal equations are
     // shared, so a per-parameter λ costs no more than the size of the grid.
-    const valStd = val.map((r) => standardize(r.x, fs));
+    const valStd = valX.map((x) => standardize(x, fs));
     for (const lambda of new Set(lambdas)) {
       const { weights, bias } = solveRidge(ne, lambda);
       for (let k = 0; k < P; k++) {
@@ -293,7 +307,7 @@ function accumulateFolds(
 export function selectLambdas(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; grid?: number[] },
+  options: { folds: number; groupBy: GroupBy; grid?: number[]; transform?: RowTransform },
 ): number[] {
   const grid = options.grid ?? LAMBDA_GRID;
   const cv = crossValidate(rows, params, options);
@@ -315,7 +329,7 @@ export function selectLambdas(
 export function evaluateWithLambda(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy },
+  options: { folds: number; groupBy: GroupBy; transform?: RowTransform },
   lambdas: number[],
 ): ParamStats[] {
   return accumulateFolds(rows, params, options, () => lambdas);
@@ -334,7 +348,7 @@ export function evaluateWithLambda(
 export function nestedEvaluate(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; grid?: number[]; innerFolds?: number },
+  options: { folds: number; groupBy: GroupBy; grid?: number[]; innerFolds?: number; transform?: RowTransform },
 ): ParamStats[] {
   const innerFolds = options.innerFolds ?? options.folds;
   const grid = options.grid ?? LAMBDA_GRID;
@@ -343,7 +357,12 @@ export function nestedEvaluate(
   const noEvidence = grid[grid.length - 1]!;
   return accumulateFolds(rows, params, options, (train) =>
     train.length >= innerFolds * 4
-      ? selectLambdas(train, params, { folds: innerFolds, groupBy: options.groupBy, grid })
+      ? selectLambdas(train, params, {
+          folds: innerFolds,
+          groupBy: options.groupBy,
+          grid,
+          transform: options.transform,
+        })
       : params.map(() => noEvidence),
   );
 }

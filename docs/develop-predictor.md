@@ -213,11 +213,10 @@ result.
 ## Complete workflow
 
 ```sh
-# 1. Training dataset from an edited catalog.
-#    --edited-only reads crs from the cheap sidecars first and runs the expensive
-#    work only on files that actually carry develop settings.
-shoots develop export ~/Catalogs/2025-edited --edited-only \
-  --baseline external --out train.jsonl
+# 1. Training dataset from an edited catalog. Export the WHOLE folder when you
+#    can afford it: unedited frames carry no target but do describe the session.
+#    (--edited-only skips the expensive pass on them, at that cost.)
+shoots develop export ~/Catalogs/2025-edited --baseline external --out train.jsonl
 
 # 2. Fit the profile. Read the GATE output.
 shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json

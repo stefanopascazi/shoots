@@ -21,6 +21,8 @@ export interface TrainArgs {
   folds: number;
   groupBy?: string;
   gateThreshold?: number;
+  /** CLIP components to keep: 0 drops the embedding, high values keep it raw. */
+  embeddingDim?: number;
   /** Report every parameter, not just the image-dependent ones. */
   all?: boolean;
 }
@@ -45,6 +47,17 @@ function lambdaSpread(b: BranchModel): string {
 
 function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boolean, all: boolean): void {
   w.write(`\n  ── ${b.treatment.toUpperCase()} branch — ${b.samples} images ──\n`);
+  const embedding = b.embeddingFeatures === 0
+    ? 'dropped'
+    : b.embeddingPca
+      ? `${b.embeddingFeatures} principal components`
+      : `raw (${b.embeddingFeatures} dims)`;
+  w.write(`  CLIP embedding: ${embedding}\n`);
+  w.write(
+    b.sessionFeatures > 0
+      ? `  session context: ${b.sessionFeatures} features describing each image's whole shoot\n`
+      : `  session context: off — too few images in this branch to afford it\n`,
+  );
   w.write(`  λ per param${lambdaAuto ? ' (auto)' : ''}: ${lambdaSpread(b)}\n`);
   const gate = b.imageDependentSkill;
   const rand = b.imageDependentSkillRandom;
@@ -103,6 +116,7 @@ export async function runTrain(args: TrainArgs): Promise<void> {
     folds: args.folds,
     groupBy,
     gateThreshold: args.gateThreshold,
+    embeddingDim: args.embeddingDim,
   });
   await writeFile(args.out, JSON.stringify(profile, null, 2) + '\n', 'utf8');
 
