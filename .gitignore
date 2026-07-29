@@ -13,3 +13,7 @@ test/
 /train_*.jsonl
 /profile*.json
 /smke.json
+
+# local develop-predictor experiment artifacts (predictions / emitted sidecars)
+/predictions*.json
+/out-xmp*/

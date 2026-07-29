@@ -19,6 +19,7 @@ import { DEFAULT_EDITOR, EDITOR_IDS } from '../develop/adapters/registry.js';
 import { runRefreshTargets } from '../develop/commands/refresh.js';
 import { runTrain } from '../develop/commands/train.js';
 import { runPredict } from '../develop/commands/predict.js';
+import { runFeedback } from '../develop/commands/feedback.js';
 import { runDiagnose } from '../develop/commands/diagnose.js';
 
 export function registerDevelopCommand(program: Command): void {
@@ -82,6 +83,16 @@ export function registerDevelopCommand(program: Command): void {
       data: opts.data, profile: opts.profile, treatment: opts.treatment,
       editor: opts.editor, cameraProfile: opts.cameraProfile, out: opts.out, xmp: opts.xmp,
     }));
+
+  develop
+    .command('feedback')
+    .description('Compare a prediction against what you actually kept — the real-world quality metric')
+    .requiredOption('--predictions <file>', 'predictions JSON from `shoots develop predict --out`')
+    .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
+    .option('--out <file>', 'write the (predicted, corrected) pairs here as JSONL')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runFeedback);
 
   develop
     .command('diagnose')

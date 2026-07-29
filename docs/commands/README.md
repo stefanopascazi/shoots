@@ -27,7 +27,7 @@ so scripts are unaffected.
 | Command | Purpose |
 | --- | --- |
 | [`embeddings`](./embeddings.md) | Export profile-neutral CLIP embeddings for preference-learning tools |
-| [`develop`](./develop.md) | Personal develop-setting predictor: `export` → `train` → `predict`, plus `refresh-targets` and `diagnose` |
+| [`develop`](./develop.md) | Personal develop-setting predictor: `export` → `train` → `predict` → `feedback`, plus `refresh-targets` and `diagnose` |
 
 ### Maintenance
 
@@ -96,11 +96,12 @@ shoots embeddings <path> [--out <dir>] [--previews auto|always|never]
 
 shoots develop export <path> --out <file> [--baseline embedded-preview|external]
                                           [--edited-only] [--concurrency 4] [--json]
-shoots develop refresh-targets --data <f> --out <f> [--keep-unedited] [--json]
+shoots develop refresh-targets --data <f> --out <f> [--drop-unedited] [--json]
 shoots develop train  --data <f> --name <n> --out <f> [--lambda auto|<n>] [--folds 5]
 shoots develop predict --data <f> --profile <f> [--treatment auto|color|bw]
                                                 [--camera-profile <name>]
                                                 [--out <f>] [--xmp <dir>]
+shoots develop feedback --predictions <f> [--out <f>] [--json]
 shoots develop diagnose --data <f> [--folds 5] [--max-k 4]
 
 # ── Maintenance ───────────────────────────────────────────────────────────────

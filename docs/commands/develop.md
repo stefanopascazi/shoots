@@ -14,6 +14,7 @@ shoots develop <subcommand> [options]
 | [`refresh-targets`](#shoots-develop-refresh-targets) | Re-read an existing dataset's targets without recomputing pixels |
 | [`train`](#shoots-develop-train) | Fit a per-catalog develop profile |
 | [`predict`](#shoots-develop-predict) | Apply a profile → predicted develop vector / XMP sidecar |
+| [`feedback`](#shoots-develop-feedback) | Compare a prediction against what you actually kept |
 | [`diagnose`](#shoots-develop-diagnose) | Style-clustering diagnostic |
 
 `export` is the only step that touches ONNX / exiftool for pixels;
@@ -411,6 +412,60 @@ shoots develop predict --data new.jsonl --profile profiles/my-style.json \
 
 `--xmp` drops a Lightroom-readable sidecar next to each image — a **non-destructive
 starting point** to refine, not a finished edit.
+
+---
+
+## `shoots develop feedback`
+
+Compare a prediction against what the files say **now** — the only real-world
+quality signal this tool has.
+
+```
+shoots develop feedback --predictions <file> [options]
+```
+
+### Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--predictions <file>` | **required** | The JSON written by `develop predict --out` |
+| `--editor <id>` | `acr` | Which editor's develop settings to read |
+| `--out <file>` | — | Write the (predicted, corrected) pairs here as JSONL |
+| `--json` | off | Machine-readable JSON on stdout |
+| `--verbose` | off | Verbose logging on stderr |
+
+### Why it is not `refresh-targets`
+
+`refresh-targets` rebuilds a dataset to match the files as they are now, which
+throws away exactly what matters here: what they were **before** you touched
+them. The pair (predicted, corrected) isolates *the model's* error rather than
+your style, and it is worth more per sample than a fresh catalog edit.
+
+### Reading it
+
+```
+  kept 3.5% of the parameters either of us moved
+       (55.1% counting the sliders we both left at neutral —
+        that number flatters the model and is not the one to quote)
+
+  param                           moved   kept   journey   corrected by   offset
+  Temperature                       590     0%       91%         463.21   +86.62
+  Highlights2012                    590     0%       51%          21.54    +4.16
+  Clarity2012                       251     0%      -12%           8.27    -0.14
+```
+
+| Column | Meaning |
+| --- | --- |
+| `moved` | Comparisons where at least one of you left neutral. Agreeing that a slider stays at zero is not a prediction. |
+| `kept` | Left untouched — the product metric. Held-out skill is its proxy. |
+| `journey` | How much of the move the prediction already made. Negative = further off than doing nothing. |
+| `corrected by` | Mean absolute correction, in slider units |
+| `offset` | Mean **signed** correction. A large offset with a small spread is a missing constant, not a modelling failure — and a constant is easy to fix. |
+
+> **What it cannot tell.** This compares a prediction against whatever the file
+> says today. If the sidecar was never imported and the photograph was edited
+> from scratch, the gap is two independent opinions rather than the model's
+> error. Run it on a set you actually developed *from* the sidecars.
 
 ---
 
