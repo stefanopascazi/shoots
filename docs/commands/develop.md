@@ -614,10 +614,14 @@ shoots develop diagnose --data train.jsonl --max-k 6 --folds 10
 
 ---
 
-## Complete pipeline
+## Doing it by hand
+
+The everyday pipeline at the top of this page is these steps with the paths
+filled in. Reach for them directly when you want a dataset somewhere specific, a
+second profile, or the diagnostic in between:
 
 ```sh
-# 1. Training dataset from your edited catalog.
+# 1. Training dataset from your edited catalog
 shoots develop export ~/Catalogs/2025-edited --edited-only   --baseline external --out train.jsonl
 
 # 2. Fit the profile — read the GATE output carefully
@@ -629,9 +633,11 @@ shoots develop diagnose --data train.jsonl
 # 3. Export the new shoot. Same --baseline as step 1, or predict refuses the pair.
 shoots develop export ~/Shoots/2026-07-new --baseline external --out new.jsonl
 
-# 4. Predict, as XMP sidecars
-shoots develop predict --data new.jsonl --profile profiles/my-style.json \
-  --treatment color --xmp ./out-xmp/
+# 4. Predict, as XMP sidecars — keep --out, `feedback` needs it later
+shoots develop predict --data new.jsonl --profile profiles/my-style.json   --treatment color --xmp ./out-xmp/ --out predictions.json
+
+# 5. After developing them, see how much of the prediction survived
+shoots develop feedback --predictions predictions.json
 ```
 
 Upgrading, rather than starting fresh? When the *target* side changed — a fixed

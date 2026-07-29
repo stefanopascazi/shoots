@@ -212,42 +212,30 @@ Full walkthrough: [Preference learning](./preference-learning.md).
 ## 8. Learning your develop style
 
 ```sh
-# 1. Dataset from your edited catalog (--edited-only skips unedited files)
-shoots develop export ~/Catalogs/2025-edited --edited-only --out train.jsonl
+# once, from a catalog you have already developed
+shoots develop init ~/Catalogs/2025-edited
 
-# 2. Fit — read the GATE output carefully
-shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json
+# per shoot — sidecars land next to the photographs, ready for Lightroom
+shoots develop edit ~/Shoots/2026-07-new
 
-# 2b. Weak headline skill? Try the neutral baseline first
-shoots develop export ~/Catalogs/2025-edited --edited-only \
-  --baseline external --out train-neutral.jsonl
-shoots develop train --data train-neutral.jsonl --name my-style-v2 \
-  --out profiles/my-style-v2.json
+# after developing them, how much of the prediction did you keep?
+shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-new/prediction.json
 
-# 2c. Still weak? Check whether you have multiple distinct looks
-shoots develop diagnose --data train-neutral.jsonl
-
-# 3. New shoot → XMP starting points.
-#    --baseline must match the profile's, or predict refuses the pair.
-shoots develop export ~/Shoots/2026-07-new --baseline external --out new.jsonl
-shoots develop predict --data new.jsonl --profile profiles/my-style-v2.json \
-  --treatment color --xmp ./out-xmp/
+# housekeeping
+shoots develop status
+shoots develop clean
 ```
 
-Import the sidecars in Lightroom and every frame opens on your look.
+`init` is `export --edited-only` + `train`; `edit` is `export` + `predict`. Both
+accept `--dry-run` and every flag of the steps they wrap. `edit` will not
+overwrite sidecars that already carry a real edit without `--force`.
 
-Upgrading an existing dataset after a fix to the **target** side — a `crs` tag
-read under the wrong name, a new schema parameter, a stricter "edited" test —
-does not need a re-export. `refresh-targets` re-reads the targets from the
-sidecars and reuses the embeddings and neutral renders:
+Weak headline skill in the `init` report? Check whether the catalog holds several
+distinct looks:
 
 ```sh
-shoots develop refresh-targets --data train-neutral.jsonl --out train-v3.jsonl
-shoots develop train --data train-v3.jsonl --name my-style-v3 \
-  --out profiles/my-style-v3.json
+shoots develop diagnose --data ~/.shoots/develop/export/export.jsonl
 ```
-
-Full guide: [Develop predictor](./develop-predictor.md).
 
 ---
 

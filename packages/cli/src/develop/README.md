@@ -7,13 +7,29 @@ and predicts a per-image develop starting point for a new set.
 
 It lives inside the Shoots CLI as the `shoots develop` command group. The heavy
 feature extraction (CLIP + colour features + crs targets) is the `export`
-subcommand — the only step that touches onnx/exiftool; `train`, `predict` and
-`diagnose` are pure maths over the exported dataset (a multi-output ridge over
-develop-setting *deltas*), reusing no ML runtime.
+subcommand — the only step that touches onnx/exiftool; `train`, `predict`,
+`feedback` and `diagnose` are pure maths over the exported dataset (a
+multi-output ridge over develop-setting *deltas*), reusing no ML runtime.
 
 Licensed **PolyForm-Noncommercial-1.0.0** (inherited from the repo).
 
 ## Pipeline
+
+Two levels. The everyday pair wraps the steps with conventional paths under
+`~/.shoots/develop`, so nothing has to be remembered between sessions:
+
+```
+shoots develop init <edited-catalog>   # export --edited-only + train
+shoots develop edit <shoot>            # export + predict, sidecars by the photos
+shoots develop feedback --predictions ~/.shoots/develop/export/shooting/<shoot>/prediction.json
+shoots develop status                  # what this machine holds
+shoots develop clean                   # drop the per-shoot working files
+```
+
+`edit` refuses to overwrite sidecars that already carry a real edit (`--force`
+proceeds), and all of them take `--dry-run`.
+
+The steps underneath, for when the convention is not what you want:
 
 ```
 # 1. Build the training dataset from an edited catalog.
@@ -27,8 +43,10 @@ shoots develop train --data train.jsonl --name my-style --out profiles/my-style.
 # 3. Export a NEW set, then predict — pick the treatment (colour/B&W) or auto.
 #    --baseline MUST match the one the profile was trained on; predict refuses
 #    the pair otherwise (the colour features are not comparable across baselines).
+#    Keep --out: `develop feedback` needs it to know what was proposed.
 shoots develop export <new-shoot> --baseline external --out new.jsonl
-shoots develop predict --data new.jsonl --profile profiles/my-style.json --treatment color --xmp out-xmp/
+shoots develop predict --data new.jsonl --profile profiles/my-style.json \
+  --treatment color --xmp out-xmp/ --out predictions.json
 
 # Changed the target side (a tag, a new parameter, a stricter "edited" test)?
 # Re-read the targets in place instead of re-exporting: it keeps the embeddings

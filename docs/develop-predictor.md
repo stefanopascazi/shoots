@@ -213,33 +213,59 @@ result.
 ## Complete workflow
 
 ```sh
-# 1. Training dataset from an edited catalog.
-#    --edited-only runs the expensive pass only on files that carry an edit.
-shoots develop export ~/Catalogs/2025-edited --edited-only \
-  --baseline external --out train.jsonl
+# once, from a catalog you have already developed
+shoots develop init ~/Catalogs/2025-edited
 
-# 2. Fit the profile. Read the GATE output.
-shoots develop train --data train.jsonl --name my-style --out profiles/my-style.json
+# per shoot — sidecars land next to the photographs
+shoots develop edit ~/Shoots/2026-07-new
 
-# 3. Export the NEW set (no --edited-only — nothing is edited yet).
-#    Same --baseline as step 1, or predict will refuse the pair.
-shoots develop export ~/Shoots/2026-07-new --baseline external --out new.jsonl
-
-# 4. Predict — pick the treatment, write XMP sidecars.
-shoots develop predict --data new.jsonl --profile profiles/my-style.json \
-  --treatment color --xmp ./out-xmp/
+# after developing them in Lightroom, see how much of the prediction survived
+shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-new/prediction.json
 ```
+
+`init` runs `export --edited-only` then `train`; `edit` runs `export` then
+`predict`. Both use conventional paths under `~/.shoots/develop`, take every flag
+of the steps they wrap, and accept `--dry-run`. `edit` refuses to overwrite
+sidecars that already carry a real edit unless you pass `--force`.
 
 Import the sidecars in Lightroom and every frame opens on your look, ready to
-refine.
+refine. `shoots develop status` says what the machine holds; `shoots develop
+clean` drops the per-shoot working files and leaves the profile alone.
 
-Already have a dataset and only the *target* side changed — a fixed tag, a new
-schema parameter, a stricter "edited" test? Step 1 becomes a refresh, and the
-embeddings and neutral renders are reused:
+See the [develop command reference](commands/develop.md) for the individual
+steps, and for `refresh-targets` when only the *target* side changed — a fixed
+tag, a new schema parameter, a stricter "edited" test — which reuses the
+embeddings and the neutral renders instead of re-exporting.
 
-```sh
-shoots develop refresh-targets --data train.jsonl --out train-v2.jsonl
+---
+
+## Feedback — the only real-world metric
+
+Every other number here is cross-validated on the catalog the profile was fitted
+from. That answers "would this have matched an edit you already made". The
+question the tool exists to answer is **how much of the starting point do you
+keep**, and only `develop feedback` measures it.
+
 ```
+  kept 3.5% of the parameters either of us moved
+       (55.1% counting the sliders we both left at neutral —
+        that number flatters the model and is not the one to quote)
+
+  param                           moved   kept   journey   corrected by   offset
+  Temperature                       590     0%       91%         463.21   +86.62
+  Highlights2012                    590     0%       51%          21.54    +4.16
+  Clarity2012                       251     0%      -12%           8.27    -0.14
+```
+
+- **kept** — left untouched. The product metric; held-out skill is its proxy.
+- **journey** — how much of the move the prediction already made. Negative means
+  it landed further off than leaving the slider alone.
+- **offset** — the mean *signed* correction. A parameter you always nudge the
+  same way is a missing constant, not a modelling failure.
+
+It compares against whatever the file says today, so run it on a shoot you
+actually developed *from* the sidecars — otherwise the gap is two independent
+opinions rather than the model's error.
 
 ---
 
