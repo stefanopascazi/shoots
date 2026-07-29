@@ -122,6 +122,37 @@ If the grouped number is not clearly positive on a real catalog, the signal is
 too weak to build the plugin on — stop and reconsider the baseline render
 strategy.
 
+## The base rendering: profile + Look
+
+Every predicted slider is relative to the rendering the photograph starts from,
+and in ACR that rendering is *two* things. `crs:CameraProfile` is only the base;
+the modern creative profiles are a Look layered over it — "Adobe Color" is
+`Adobe Standard v2` **plus** a `<crs:Look>` element, not a CameraProfile value of
+its own. Reading the profile alone merges renderings that look nothing alike: on
+a real catalog that mislabelled 206 of 428 colour edits, the largest single style
+split in it.
+
+So the conditioning vocabulary is the pair (`Adobe Standard v2 + Adobe Color`),
+and three things follow:
+
+- **The dataset carries the Look element**, once per distinct Look in the trailing
+  meta line rather than once per photograph — it runs to ~1.4 KB and a 20k-image
+  catalog would otherwise carry tens of megabytes of identical text.
+- **The profile carries it too**, because a Look cannot be rebuilt from its name:
+  Lightroom resolves it by UUID and look-table digest. It is replayed verbatim.
+  A Look read from embedded crs (DNG/JPEG) has no element to lift, and `predict`
+  says so rather than emitting a base profile as if it were the whole rendering.
+- **`predict` writes it out.** Without an explicit profile Lightroom falls back to
+  its own legacy default (Adobe Standard), so a style learned on Adobe Color
+  arrived sitting on a different base — every slider measured against the wrong
+  starting point, and nothing in the numbers to show it.
+
+An unedited file states no rendering at all, which is the normal case here. The
+branch's most common rendering stands in, so the model is asked the question it
+was trained on. `--camera-profile "<name>"` overrides it — the way to aim a
+profile at a rendering the catalog has moved on from. It takes either a bare
+profile name or a full `profile + Look` key.
+
 ## Regularization is per parameter
 
 Exposure and the HSL sliders do not want the same amount of shrinkage. One λ for

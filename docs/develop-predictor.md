@@ -54,9 +54,15 @@ high-contrast B&W edit and a light colour edit never average into a mush.
 
 ### Captured but not predicted
 
-The full edit *is* captured in the dataset — including sharpening, noise reduction
-and the base `CameraProfile` — but only the look above is *learned as a target*.
-Sharpening and noise reduction are **finishing**, not starting point.
+The full edit *is* captured in the dataset — including sharpening and noise
+reduction — but only the look above is *learned as a target*. Sharpening and
+noise reduction are **finishing**, not starting point.
+
+The **base rendering** (camera profile + Look) is a third case: not a target, but
+not merely captured either. It conditions the model as an input, and `predict`
+writes it into the sidecar — every predicted slider is relative to it, and
+leaving it out drops the whole edit onto Lightroom's legacy default. See
+[the develop command reference](commands/develop.md#the-base-rendering-is-written-into-the-sidecar).
 
 The exact list, ranges, branches and loss weights live in
 `packages/cli/src/develop/develop/schema.ts`.

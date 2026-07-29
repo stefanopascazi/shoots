@@ -7,8 +7,8 @@
  * the target side changes — a tag read under the wrong name, a new parameter in
  * the schema, a sharper definition of "edited" — re-exporting the whole catalog
  * costs hours to recompute features that did not change. This rebuilds only
- * `develop` / `asShot` / `baseProfile` / `curve` / `treatment` against the files
- * on disk and keeps `embedding` / `features` as they are.
+ * `develop` / `asShot` / `baseProfile` / `look` / `curve` / `treatment` against
+ * the files on disk and keeps `embedding` / `features` as they are.
  *
  * The output is a dataset a fresh export would have produced today, so records
  * that no longer qualify as edited are dropped (and counted, never silently).
@@ -60,6 +60,8 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
   let refreshed = 0;
   let unreadable = 0;
   let dropped = 0;
+  /** Distinct Looks seen, name → the editor's own serialization (see the meta line). */
+  const looks = new Map<string, string>(Object.entries(dataset.looks ?? {}));
   for (const record of dataset.results) {
     const edit = edits.get(record.file);
     const asShot = capture.get(record.file);
@@ -75,13 +77,19 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
       dropped++;
       continue;
     }
+    if (edit!.look && edit!.lookXml) looks.set(edit!.look, edit!.lookXml);
+    // Spread last so a field the editor no longer reports is dropped rather than
+    // surviving from the old record: a refresh must produce what a fresh export
+    // would have, not a merge of the two.
+    const { baseProfile: _p, look: _l, curve: _c, ...carried } = record;
     await write(
       JSON.stringify({
-        ...record,
+        ...carried,
         develop: edit!.develop,
         ...(asShot ? { asShot } : {}),
         treatment: edit!.treatment,
         ...(edit!.baseProfile ? { baseProfile: edit!.baseProfile } : {}),
+        ...(edit!.look ? { look: edit!.look } : {}),
         ...(edit!.curve ? { curve: edit!.curve } : {}),
       }) + '\n',
     );
@@ -98,6 +106,7 @@ export async function runRefreshTargets(args: RefreshArgs): Promise<void> {
       colorFeatureNames: dataset.colorFeatureNames,
       colorDim: dataset.colorDim,
       baseline: dataset.baseline,
+      ...(looks.size > 0 ? { looks: Object.fromEntries(looks) } : {}),
       summary,
     }) + '\n',
   );

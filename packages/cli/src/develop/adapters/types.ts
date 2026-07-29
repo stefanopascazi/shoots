@@ -32,6 +32,14 @@ export interface EditRecord {
   curve?: number[];
   /** Base rendering profile, e.g. "Camera Faithful v2". */
   baseProfile?: string;
+  /**
+   * Creative profile layered over the base one, e.g. "Adobe Color". Separate
+   * from {@link baseProfile} because that is exactly how the editor stores it —
+   * Adobe Color is "Adobe Standard v2" plus a Look, not a profile of its own.
+   */
+  look?: string;
+  /** The Look serialized in the editor's own format, for replay on emit. */
+  lookXml?: string;
   treatment: Treatment;
   /**
    * The file carries a deliberate edit, not merely the neutral defaults the
@@ -52,6 +60,13 @@ export interface EditRecord {
 export interface PredictedEdit {
   develop: Record<string, number>;
   treatment: Treatment;
+  /**
+   * The base rendering the predicted values are meant to sit on. Not decoration:
+   * an Exposure of +0.35 means what the host's pipeline says it means, and the
+   * pipeline starts at the profile. Omitting it leaves the editor to pick its own
+   * default, which is how a style learned on Adobe Color lands on Adobe Standard.
+   */
+  render?: { profile?: string; look?: string; lookXml?: string };
 }
 
 export interface EditAdapter {

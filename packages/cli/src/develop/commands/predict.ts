@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { assertApplicable, predictOne, resolveTreatment } from '../predict.js';
 import { assertCanEmit, DEFAULT_EDITOR, resolveAdapter } from '../adapters/registry.js';
 import { loadDataset } from '../dataset/load.js';
-import type { Treatment } from '../develop/schema.js';
+import { renderKey, type Treatment } from '../develop/schema.js';
 import type { DevelopProfile } from '../types.js';
 
 export interface PredictArgs {
@@ -18,6 +18,8 @@ export interface PredictArgs {
   treatment: string;
   /** Which editor's format to write the prediction in. */
   editor?: string;
+  /** Base rendering to assume and to write out, overriding the catalog's own. */
+  cameraProfile?: string;
   out?: string;
   xmp?: string;
 }
@@ -34,7 +36,25 @@ export async function runPredict(args: PredictArgs): Promise<void> {
 
   const predictions = dataset.results
     .filter((r) => r.embedding?.length && r.features?.length)
-    .map((r) => predictOne(profile, r, resolveTreatment(profile, r, requested)));
+    .map((r) => predictOne(profile, r, resolveTreatment(profile, r, requested), args.cameraProfile));
+
+  // Which rendering the values are meant to sit on decides what every slider
+  // means, and it is invisible in the numbers — so say it out loud rather than
+  // let it be discovered in Lightroom.
+  const renders = new Map<string, number>();
+  for (const p of predictions) {
+    const label = renderKey(p.render) ?? '(editor default)';
+    renders.set(label, (renders.get(label) ?? 0) + 1);
+  }
+  for (const [label, count] of [...renders.entries()].sort((a, b) => b[1] - a[1])) {
+    const render = predictions.find((p) => (renderKey(p.render) ?? '(editor default)') === label)?.render;
+    const caveat = label === '(editor default)'
+      ? ' — the profile records no rendering, so Lightroom will use its own default'
+      : render?.look && !render.lookXml
+        ? ` — base profile only: no Look element was captured for "${render.look}"`
+        : '';
+    process.stderr.write(`Rendering: ${label} (${count} images)${caveat}\n`);
+  }
 
   if (args.xmp) {
     const adapter = resolveAdapter(args.editor ?? DEFAULT_EDITOR);
@@ -44,7 +64,7 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     for (const p of predictions) {
       const target = adapter.sidecarPathFor!(p.file, args.xmp);
       if (existsSync(target)) replaced++;
-      await adapter.writeEdit!({ develop: p.develop, treatment: p.treatment }, target);
+      await adapter.writeEdit!({ develop: p.develop, treatment: p.treatment, render: p.render }, target);
     }
     process.stderr.write(`Wrote ${predictions.length} ${adapter.id} sidecars to ${args.xmp}\n`);
     // The sidecar is named after the image, so a second run with a different

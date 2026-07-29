@@ -24,15 +24,22 @@ export function assembleFeatures(embedding: number[], color: number[], meta: AsS
 }
 
 /**
- * One-hot encode the base rendering profile (crs CameraProfile) against a
- * per-branch vocabulary, appended to the feature vector as a conditioning signal.
- * The profile sets the colour starting point before any slider; an unknown/absent
- * profile maps to all-zeros (neutral). Vocabulary order is fixed by training.
+ * One-hot encode the base rendering (camera profile + Look) against a per-branch
+ * vocabulary, appended to the feature vector as a conditioning signal. The render
+ * sets the colour starting point before any slider touches it.
+ *
+ * A render outside the vocabulary maps to all-zeros. That is a *last resort*, not
+ * a neutral value: at training almost every row has some column set, so the
+ * columns standardize to a mean near their frequency, and an all-zero vector
+ * lands well below anything the model was fitted on. Callers holding a trained
+ * profile must therefore substitute the branch's own default render rather than
+ * pass nothing — a file that has not been edited yet carries no crs at all, so
+ * this is the *normal* case at prediction time, not an edge one.
  */
-export function profileOneHot(profile: string | undefined, vocab: string[]): number[] {
+export function renderOneHot(key: string | undefined, vocab: string[]): number[] {
   const v = new Array<number>(vocab.length).fill(0);
-  if (profile) {
-    const i = vocab.indexOf(profile);
+  if (key) {
+    const i = vocab.indexOf(key);
     if (i >= 0) v[i] = 1;
   }
   return v;

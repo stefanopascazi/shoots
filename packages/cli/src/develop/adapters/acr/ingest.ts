@@ -12,7 +12,7 @@
  * names rather than the other way round.
  */
 import path from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { ExifRecord } from '@shoots/imaging';
 import { logWarn, printHuman, type CliIo } from '../../../io.js';
 import { DEVELOP_PARAMS, treatmentFromDevelop, type AsShotMeta } from '../../develop/schema.js';
@@ -83,6 +83,13 @@ export const exifToolTag = (crsProperty: string): string => CRS_TAG_ALIASES[crsP
 export const CRS_TAG_ARGS: string[] = [
   ...CRS_TARGET_TAGS.map((t) => `XMP-crs:${exifToolTag(t)}`),
   'XMP-crs:WhiteBalance', 'XMP-crs:ToneCurvePV2012', 'XMP-crs:CameraProfile',
+  // The creative profiles (Adobe Color, Adobe Monochrome, …) are NOT a
+  // CameraProfile value: they are a base profile plus a *Look* layered on top,
+  // and `crs:CameraProfile` reports only the base. Reading it alone collapses
+  // "Adobe Standard v2" and "Adobe Standard v2 + Adobe Color" — two very
+  // different renderings — into one label. On a real catalog that was 206 of 428
+  // colour edits mislabelled, and the single largest style split in it.
+  'XMP-crs:LookName', 'XMP-crs:LookUUID',
 ];
 
 /**
@@ -172,6 +179,36 @@ export function readCurve(record: ExifRecord | undefined): number[] | undefined 
 export function readBaseProfile(record: ExifRecord | undefined): string | undefined {
   const raw = record?.['CameraProfile'];
   return typeof raw === 'string' ? raw : undefined;
+}
+
+/** The creative profile layered over the base one (crs Look), e.g. "Adobe Color". */
+export function readLookName(record: ExifRecord | undefined): string | undefined {
+  const raw = record?.['LookName'];
+  return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
+}
+
+/**
+ * The verbatim `<crs:Look>…</crs:Look>` element of a sidecar.
+ *
+ * Kept as raw XML rather than rebuilt from the flattened exiftool fields on
+ * purpose. A Look carries a UUID, a look-table digest and a tone curve, and
+ * which of those Lightroom needs in order to resolve and apply it is Adobe's
+ * business, not ours. Replaying the element exactly as Lightroom wrote it is the
+ * only version we can be sure is right; reconstructing a "probably sufficient"
+ * subset would be a guess that fails silently inside someone else's catalog.
+ *
+ * Only sidecars can be read this way — for embedded crs (DNG/JPEG) there is no
+ * element to lift, and the caller emits the base profile alone.
+ */
+export function readLookXml(source: string): string | undefined {
+  if (!source.toLowerCase().endsWith('.xmp')) return undefined;
+  let text: string;
+  try {
+    text = readFileSync(source, 'utf8');
+  } catch {
+    return undefined;
+  }
+  return /<crs:Look>[\s\S]*?<\/crs:Look>/.exec(text)?.[0];
 }
 
 export function readAsShot(crs: ExifRecord | undefined, exif: ExifRecord | undefined): AsShotMeta {

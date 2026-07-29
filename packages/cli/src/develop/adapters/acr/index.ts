@@ -23,6 +23,8 @@ import {
   readBaseProfile,
   readCurve,
   readDevelop,
+  readLookName,
+  readLookXml,
   warnNeverSeenTargets,
 } from './ingest.js';
 
@@ -43,13 +45,24 @@ async function readEdits(files: string[], io: CliIo, onProgress?: ProgressFn): P
 
   warnNeverSeenTargets(io, records);
 
+  // A Look is a catalog-level object, not a per-image one: every photo rendered
+  // with Adobe Color carries the same element. Lift it once per distinct look.
+  const lookXmlByName = new Map<string, string>();
+
   const out = new Map<string, EditRecord>();
   for (const file of files) {
-    const crs = bySource.get(path.resolve(sourceByFile.get(file)!));
+    const source = sourceByFile.get(file)!;
+    const crs = bySource.get(path.resolve(source));
     const develop = readDevelop(crs);
     if (Object.keys(develop).length === 0) continue;
     const curve = readCurve(crs);
     const baseProfile = readBaseProfile(crs);
+    const look = readLookName(crs);
+    if (look && !lookXmlByName.has(look)) {
+      const xml = readLookXml(source);
+      if (xml) lookXmlByName.set(look, xml);
+    }
+    const lookXml = look ? lookXmlByName.get(look) : undefined;
     out.set(file, {
       develop,
       treatment: deriveTreatment(develop),
@@ -59,6 +72,8 @@ async function readEdits(files: string[], io: CliIo, onProgress?: ProgressFn): P
       context: crs,
       ...(curve ? { curve } : {}),
       ...(baseProfile ? { baseProfile } : {}),
+      ...(look ? { look } : {}),
+      ...(lookXml ? { lookXml } : {}),
     });
   }
   return out;
@@ -86,7 +101,7 @@ export const acrAdapter: EditAdapter = {
   readEdits,
   readCapture,
   async writeEdit(edit, targetPath) {
-    await writeFile(targetPath, buildXmpSidecar(edit.develop, edit.treatment), 'utf8');
+    await writeFile(targetPath, buildXmpSidecar(edit.develop, edit.treatment, edit.render), 'utf8');
   },
   sidecarPathFor(sourceFile, outputDir) {
     return path.join(outputDir, `${path.parse(sourceFile).name}.xmp`);

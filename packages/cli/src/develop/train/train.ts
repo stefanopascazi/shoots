@@ -21,11 +21,13 @@ import {
   DEVELOP_PARAMS,
   SCHEMA_VERSION,
   paramsForTreatment,
+  renderKey,
   treatmentFromDevelop,
   type AsShotMeta,
+  type RenderProfile,
   type Treatment,
 } from '../develop/schema.js';
-import { assembleFeatures, targetDeltas, actualAbsVec, profileOneHot } from '../develop/assemble.js';
+import { assembleFeatures, targetDeltas, actualAbsVec, renderOneHot } from '../develop/assemble.js';
 import { buildNormalEquations, solveRidge } from './regress.js';
 import {
   EPS,
@@ -64,14 +66,43 @@ interface RawRow {
   develop: Record<string, number>;
   meta: AsShotMeta;
   treatment: Treatment;
-  baseProfile?: string;
+  render: RenderProfile;
 }
 
-/** Base-profile vocabulary: profiles used on ≥3 of the branch's images. */
-function buildProfileVocab(rows: RawRow[]): string[] {
+/** How often each rendering appears in a branch, most common first. */
+function renderCounts(rows: RawRow[]): [string, number][] {
   const counts = new Map<string, number>();
-  for (const r of rows) if (r.baseProfile) counts.set(r.baseProfile, (counts.get(r.baseProfile) ?? 0) + 1);
-  return [...counts.entries()].filter(([, c]) => c >= 3).map(([k]) => k).sort();
+  for (const r of rows) {
+    const key = renderKey(r.render);
+    if (key) counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+/** Renderings used on ≥3 of the branch's images, in a stable order. */
+function buildRenderVocab(rows: RawRow[]): string[] {
+  return renderCounts(rows).filter(([, c]) => c >= 3).map(([k]) => k).sort();
+}
+
+/** The branch's most common rendering — what prediction assumes and writes out. */
+function defaultRenderFor(rows: RawRow[]): BranchModel['defaultRender'] {
+  const top = renderCounts(rows)[0]?.[0];
+  const render = rows.find((r) => renderKey(r.render) === top)?.render;
+  if (!render) return {};
+  return {
+    ...(render.profile ? { profile: render.profile } : {}),
+    ...(render.look ? { look: render.look } : {}),
+  };
+}
+
+/** The Look elements this branch might have to emit, by name. */
+function looksFor(rows: RawRow[], looks: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    const name = r.render.look;
+    if (name && !out[name] && looks[name]) out[name] = looks[name];
+  }
+  return out;
 }
 
 /** B&W vs colour, from the explicit field or the edit structure. */
@@ -91,7 +122,7 @@ function buildRows(dataset: DevelopDataset): RawRow[] {
       develop: r.develop,
       meta: r.asShot,
       treatment: deriveTreatment(r),
-      baseProfile: r.baseProfile,
+      render: { profile: r.baseProfile, look: r.look },
     });
   }
   return rows;
@@ -101,15 +132,20 @@ const round6 = (v: number): number => Math.round(v * 1e6) / 1e6;
 const round4 = (v: number): number => Math.round(v * 1e4) / 1e4;
 
 /** Train one treatment's model over its shared+branch parameters. */
-function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions): BranchModel {
+function trainBranch(
+  raw: RawRow[],
+  treatment: Treatment,
+  options: TrainOptions,
+  looks: Record<string, string>,
+): BranchModel {
   const params = paramsForTreatment(treatment);
   const folds = options.folds ?? 5;
   const groupBy: GroupBy = options.groupBy ?? 'folder';
   const gateThreshold = options.gateThreshold ?? DEFAULT_GATE_THRESHOLD;
-  const profileVocab = buildProfileVocab(raw);
+  const renderVocab = buildRenderVocab(raw);
 
   const rows: EvalRow[] = raw.map((r) => ({
-    x: [...assembleFeatures(r.embedding, r.features, r.meta), ...profileOneHot(r.baseProfile, profileVocab)],
+    x: [...assembleFeatures(r.embedding, r.features, r.meta), ...renderOneHot(renderKey(r.render), renderVocab)],
     deltas: targetDeltas(params, r.develop, r.meta),
     abs: actualAbsVec(params, r.develop, r.meta),
     meta: r.meta,
@@ -178,7 +214,9 @@ function trainBranch(raw: RawRow[], treatment: Treatment, options: TrainOptions)
   return {
     treatment,
     params: params.map((p) => p.key),
-    profileVocab,
+    renderVocab,
+    defaultRender: defaultRenderFor(raw),
+    looks: looksFor(raw, looks),
     paramLambda: lambdas,
     featureMean: featStats.mean.map(round6),
     featureStd: featStats.std.map(round6),
@@ -204,9 +242,10 @@ export function train(dataset: DevelopDataset, options: TrainOptions): DevelopPr
   for (const r of rows) byTreatment[r.treatment].push(r);
 
   const branches: DevelopProfile['branches'] = {};
+  const looks = dataset.looks ?? {};
   for (const treatment of ['color', 'bw'] as const) {
     if (byTreatment[treatment].length >= 5) {
-      branches[treatment] = trainBranch(byTreatment[treatment], treatment, options);
+      branches[treatment] = trainBranch(byTreatment[treatment], treatment, options, looks);
     }
   }
   if (Object.keys(branches).length === 0) {

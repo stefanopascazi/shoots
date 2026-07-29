@@ -96,6 +96,8 @@ interface DatasetRecord {
   treatment: Treatment;
   /** Base rendering profile (crs CameraProfile), e.g. "Camera Faithful v2". */
   baseProfile?: string;
+  /** Creative profile layered over it (crs Look name), e.g. "Adobe Color". */
+  look?: string;
   /** Flattened point tone-curve [x0,y0,x1,y1,…] (ToneCurvePV2012) — the contrast
    *  / black-clipping vehicle, absent when the curve is linear/default. */
   curve?: number[];
@@ -254,6 +256,8 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
 
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
   const progress = await startProgress(io, workFiles.length, 'Develop-export');
+  /** Distinct Looks seen, name → the editor's own serialization. */
+  const looks = new Map<string, string>();
 
   // Stream each record to disk as it completes (JSONL); return only lightweight
   // counters so nothing is accumulated in memory.
@@ -287,8 +291,12 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
         asShot: capture.get(file.path) ?? EMPTY_AS_SHOT,
         treatment: edit?.treatment ?? 'color',
         ...(edit?.baseProfile ? { baseProfile: edit.baseProfile } : {}),
+        ...(edit?.look ? { look: edit.look } : {}),
         ...(edit?.curve ? { curve: edit.curve } : {}),
       };
+      // The Look element itself goes in the trailing meta line, once per distinct
+      // Look — see DevelopDataset.looks.
+      if (edit?.look && edit.lookXml) looks.set(edit.look, edit.lookXml);
       await writeLine(record);
       return { hasDevelop: Object.keys(develop).length > 0, dim: assessment.embedding.length };
     },
@@ -316,6 +324,7 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     colorFeatureNames: COLOR_FEATURE_NAMES,
     colorDim: COLOR_FEATURE_NAMES.length,
     baseline,
+    ...(looks.size > 0 ? { looks: Object.fromEntries(looks) } : {}),
     summary,
   });
   await new Promise<void>((resolve) => stream.end(resolve));

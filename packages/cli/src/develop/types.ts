@@ -21,6 +21,8 @@ export interface DevelopExportResult {
   treatment?: Treatment;
   /** Base rendering profile (crs CameraProfile), e.g. "Camera Faithful v2". */
   baseProfile?: string;
+  /** Creative profile layered over it (crs Look name), e.g. "Adobe Color". */
+  look?: string;
   /** Flattened point tone-curve [x0,y0,x1,y1,…] (ToneCurvePV2012); absent if linear. */
   curve?: number[];
   /** Present only in the legacy per-record format; the baseline lives on the dataset. */
@@ -35,6 +37,13 @@ export interface DevelopDataset {
   colorFeatureNames: string[];
   colorDim: number;
   baseline: string;
+  /**
+   * Look name → the editor's own serialization of it, once per distinct Look
+   * rather than once per photograph. A Look is a catalog-level object and its
+   * element runs to a couple of kilobytes; copying it onto every record would
+   * put tens of megabytes of identical text into a 20k-image dataset.
+   */
+  looks?: Record<string, string>;
   results: DevelopExportResult[];
   summary?: unknown;
 }
@@ -72,8 +81,22 @@ export interface BranchModel {
   treatment: Treatment;
   /** Ordered crs param keys this branch predicts (shared + branch). */
   params: string[];
-  /** Base-profile vocabulary (crs CameraProfile) one-hot-appended to the features. */
-  profileVocab: string[];
+  /** Base-rendering vocabulary (camera profile + Look) one-hot-appended to the features. */
+  renderVocab: string[];
+  /**
+   * The rendering to assume, and to write out, when the image being predicted
+   * does not state one — which is every unedited file, i.e. the whole point of
+   * the tool. It is the branch's most common rendering, because that is the one
+   * most of the learned deltas were measured against.
+   */
+  defaultRender: { profile?: string; look?: string };
+  /**
+   * Look name → the editor's own serialization, for every Look this branch can
+   * emit. Carried in the profile because a Look cannot be reconstructed from its
+   * name: it is resolved by UUID and look-table digest, and inventing a
+   * plausible-looking element is a guess that fails inside someone's catalog.
+   */
+  looks: Record<string, string>;
   /**
    * Ridge strength per parameter, index-aligned with {@link params}.
    *

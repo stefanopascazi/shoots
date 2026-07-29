@@ -75,10 +75,11 @@ export function registerDevelopCommand(program: Command): void {
     .option('--treatment <t>', 'which branch to apply: auto | color | bw', 'auto')
     .option('--out <file>', 'write predictions JSON here (default: stdout)')
     .option('--editor <id>', `which editor's format to write predictions in: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
+    .option('--camera-profile <name>', "base rendering to assume and write out, overriding the catalog's own")
     .option('--xmp <dir>', 'also write an editor-readable sidecar per image into this dir')
     .action((opts) => runPredict({
       data: opts.data, profile: opts.profile, treatment: opts.treatment,
-      editor: opts.editor, out: opts.out, xmp: opts.xmp,
+      editor: opts.editor, cameraProfile: opts.cameraProfile, out: opts.out, xmp: opts.xmp,
     }));
 
   develop

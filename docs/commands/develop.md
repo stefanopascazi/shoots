@@ -230,11 +230,42 @@ shoots develop predict --data <file> --profile <file> [options]
 | `--data <file>` | **required** | Dataset from `develop export` (the **new** set) |
 | `--profile <file>` | **required** | Profile JSON from `develop train` |
 | `--treatment <t>` | `auto` | Which branch to apply: `auto` \| `color` \| `bw` |
+| `--camera-profile <name>` | catalog's own | Base rendering to assume and write out |
 | `--out <file>` | stdout | Write predictions JSON here |
 | `--xmp <dir>` | — | Also write a Lightroom-readable `.xmp` sidecar per image into this dir |
 
 `--treatment` is a genuine creative choice at inference time — at train time it is
 read off the edit, but for a new frame nobody has decided colour vs B&W yet.
+
+### The base rendering is written into the sidecar
+
+Every predicted slider is relative to the rendering the photograph starts from,
+and in ACR that is a camera profile *plus* an optional Look: "Adobe Color" is
+`Adobe Standard v2` with a `<crs:Look>` element on top, not a `crs:CameraProfile`
+value. Without an explicit profile in the sidecar Lightroom falls back to its own
+legacy default (**Adobe Standard**), so a style learned on Adobe Color lands on a
+different base and every slider is measured against the wrong starting point.
+
+`predict` therefore writes the profile and replays the Look element verbatim, and
+reports what it chose:
+
+```
+Rendering: Adobe Standard v2 + Adobe Color (208 images)
+Rendering: Camera Faithful v2 (203 images)
+```
+
+An unedited file states no rendering, which is the normal case — the branch's
+most common rendering stands in. `--camera-profile` overrides it and accepts
+either a bare profile name or a full key:
+
+```sh
+shoots develop predict --data new.jsonl --profile profiles/my-style.json \
+  --camera-profile "Adobe Standard v2 + Adobe Color" --xmp ./out-xmp/
+```
+
+A Look read from embedded crs (DNG/JPEG rather than a sidecar) has no element to
+lift; `predict` emits the base profile and says so instead of pretending the
+rendering is complete.
 
 ### The new set must use the same `--baseline` as the profile
 

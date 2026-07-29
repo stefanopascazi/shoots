@@ -146,8 +146,14 @@ export const DEVELOP_PARAMS: DevelopParam[] = [...SHARED, ...COLOR, ...BW];
  * all fitted at the single λ that the unpredictable majority of parameters
  * chose. Inference reads no λ, so the numbers would still decode — which is the
  * problem: a v4 profile would keep serving its collapsed predictions in silence.
+ *
+ * v6: the base rendering became profile + Look rather than profile alone, so
+ * `profileVocab` gave way to `renderVocab` over a different vocabulary, and
+ * `defaultRender` is what inference now substitutes for an unedited file (and
+ * writes into the sidecar). A v5 profile's vocabulary merges every Adobe Color
+ * photograph with the plain-profile ones it was rendered nothing like.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 /** Parameters predicted for a given treatment: shared + that treatment's branch. */
 export function paramsForTreatment(treatment: Treatment): DevelopParam[] {
@@ -170,6 +176,39 @@ export function treatmentFromDevelop(develop: Record<string, number>): Treatment
   if (flag !== undefined) return flag === 1 ? 'bw' : 'color';
   if (Object.keys(develop).some((k) => k.startsWith('GrayMixer'))) return 'bw';
   return 'color';
+}
+
+/**
+ * The base rendering an edit sits on: camera profile plus any creative Look.
+ *
+ * Two fields rather than one because that is how the editor stores it — "Adobe
+ * Color" is not a CameraProfile value, it is "Adobe Standard v2" with a Look
+ * layered over it. Reading only the profile merges renderings that look nothing
+ * alike, and every predicted slider is relative to whichever one was active.
+ */
+export interface RenderProfile {
+  profile?: string;
+  look?: string;
+}
+
+/**
+ * A render as a single vocabulary token — the conditioning key, and the label a
+ * report shows. Undefined when there is nothing to condition on at all.
+ */
+export function renderKey(render: RenderProfile | undefined): string | undefined {
+  if (!render?.profile && !render?.look) return undefined;
+  const base = render.profile ?? '(default)';
+  return render.look ? `${base}${RENDER_SEP}${render.look}` : base;
+}
+
+const RENDER_SEP = ' + ';
+
+/** {@link renderKey} in reverse — a bare profile name is a valid key. */
+export function parseRenderKey(key: string): RenderProfile {
+  const at = key.indexOf(RENDER_SEP);
+  return at < 0
+    ? { profile: key }
+    : { profile: key.slice(0, at), look: key.slice(at + RENDER_SEP.length) };
 }
 
 /** As-shot metadata that anchors the WB delta (and feeds the feature vector). */

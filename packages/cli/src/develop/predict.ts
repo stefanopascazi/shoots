@@ -4,14 +4,25 @@
  * chosen treatment (colour or B&W). Deltas are predicted in standardized space,
  * de-standardized, decoded to absolute ACR units and clamped.
  */
-import { SCHEMA_VERSION, decodeDelta, paramsForTreatment, type Treatment } from './develop/schema.js';
-import { assembleFeatures, profileOneHot } from './develop/assemble.js';
-import type { DevelopDataset, DevelopExportResult, DevelopProfile } from './types.js';
+import {
+  SCHEMA_VERSION,
+  decodeDelta,
+  paramsForTreatment,
+  parseRenderKey,
+  renderKey,
+  type RenderProfile,
+  type Treatment,
+} from './develop/schema.js';
+import { assembleFeatures, renderOneHot } from './develop/assemble.js';
+import type { PredictedEdit } from './adapters/types.js';
+import type { BranchModel, DevelopDataset, DevelopExportResult, DevelopProfile } from './types.js';
 
 export interface Prediction {
   file: string;
   treatment: Treatment;
   develop: Record<string, number>;
+  /** The base rendering these values are meant to sit on (written to the sidecar). */
+  render: PredictedEdit['render'];
 }
 
 /** The dataset-level facts a profile has to agree with to be applicable. */
@@ -62,12 +73,50 @@ export function resolveTreatment(profile: DevelopProfile, result: DevelopExportR
   return available;
 }
 
-export function predictOne(profile: DevelopProfile, result: DevelopExportResult, treatment: Treatment): Prediction {
+/**
+ * The rendering to condition on and to write out for one image.
+ *
+ * An unedited file states no rendering at all — that is the normal case here,
+ * since the whole point is to predict for photographs nobody has touched. The
+ * branch's own default stands in, so the model is asked the question it was
+ * trained on ("what do you do starting from Adobe Color?") instead of being fed
+ * an all-zero one-hot that matches nothing it ever saw. An explicit `override`
+ * wins over both: it is the only way to aim a profile at a rendering the catalog
+ * has moved on from.
+ */
+export function resolveRender(
+  branch: BranchModel,
+  result: DevelopExportResult,
+  override?: string,
+): PredictedEdit['render'] {
+  let chosen: RenderProfile;
+  if (override) {
+    chosen = parseRenderKey(override);
+  } else {
+    const stated: RenderProfile = { profile: result.baseProfile, look: result.look };
+    const key = renderKey(stated);
+    chosen = key && branch.renderVocab.includes(key) ? stated : branch.defaultRender;
+  }
+  const lookXml = chosen.look ? branch.looks?.[chosen.look] : undefined;
+  return {
+    ...(chosen.profile ? { profile: chosen.profile } : {}),
+    ...(chosen.look ? { look: chosen.look } : {}),
+    ...(lookXml ? { lookXml } : {}),
+  };
+}
+
+export function predictOne(
+  profile: DevelopProfile,
+  result: DevelopExportResult,
+  treatment: Treatment,
+  renderOverride?: string,
+): Prediction {
   const branch = profile.branches[treatment];
   if (!branch) throw new Error(`profile has no '${treatment}' branch`);
   const params = paramsForTreatment(treatment);
   const meta = result.asShot;
-  const x = [...assembleFeatures(result.embedding, result.features, meta), ...profileOneHot(result.baseProfile, branch.profileVocab)];
+  const render = resolveRender(branch, result, renderOverride);
+  const x = [...assembleFeatures(result.embedding, result.features, meta), ...renderOneHot(renderKey(render), branch.renderVocab)];
   const gated = new Set(branch.gatedParams ?? []);
   const develop: Record<string, number> = {};
   for (let k = 0; k < params.length; k++) {
@@ -87,5 +136,5 @@ export function predictOne(profile: DevelopProfile, result: DevelopExportResult,
     }
     develop[param.key] = Math.round(decodeDelta(param, delta, meta) * 1e4) / 1e4;
   }
-  return { file: result.file, treatment, develop };
+  return { file: result.file, treatment, develop, render };
 }
