@@ -19,6 +19,7 @@
     "shoots": "node packages/cli/dist/cli.js",
     "build:binary": "bun scripts/build-binary.ts",
     "build:icon": "bun scripts/generate-icon.ts",
+    "build:screens": "bun scripts/capture-screens.tsx",
     "preversion": "npm run typecheck && npm run build",
     "postversion": "git push origin main && git push origin --tags"
   },

@@ -31,6 +31,10 @@ untouched, edits go to sidecars), and **everything runs locally** — no cloud, 
 Every command speaks `--json` and honours `--dry-run`, so it drops straight into scripts,
 cron and CI.
 
+<p align="center">
+  <img src="assets/screens/run.png" alt="A cull run in the shoots interactive shell" width="820"/>
+</p>
+
 ## Getting started
 
 Install the standalone binary — no Node.js required.

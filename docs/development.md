@@ -33,11 +33,13 @@ tools/
 scripts/
   build-binary.ts            Bun single-binary build (+ Windows executable metadata)
   generate-icon.ts           Application icon: assets/shoots.{svg,ico,png}
+  capture-screens.tsx        Terminal screenshots: assets/screens/*.{png,svg}
+  screens/                   ANSI emulator + SVG renderer + scene definitions
   prepare-tool-mirror.ts     exiftool archives for the mirror
   prepare-libraw-mirror.ts   LibRaw dcraw_emu, cross-built
   prepare-model-mirror.ts    CLIP ONNX archive + precomputed text embeddings
 
-assets/       Brand assets (icon source + generated .ico/.png), committed
+assets/       Brand assets: icon (.svg/.ico/.png) + screens/ screenshots, committed
 examples/     Sample pipeline configs
 docs/         This documentation
 test/         Tests
@@ -193,6 +195,39 @@ Runtime branding is covered separately: `packages/cli/src/crash.ts` claims
 `uncaughtException` / `unhandledRejection` so a crash reports as `shoots`
 instead of printing Bun's `Bun v1.x.y (…)` banner and `B:/~BUN/root/…` paths.
 `SHOOTS_DEBUG=1` restores the stack trace.
+
+---
+
+## Screenshots
+
+`assets/screens/` holds the terminal screenshots used by the README and the web
+site, PNG (2x) and SVG, **committed**, with an auto-written
+[index](../assets/screens/README.md). Regenerate them with:
+
+```sh
+npm run build                                      # the scenes spawn dist/cli.js
+SHOOTS_SHOTS_SOURCE=/path/to/a/folder/of/raws \
+  npm run build:screens                            # all scenes
+npm run build:screens -- shell run --list          # a subset / list the scenes
+```
+
+Every image is a capture of **real** output, never hand-written text:
+`scripts/capture-screens.tsx` either mounts the actual Ink component against a
+fake TTY and types into it, or spawns the built CLI with colour forced on, then
+replays the resulting ANSI stream through a small terminal emulator
+(`scripts/screens/ansi.ts`) and draws the cell grid as an SVG window
+(`scripts/screens/render.ts`) that sharp rasterises. A scene that cannot run —
+no photographs to analyse, no shallow-DoF frame to review — is skipped rather
+than faked.
+
+Two rules keep the output machine-independent: every glyph is positioned in its
+own cell (so a different monospace fallback cannot drift the layout), and block,
+box-drawing and braille characters are drawn as geometry rather than type
+(`scripts/screens/glyphs.ts`), so they tile the way a terminal tiles them.
+
+Scenes that analyse photographs need real files: point `SHOOTS_SHOTS_SOURCE` at
+a folder of RAW/JPEGs (default `test/Raw`) and the script stages a handful into
+`demo/` (gitignored, deleted afterwards unless `SHOOTS_SHOTS_KEEP_DEMO=1`).
 
 ---
 
