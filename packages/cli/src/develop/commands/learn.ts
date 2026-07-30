@@ -20,7 +20,7 @@
  * see dataset/weight.ts for why those are the same thing.
  */
 import path from 'node:path';
-import { createWriteStream, existsSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
 import { developExportPath, developProfilePath, developShootDir } from '@shoots/core';
@@ -37,7 +37,7 @@ import { runTrain } from './train.js';
 import { DEFAULT_EDITOR, EDITOR_IDS } from '../adapters/registry.js';
 import { logError, logWarn, makeIo, printHuman, printJson } from '../../io.js';
 import { ensureExiftoolReady } from '../../tools.js';
-import type { DevelopDataset, DevelopExportResult } from '../types.js';
+import type { DevelopDataset, DevelopExportResult, DevelopProfile } from '../types.js';
 import type { Prediction } from '../predict.js';
 
 export interface LearnArgs {
@@ -202,6 +202,15 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
     return;
   }
 
+  const hadCalibration = existsSync(profilePath)
+    && (() => {
+      try {
+        return (JSON.parse(readFileSync(profilePath, 'utf8')) as DevelopProfile).calibration !== undefined;
+      } catch {
+        return false;
+      }
+    })();
+
   printHuman(io, `\nRefitting the profile → ${profilePath}`);
   await runTrain({
     data: dataPath,
@@ -220,10 +229,17 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
     printJson({ command: 'develop-learn', ...summary, trained: true, profile: profilePath, weights: weighting.records });
     return;
   }
-  // A refit replaces the model the offsets were measured against, so whatever
-  // `calibrate` had learned describes something that no longer exists.
-  printHuman(io, '\nThe profile has been refitted, so any calibration on it is stale —');
-  printHuman(io, 'develop a shoot, run `develop feedback`, then `develop calibrate` again.');
+  // A refit writes a whole new profile, so any calibration on the old one is not
+  // stale — it is gone. That is the right outcome (the offsets measured a model
+  // that no longer exists) but it is not something to leave anyone to discover.
+  if (hadCalibration) {
+    printHuman(io, '\nThe refit replaced the profile, so its calibration offsets are gone.');
+    printHuman(io, 'They measured the previous model; re-run `shoots develop calibrate` — the');
+    printHuman(io, 'journal is intact, so it costs one command and no new photographs.');
+  } else {
+    printHuman(io, '\nProfile refitted. `shoots develop calibrate` can now re-measure the');
+    printHuman(io, 'constant offsets against it, from the journal you already have.');
+  }
 }
 
 async function writeDataset(
