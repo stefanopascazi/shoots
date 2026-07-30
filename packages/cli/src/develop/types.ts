@@ -189,6 +189,8 @@ export interface DevelopCalibration {
   profileTrainedAt: string;
   /** Observations behind it, per branch. */
   images: Partial<Record<Treatment, number>>;
+  /** Shoots behind it — the unit the direction test actually counts in. */
+  shoots?: Partial<Record<Treatment, number>>;
   /** Fraction of the measured correction actually applied. */
   shrink: number;
   /** Absolute offsets per branch, in each parameter's correction space. */

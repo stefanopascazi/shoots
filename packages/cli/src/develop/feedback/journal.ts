@@ -46,6 +46,16 @@ export interface FeedbackObservation {
    */
   predictedRender?: string;
   actualRender?: string;
+  /**
+   * This photograph has since been folded into the training set by `develop
+   * learn`, so the model has seen its answer.
+   *
+   * It stays in the journal — it is still a true record of what happened — but it
+   * can no longer measure the model's error, because the model was fitted on it.
+   * Held-out evidence is the only kind this tool has ever accepted anywhere else;
+   * calibration is not the place to start making an exception.
+   */
+  trainedOn?: boolean;
 }
 
 export async function loadJournal(file: string): Promise<FeedbackObservation[]> {
@@ -96,4 +106,28 @@ export async function recordObservations(
 /** Distinct prediction records the pool was collected from. */
 export function shootCount(observations: readonly FeedbackObservation[]): number {
   return new Set(observations.map((o) => o.run)).size;
+}
+
+/**
+ * Mark photographs as consumed by training.
+ *
+ * Called by `develop learn` once the files are in the dataset. Rewrites in place
+ * and silently does nothing when the journal is missing — a photographer who
+ * never ran `feedback` still gets to run `learn`.
+ */
+export async function markTrainedOn(file: string, files: readonly string[]): Promise<number> {
+  if (!existsSync(file)) return 0;
+  const wanted = new Set(files);
+  const pool = await loadJournal(file);
+  let marked = 0;
+  const updated = pool.map((o) => {
+    if (!wanted.has(o.file) || o.trainedOn) return o;
+    marked++;
+    return { ...o, trainedOn: true };
+  });
+  if (marked === 0) return 0;
+  const tmp = `${file}.tmp`;
+  await writeFile(tmp, updated.map((o) => JSON.stringify(o)).join('\n') + '\n', 'utf8');
+  await rename(tmp, file);
+  return marked;
 }

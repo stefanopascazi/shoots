@@ -23,7 +23,8 @@ import path from 'node:path';
 import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
-import { developExportPath, developProfilePath, developShootDir } from '@shoots/core';
+import { developExportPath, developFeedbackPath, developProfilePath, developShootDir } from '@shoots/core';
+import { markTrainedOn } from '../feedback/journal.js';
 import { loadDataset } from '../dataset/load.js';
 import { refreshTargets, refreshedMeta } from '../dataset/refresh.js';
 import {
@@ -47,6 +48,8 @@ export interface LearnArgs {
   out?: string;
   /** The shoot's working directory, when it is not the conventional one. */
   shootDir?: string;
+  /** Journal to mark as trained-on (default: ~/.shoots/develop/feedback.jsonl). */
+  journal?: string;
   editor?: string;
   name: string;
   lambda: string;
@@ -90,6 +93,7 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
   const predictionPath = path.join(workDir, 'prediction.json');
   const dataPath = path.resolve(args.data ?? developExportPath());
   const profilePath = path.resolve(args.out ?? developProfilePath());
+  const journalPath = path.resolve(args.journal ?? developFeedbackPath());
 
   for (const [file, what] of [
     [shootData, "the shoot's features"],
@@ -193,6 +197,14 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
   const looks = new Map<string, string>(Object.entries(base.looks ?? {}));
   for (const [name, xml] of refreshed.looks) looks.set(name, xml);
   await writeDataset(dataPath, [...merged.values()], base, looks, summary);
+
+  // These photographs are training data now. They stay in the journal — they are
+  // still a true record — but they can no longer measure the model's error, and
+  // `calibrate` has to know that before it reads them as "nearly right".
+  const marked = await markTrainedOn(journalPath, refreshed.records.map((r) => r.file));
+  if (marked > 0) {
+    printHuman(io, `      marked ${marked} journal observation(s) as trained-on — calibrate will hold them out`);
+  }
 
   if (!io.json) reportWeights(weighting.records, summary);
 

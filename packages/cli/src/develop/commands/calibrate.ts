@@ -21,10 +21,11 @@ import { developFeedbackPath, developProfilePath } from '@shoots/core';
 import { DEVELOP_PARAMS, type Treatment } from '../develop/schema.js';
 import { loadJournal, shootCount } from '../feedback/journal.js';
 import {
-  DEFAULT_MIN_IMAGES,
+  DEFAULT_MIN_SHOOTS,
   DEFAULT_SHRINK,
   estimateOffsets,
   fromOurSidecar,
+  heldOut,
   renderKnown,
   type CalibrationEstimate,
 } from '../feedback/calibrate.js';
@@ -37,8 +38,10 @@ export interface CalibrateArgs {
   journal?: string;
   /** Fraction of the measured correction to apply. */
   shrink?: number;
-  /** Comparisons a parameter needs before it is offset at all. */
-  minImages?: number;
+  /** Shoots a parameter needs before it is offset at all. */
+  minShoots?: number;
+  /** Calibrate on shoots already folded into training too — optimistic, and says so. */
+  includeTrained?: boolean;
   /** Only use observations whose rendering still matches what `predict` wrote. */
   importedOnly?: boolean;
   /** Remove any calibration and leave the model as trained. */
@@ -99,23 +102,34 @@ export async function runCalibrate(args: CalibrateArgs): Promise<void> {
   // request: a photographer may have changed the base profile on purpose.
   const known = renderKnown(journal);
   const ours = fromOurSidecar(journal);
-  const pool = args.importedOnly ? ours : journal;
-  if (args.importedOnly && pool.length === 0) {
-    logError('--imported-only left no observations: none of the journal still carries the rendering `predict` wrote');
+  // Shoots already folded into training cannot measure the model's error: it was
+  // fitted on their answers. They stay in the journal and out of the estimate.
+  const usable = args.includeTrained ? journal : heldOut(journal);
+  const burned = journal.length - heldOut(journal).length;
+  const pool = args.importedOnly ? usable.filter((o) => ours.includes(o)) : usable;
+  if (pool.length === 0) {
+    logError(
+      burned > 0 && !args.includeTrained
+        ? `all ${burned} observations have been folded into training by \`develop learn\`, so none of them can ` +
+            'measure this model any more — develop another shoot and run `develop feedback` first ' +
+            '(or --include-trained to calibrate on them anyway, knowing the estimate flatters the model)'
+        : '--imported-only left no observations: none of the journal still carries the rendering `predict` wrote',
+    );
     process.exitCode = 2;
     return;
   }
 
   const shrink = args.shrink ?? DEFAULT_SHRINK;
-  const minImages = args.minImages ?? DEFAULT_MIN_IMAGES;
+  const minShoots = args.minShoots ?? DEFAULT_MIN_SHOOTS;
   const estimates = TREATMENTS.filter((t) => profile.branches[t]).map((t) =>
-    estimateOffsets(pool, t, { shrink, minImages }),
+    estimateOffsets(pool, t, { shrink, minShoots }),
   );
 
   const calibration: DevelopCalibration = {
     at: new Date().toISOString(),
     profileTrainedAt: profile.trainedAt,
     images: Object.fromEntries(estimates.map((e) => [e.treatment, e.images])),
+    shoots: Object.fromEntries(estimates.map((e) => [e.treatment, e.shoots])),
     shrink,
     offsets: Object.fromEntries(estimates.map((e) => [e.treatment, e.offsets])),
   };
@@ -134,10 +148,14 @@ export async function runCalibrate(args: CalibrateArgs): Promise<void> {
       command: 'develop-calibrate',
       dryRun: !!args.dryRun,
       profile: profilePath,
-      journal: { path: journalPath, images: journal.length, shoots: shootCount(journal), renderKnown: known.length, fromOurSidecar: ours.length },
+      journal: {
+        path: journalPath, images: journal.length, shoots: shootCount(journal),
+        renderKnown: known.length, fromOurSidecar: ours.length,
+        trainedOn: burned, usable: pool.length,
+      },
       applied: !args.dryRun && total > 0,
       shrink,
-      minImages,
+      minShoots,
       calibration,
       params: Object.fromEntries(estimates.map((e) => [e.treatment, e.params])),
     });
@@ -145,9 +163,9 @@ export async function runCalibrate(args: CalibrateArgs): Promise<void> {
   }
 
   report(estimates, {
-    profilePath, journalPath, shrink, minImages, total,
+    profilePath, journalPath, shrink, minShoots, total,
     journalImages: journal.length, shoots: shootCount(journal),
-    known: known.length, ours: ours.length,
+    known: known.length, ours: ours.length, burned,
     importedOnly: !!args.importedOnly, dryRun: !!args.dryRun,
     previous: profile.calibration?.at,
   });
@@ -157,12 +175,13 @@ interface ReportContext {
   profilePath: string;
   journalPath: string;
   shrink: number;
-  minImages: number;
+  minShoots: number;
   total: number;
   journalImages: number;
   shoots: number;
   known: number;
   ours: number;
+  burned: number;
   importedOnly: boolean;
   dryRun: boolean;
   previous?: string;
@@ -172,26 +191,35 @@ function report(estimates: CalibrationEstimate[], ctx: ReportContext): void {
   const w = process.stderr;
   w.write(`\nCalibrating ${ctx.profilePath}\n`);
   w.write(`  journal: ${ctx.journalImages} images from ${ctx.shoots} shoots\n`);
+  if (ctx.burned > 0) {
+    w.write(`  ${ctx.burned} already folded into training by \`develop learn\` — excluded, the model has seen them\n`);
+  }
   if (ctx.known > 0) {
     const pct = ((ctx.ours / ctx.known) * 100).toFixed(0);
     w.write(`  ${ctx.ours}/${ctx.known} still carry the rendering we wrote (${pct}% — evidence the sidecars were imported)\n`);
     if (ctx.importedOnly) w.write('  --imported-only: the rest are excluded\n');
   }
-  w.write(`  applying ${(ctx.shrink * 100).toFixed(0)}% of each measured correction, from ${ctx.minImages} comparisons up\n`);
+  w.write(`  applying ${(ctx.shrink * 100).toFixed(0)}% of each measured correction, from ${ctx.minShoots} shoots up\n`);
 
   for (const estimate of estimates) {
     const taken = estimate.params.filter((p) => !p.rejected).sort((a, b) => Math.abs(b.offset) - Math.abs(a.offset));
-    w.write(`\n  ${estimate.treatment} — ${estimate.images} images, ${taken.length} parameters offset\n`);
+    w.write(`\n  ${estimate.treatment} — ${estimate.images} images across ${estimate.shoots} shoots, ${taken.length} parameters offset\n`);
     if (taken.length === 0) {
       const tooFew = estimate.params.filter((p) => p.rejected === 'too-few').length;
-      w.write(`    nothing leans consistently enough yet (${tooFew} parameters have too few comparisons)\n`);
+      const noLean = estimate.params.filter((p) => p.rejected === 'no-direction').length;
+      if (estimate.shoots < ctx.minShoots) {
+        w.write(`    ${estimate.shoots} shoot(s) is not enough to tell a habit from a job — ${ctx.minShoots} is the floor,\n`);
+        w.write('    because three shoots agreeing unanimously still only reach 1.7 sigma.\n');
+      } else {
+        w.write(`    nothing leans consistently across shoots (${noLean} disagree between jobs, ${tooFew} seen too rarely)\n`);
+      }
       continue;
     }
-    w.write('    param                           n    up/down   sigma   measured   applied\n');
+    w.write('    param                        shoots   up/down   sigma   measured   applied\n');
     for (const p of taken.slice(0, 20)) {
       const sign = (x: number): string => (x >= 0 ? '+' : '') + x.toFixed(2);
       w.write(
-        `    ${p.key.padEnd(30)} ${String(p.n).padStart(3)} ${`${p.up}/${p.down}`.padStart(9)} ` +
+        `    ${p.key.padEnd(30)} ${String(p.shoots).padStart(3)} ${`${p.up}/${p.down}`.padStart(9)} ` +
           `${p.sigma.toFixed(1).padStart(7)} ${sign(p.measured).padStart(10)} ${sign(p.offset).padStart(9)}` +
           `${GROUP.get(p.key) === 'wb' ? '  (log)' : ''}\n`,
       );
@@ -199,7 +227,9 @@ function report(estimates: CalibrationEstimate[], ctx: ReportContext): void {
     if (taken.length > 20) w.write(`    … ${taken.length - 20} more (pass --json for all)\n`);
   }
 
-  w.write('\n  An offset is what the model is reliably wrong by in one direction — a\n');
+  w.write('\n  One shoot is one vote, however many photographs it holds: a take edited by\n');
+  w.write('  pasting settings across it is a single decision, not four hundred.\n');
+  w.write('  An offset is what the model is reliably wrong by in one direction — a\n');
   w.write('  constant it never learned. It is applied on top of the prediction and\n');
   w.write('  stored beside the model, not merged into it: `--reset` takes it back.\n');
   w.write('  Only half of each measured correction is applied, so calibrating again\n');

@@ -21,12 +21,16 @@ Two levels. The everyday pair wraps the steps with conventional paths under
 ```
 shoots develop init <edited-catalog>   # export --edited-only + train
 shoots develop edit <shoot>            # export + predict, sidecars by the photos
-shoots develop feedback --predictions ~/.shoots/develop/export/shooting/<shoot>/prediction.json
-shoots develop calibrate               # fix what it is wrong by on average
-shoots develop learn <shoot>           # refit on that shoot, weighted by your corrections
+#   … develop the photographs in Lightroom …
+shoots develop refine <shoot>          # feedback + learn + calibrate, in the only order that works
 shoots develop status                  # what this machine holds
 shoots develop clean                   # drop the per-shoot working files
 ```
+
+`refine` is the everyday loop closer. Its three steps stay available on their own
+— `feedback` (measure), `learn` (refit), `calibrate` (constants) — but the order
+is not a preference: `learn` writes a whole new profile, so a `calibrate` run
+before it is thrown away.
 
 `edit` refuses to overwrite sidecars that already carry a real edit (`--force`
 proceeds), and all of them take `--dry-run`.
@@ -201,23 +205,37 @@ Growing the catalog with the developed shoot is the other half of the idea and i
 deliberately not here: that is `export` + `train`, on files the photographer
 *edited* rather than files the photographer *approved*.
 
-Four decisions, none of them the obvious one:
+Five decisions, and the first one is the one that matters:
 
-- **Every comparison counts, not only the ones somebody moved.** The feedback
-  table quotes bias over engaged corrections — "when you correct this, by how
-  much". An offset applies to *every* prediction, so a slider left at neutral on
-  nine images out of ten is nine votes for leaving it alone.
-- **Median, not mean.** The tool reports MAE throughout and the median minimizes
-  it; it also survives the failure nothing can detect, a photograph edited from
-  scratch instead of from our sidecar — an outlier moves a mean, not a median.
-- **A sign test, not a t-test.** The question is whether the corrections lean one
-  way, which the count of ups against downs answers without assuming anything
-  about a distribution that is heavy-tailed and clipped at both ends. Two sigma
-  of a fair coin, over at least 10 comparisons.
+- **One shoot is one vote, not one photograph.** A take is edited by pasting
+  settings across it, so counting photographs counts a single styling decision
+  hundreds of times. Measured on a simulated wedding — 400 frames pushed +6
+  against two smaller shoots pulling −5 and −6 — counting per photograph reported
+  **16 sigma** of confidence and applied **+3, the direction two shoots out of
+  three disagreed with**. Per shoot the same evidence gives 0.6 sigma and applies
+  nothing, which is the honest answer for three shoots. This is the reasoning
+  that already makes the trainer hold out whole folders; calibration had no
+  business ignoring it, and did until it was caught.
+- **Every comparison counts inside a shoot**, not only the ones somebody moved.
+  An offset applies to *every* prediction, so within a shoot a slider left at
+  neutral on nine frames out of ten is nine votes for leaving it alone.
+- **Median at both levels.** Within a shoot it resists the one photograph edited
+  from scratch rather than from the sidecar; across shoots it resists the one job
+  that was nothing like the others.
+- **A sign test, not a t-test**, over shoots: two sigma of a fair coin. Which
+  makes **four shoots the hard floor** — three agreeing unanimously only reach
+  3/√3 = 1.73 and could never pass, so a lower floor would promise evidence it
+  cannot deliver.
 - **White balance is corrected as a ratio.** Temperature is anchored to the
   as-shot value and lives in log-Kelvin, so "+500 K" means one thing under
   tungsten and another in daylight. Correcting it in absolute Kelvin would put
   the schema's biggest accuracy lever on the wrong scale.
+
+**Shoots already folded into training are excluded.** Once `learn` has fitted the
+model on a shoot's answers, the model reproduces them better than it ever would
+on a new one, and calibrating there would read that back as "the predictions are
+nearly right". Held-out evidence is the only kind this tool accepts anywhere
+else. `--include-trained` overrides it and says what it is doing.
 
 Only **half** of each measured correction is applied (`--shrink`). Calibrating
 again after the next shoot takes half of what is left, so the loop converges
@@ -297,6 +315,30 @@ The weighted ridge is ordinary weighted least squares — weight 3 gives exactly
 the fit of the same row repeated three times (verified to 3e-16), and an
 all-ones weight vector reproduces the unweighted solve bit for bit, so every
 dataset written before this existed trains identically.
+
+`learn` also marks the shoot's observations `trainedOn` in the journal. They stay
+there — they are still a true record of what happened — but they are held out of
+calibration from then on, because the model has seen their answers.
+
+## The loop, in one command
+
+`shoots develop refine <shoot>` runs `feedback` → `learn` → `calibrate` with the
+conventional paths. The order is not a preference:
+
+- `feedback` first because it is the only step that captures the (predicted,
+  corrected) pair, and the journal outlives `clean` while the shoot's working
+  files do not.
+- `calibrate` last because `learn` writes a whole new profile and any calibration
+  on the old one goes with it.
+
+`--measure-only` stops after `feedback`, for when you want the number without
+changing the model. `--dry-run` prints the plan.
+
+One honest consequence, visible on every first run: right after `learn`, the
+shoot it just learned from can no longer measure the model, so `calibrate`
+usually has nothing to say and says so. That is correct — inventing an offset
+from evidence the model was fitted on is exactly the mistake the held-out rule
+exists to prevent — and `refine` still exits successfully.
 
 ## Session context — what the rest of the shoot looks like
 

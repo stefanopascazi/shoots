@@ -7,12 +7,18 @@
  * last week's dataset went:
  *   init     export + train, from an edited catalog → a reusable style profile.
  *   edit     export + predict, over one shoot → sidecars next to the photographs.
- *   feedback how much of that prediction survived contact with the photographer.
- *   calibrate fix what the model is wrong by on average — a constant offset.
- *   learn    refit it on the shoot you just developed, weighted by how much of
- *            the prediction you had to change. Calibrate moves the average;
- *            only this can move the part that varies photograph to photograph.
+ *   refine   the whole loop after you develop a shoot: feedback + learn +
+ *            calibrate, in the only order that works. Reach for this one.
  *   status   what this machine holds.   clean  drop the per-shoot working files.
+ *
+ * …the three steps `refine` wraps, when you want one of them on its own:
+ *   feedback how much of that prediction survived contact with the photographer.
+ *   learn    refit on the shoot you just developed, weighted by how much of the
+ *            prediction you had to change — the only step that can move the part
+ *            that varies photograph to photograph.
+ *   calibrate fix what the model is wrong by on average — a constant offset.
+ *            Must follow `learn`: a refit writes a new profile and the offsets
+ *            go with the old one.
  *
  * …over the individual steps, which stay available whenever the convention is
  * not what you want:
@@ -35,6 +41,7 @@ import { runPredict } from '../develop/commands/predict.js';
 import { runFeedback } from '../develop/commands/feedback.js';
 import { runCalibrate } from '../develop/commands/calibrate.js';
 import { runLearn } from '../develop/commands/learn.js';
+import { runRefine } from '../develop/commands/refine.js';
 import { runDiagnose } from '../develop/commands/diagnose.js';
 import { runInit, runEdit } from '../develop/commands/pipeline.js';
 import { runClean } from '../develop/commands/clean.js';
@@ -43,7 +50,7 @@ import { runStatus } from '../develop/commands/status.js';
 export function registerDevelopCommand(program: Command): void {
   const develop = program
     .command('develop')
-    .description('Personal develop prediction: init → edit → feedback → calibrate / learn (local "Lightroom AI", global look only)');
+    .description('Personal develop prediction: init → edit → refine (local "Lightroom AI", global look only)');
 
   develop
     .command('init')
@@ -170,6 +177,31 @@ export function registerDevelopCommand(program: Command): void {
     .action(runFeedback);
 
   develop
+    .command('refine')
+    .description('Close the loop on a developed shoot: feedback + learn + calibrate, in the only order that works')
+    .argument('<path>', 'the shoot you ran `develop edit` on and have since developed')
+    .option('--shoot-dir <dir>', "the shoot's working directory, if not the conventional one")
+    .option('--data <file>', 'training dataset to fold into (default: ~/.shoots/develop/export/export.jsonl)')
+    .option('--profile <file>', 'profile to refit and calibrate (default: ~/.shoots/develop/profile/export.json)')
+    .option('--journal <file>', 'feedback journal (default: ~/.shoots/develop/feedback.jsonl)')
+    .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
+    .option('--measure-only', 'stop after feedback: record what you kept, change nothing')
+    .option('--name <name>', 'profile name', 'my-style')
+    .option('--min-weight <n>', 'floor for a frame you accepted wholesale', (v) => parseFloat(v))
+    .option('--max-weight <n>', 'ceiling for a frame you overhauled', (v) => parseFloat(v))
+    .option('--shrink <n>', 'fraction of each measured correction to apply', (v) => parseFloat(v))
+    .option('--min-shoots <n>', 'shoots a parameter needs before it is offset', (v) => parseInt(v, 10))
+    .option('--lambda <n>', "ridge strength, or 'auto' to pick one per parameter", 'auto')
+    .option('--folds <k>', 'cross-validation folds', (v) => parseInt(v, 10), 5)
+    .option('--group-by <mode>', 'held-out folds: folder (capture sessions) | none (leakage-prone)', 'folder')
+    .option('--gate-threshold <n>', 'skill at or below which a param falls back to your constant', (v) => parseFloat(v), 0.02)
+    .option('--embedding-dim <k>', 'CLIP components to keep (0 drops it)', (v) => parseInt(v, 10))
+    .option('--dry-run', 'print the steps and the paths, write nothing')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runRefine);
+
+  develop
     .command('learn')
     .description('Fold a shoot you have developed back into training, weighted by how much you changed')
     .argument('<path>', 'the shoot folder you ran `develop edit` on and have since developed')
@@ -198,7 +230,8 @@ export function registerDevelopCommand(program: Command): void {
     .option('--profile <file>', 'profile to calibrate (default: ~/.shoots/develop/profile/export.json)')
     .option('--journal <file>', 'journal to read (default: ~/.shoots/develop/feedback.jsonl)')
     .option('--shrink <n>', 'fraction of each measured correction to apply', (v) => parseFloat(v))
-    .option('--min-images <n>', 'comparisons a parameter needs before it is offset', (v) => parseInt(v, 10))
+    .option('--min-shoots <n>', 'shoots a parameter needs before it is offset', (v) => parseInt(v, 10))
+    .option('--include-trained', 'also use shoots already folded into training (optimistic — it says so)')
     .option('--imported-only', 'use only observations still carrying the rendering `predict` wrote')
     .option('--reset', 'remove the calibration and leave the model as trained')
     .option('--dry-run', 'show the decision, write nothing')

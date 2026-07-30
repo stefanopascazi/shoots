@@ -222,9 +222,8 @@ shoots develop edit ~/Shoots/2026-07-new
 # after developing them in Lightroom, see how much of the prediction survived
 shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-new/prediction.json
 
-# every so often — fix the average, then refit on the shoot itself
-shoots develop calibrate
-shoots develop learn ~/Shoots/2026-07-new
+# close the loop: feedback + learn + calibrate, in the only order that works
+shoots develop refine ~/Shoots/2026-07-new
 ```
 
 `init` runs `export --edited-only` then `train`; `edit` runs `export` then

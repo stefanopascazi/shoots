@@ -16,6 +16,7 @@ shoots develop <subcommand> [options]
 | [`init`](#shoots-develop-init) | Learn your style from an edited catalog (`export` + `train`) |
 | [`edit`](#shoots-develop-edit) | Develop a shoot with it (`export` + `predict`) |
 | [`feedback`](#shoots-develop-feedback) | How much of that prediction you kept |
+| [`refine`](#shoots-develop-refine) | Close the loop on a developed shoot: `feedback` + `learn` + `calibrate` |
 | [`calibrate`](#shoots-develop-calibrate) | Fix what it is wrong by on average (a constant offset) |
 | [`learn`](#shoots-develop-learn) | Refit on a shoot you developed, weighted by how much you changed |
 | [`status`](#shoots-develop-status) | What this machine holds |
@@ -49,15 +50,8 @@ shoots develop init ~/Catalogs/2025
 # per shoot — sidecars land next to the photographs
 shoots develop edit ~/Shoots/2026-07-19
 
-# after developing them in Lightroom
-shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-19/prediction.json
-
-# every so often — fix what it is wrong by on average
-shoots develop calibrate --dry-run
-shoots develop calibrate
-
-# and fold the shoot itself back into training, weighted by your corrections
-shoots develop learn ~/Shoots/2026-07-19
+# after developing them in Lightroom — the whole loop, in order
+shoots develop refine ~/Shoots/2026-07-19
 
 # when the working files pile up
 shoots develop clean
@@ -645,7 +639,8 @@ shoots develop calibrate [options]
 | `--profile <file>` | `~/.shoots/develop/profile/export.json` | Profile to calibrate |
 | `--journal <file>` | `~/.shoots/develop/feedback.jsonl` | Journal to read |
 | `--shrink <n>` | `0.5` | Fraction of each measured correction to apply |
-| `--min-images <n>` | `10` | Comparisons a parameter needs before it is offset |
+| `--min-shoots <n>` | `4` | Shoots a parameter needs before it is offset |
+| `--include-trained` | off | Also use shoots already folded into training (optimistic — it says so) |
 | `--imported-only` | off | Use only observations still carrying the rendering `predict` wrote |
 | `--reset` | off | Remove the calibration, leaving the model as trained |
 | `--dry-run` | off | Show the decision, write nothing |
@@ -658,25 +653,41 @@ shoots develop calibrate [options]
   21/21 still carry the rendering we wrote (100% — evidence the sidecars were imported)
   applying 50% of each measured correction, from 10 comparisons up
 
-  color — 20 images, 24 parameters offset
-    param                           n    up/down   sigma   measured   applied
-    SplitToningShadowHue            20      0/20     4.5     -18.71     -9.36
-    Saturation                      20      18/2     3.6      +3.71     +1.85
-    Contrast2012                    20      13/3     2.5      +1.18     +0.59
-    Temperature                     20     10/10     0.0      -0.01      —     (no direction)
+  color — 385 images across 5 shoots, 3 parameters offset
+    param                        shoots   up/down   sigma   measured   applied
+    SplitToningShadowHue              5      0/5      2.2     -18.71     -9.36
+    Saturation                        5      5/0      2.2      +3.71     +1.85
+    Contrast2012                      5      4/1      1.3      +1.18      0.00   (no direction)
 ```
 
 | Column | Meaning |
 | --- | --- |
-| `n` | Comparisons behind the estimate — **every** prediction, not only the ones somebody moved, because the offset applies to every prediction |
-| `up/down` | How the corrections split by direction. This is the test: a lopsided split is a constant, an even one is noise |
-| `sigma` | How lopsided, in standard deviations of a fair coin. Below 2 nothing is applied |
-| `measured` | The median correction. Median, not mean, so one photograph edited from scratch cannot drag it |
+| `shoots` | **Shoots** behind the estimate, not photographs — a take edited by pasting settings across it is one decision, not four hundred |
+| `up/down` | How the *shoots* split by direction. This is the test: a lopsided split is a habit, an even one is one job differing from another |
+| `sigma` | How lopsided, in standard deviations of a fair coin. Below 2 nothing is applied — which puts the hard floor at four shoots, since three unanimous only reach 1.73 |
+| `measured` | Median across shoots, of the median within each shoot. Median at both levels, so neither one odd frame nor one odd job can drag it |
 | `applied` | …after `--shrink`. Half, by default |
 
 White balance is corrected as a **ratio**, not in absolute Kelvin: Temperature is
 anchored to the as-shot value and lives in log-Kelvin, so a constant there is a
 multiplier. The `measured` column shows log units for those parameters.
+
+### One shoot is one vote
+
+A take is edited by pasting settings across it, so counting photographs counts a
+single styling decision hundreds of times. Measured on a simulated wedding — 400
+frames pushed +6 against two smaller shoots pulling −5 and −6 — counting per
+photograph reported **16 sigma** of confidence and applied **+3, the direction
+two shoots out of three disagreed with**. Per shoot the same evidence gives 0.6
+sigma and applies nothing, which is the honest answer for three shoots.
+
+This is the reasoning that already makes the trainer hold out whole folders. It
+matters to an amateur too: six shoots of eight frames are six votes, not 48.
+
+Shoots already folded into training by [`learn`](#shoots-develop-learn) are
+**excluded** — the model was fitted on their answers and reproduces them better
+than it ever would on a new shoot, which would read back as "the predictions are
+nearly right". `--include-trained` overrides that and says what it is doing.
 
 ### Why it only ever proposes a constant
 
@@ -699,6 +710,49 @@ you *edited* rather than files you *approved*.
 > The offsets sit beside the model in `profile.calibration`, never merged into
 > its weights — `--reset` takes them back, `predict` reports how many it carries,
 > and a retrain invalidates them (both `predict` and `status` say so).
+
+---
+
+## `shoots develop refine`
+
+Close the loop on a shoot you have developed: `feedback` → `learn` → `calibrate`,
+with the conventional paths, in the only order that works.
+
+```
+shoots develop refine <shoot> [options]
+```
+
+### Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `<shoot>` | **required** | The folder you ran `develop edit` on and have since developed |
+| `--measure-only` | off | Stop after `feedback`: record what you kept, change nothing |
+| `--shoot-dir <dir>` | conventional | The shoot's working directory, if not the usual one |
+| `--data`, `--profile`, `--journal` | conventional | Paths for the three steps |
+| `--dry-run` | off | Print the steps and the paths, write nothing |
+
+It also takes the flags of the steps it wraps: `--min-weight` / `--max-weight`
+(from `learn`), `--shrink` / `--min-shoots` (from `calibrate`), and the `train`
+flags `--lambda`, `--folds`, `--group-by`, `--gate-threshold`, `--embedding-dim`.
+
+### Why the order is fixed
+
+| Step | Why there |
+| --- | --- |
+| `feedback` | The only step that captures the (predicted, corrected) pair. The journal outlives `clean`; the shoot's working files do not. |
+| `learn` | Refits with the shoot folded in, weighted. The only step that moves the part of the prediction that varies photograph to photograph. |
+| `calibrate` | Re-measures the constant offsets **against the model that just came out of `learn`**. |
+
+`learn` writes a whole new profile, so a `calibrate` run before it is silently
+thrown away. That is the whole reason this command exists.
+
+> **Expect `calibrate` to say "nothing to re-measure" right after a refit**, and
+> especially on your first few shoots. The shoot it just learned from can no
+> longer measure the model — it was fitted on those answers — and four shoots of
+> held-out evidence is the floor for an offset. Inventing one from evidence the
+> model has already seen is exactly the mistake the held-out rule prevents, so
+> `refine` reports it and exits successfully.
 
 ---
 

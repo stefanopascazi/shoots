@@ -218,16 +218,9 @@ shoots develop init ~/Catalogs/2025-edited
 # per shoot — sidecars land next to the photographs, ready for Lightroom
 shoots develop edit ~/Shoots/2026-07-new
 
-# after developing them, how much of the prediction did you keep?
-shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-new/prediction.json
-
-# every so often — fix what it is wrong by on average
-shoots develop calibrate --dry-run
-shoots develop calibrate
-
-# and refit on the shoot itself, weighted by how much you corrected
-shoots develop learn ~/Shoots/2026-07-new --dry-run
-shoots develop learn ~/Shoots/2026-07-new
+# after developing them — close the loop: feedback + learn + calibrate
+shoots develop refine ~/Shoots/2026-07-new --dry-run
+shoots develop refine ~/Shoots/2026-07-new
 
 # housekeeping
 shoots develop status

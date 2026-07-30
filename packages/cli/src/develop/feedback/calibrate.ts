@@ -29,19 +29,29 @@ import {
   type DevelopParam,
   type Treatment,
 } from '../develop/schema.js';
+import { sessionKey } from '../develop/session.js';
 import { tolerance } from './stats.js';
 import type { FeedbackObservation } from './journal.js';
 
 /** Correction shrunk toward zero before it is applied. See {@link estimateOffsets}. */
 export const DEFAULT_SHRINK = 0.5;
-/** Comparisons a parameter needs before an offset is estimated for it at all. */
-export const DEFAULT_MIN_IMAGES = 10;
+/**
+ * Shoots a parameter needs before an offset is estimated for it at all.
+ *
+ * Four, and not by taste: the direction test wants two sigma of a fair coin, and
+ * three shoots agreeing unanimously only reach 3/√3 = 1.73. Anything below four
+ * could never pass, so a lower floor would only promise evidence it cannot
+ * deliver.
+ */
+export const DEFAULT_MIN_SHOOTS = 4;
 
 export interface ParamOffset {
   key: string;
-  /** Comparisons behind it. */
+  /** Comparisons behind it — context only; the decision is made per shoot. */
   n: number;
-  /** …of those, how many the photographer moved up and down. */
+  /** Shoots that had something to say about this parameter. */
+  shoots: number;
+  /** …of those, how many leaned up and down. */
   up: number;
   down: number;
   /** The measured correction, in the parameter's own correction space. */
@@ -57,6 +67,7 @@ export interface ParamOffset {
 export interface CalibrationEstimate {
   treatment: Treatment;
   images: number;
+  shoots: number;
   /** Offsets that passed both gates, keyed by param. */
   offsets: Record<string, number>;
   /** Every parameter considered, including the rejected ones — this is the report. */
@@ -90,63 +101,89 @@ const median = (xs: number[]): number => {
 /**
  * The offsets one branch's predictions should carry.
  *
- * Three decisions worth stating, because none of them is the obvious one:
+ * Four decisions, and the first one is the one that matters:
  *
- *  - **Every comparison counts, not only the ones somebody moved.** The report
- *    quotes bias over engaged corrections, which answers "when you correct this,
- *    by how much". An offset is applied to *every* prediction, so it has to be
- *    estimated over every prediction — a slider left at neutral on nine images
- *    out of ten is nine votes for leaving the offset alone, and dropping them
- *    would push the whole shoot off neutral to chase one photograph.
- *  - **Median, not mean.** The tool reports MAE throughout, and the median is
- *    what minimizes it. It also survives the failure this cannot detect: one
- *    photograph edited from scratch instead of from our sidecar is an outlier,
- *    and an outlier moves a mean and not a median.
- *  - **A sign test, not a t-test.** The question is whether the corrections lean
- *    one way, which is exactly what the count of ups against downs answers, and
- *    it assumes nothing about a distribution that is heavy-tailed and clipped at
- *    both ends. Two sigma of a fair coin is the bar.
+ *  - **One shoot is one vote, not one photograph.** A shoot is dozens or hundreds
+ *    of near-identical frames edited by pasting settings across the take, so
+ *    counting photographs counts a single styling decision as many independent
+ *    ones. Measured on a simulated wedding — 400 frames pushed +6, against two
+ *    smaller shoots pulling −5 and −6 — the per-photograph test reported 16 sigma
+ *    of confidence and applied +3, in the direction two shoots out of three
+ *    disagreed with. Per shoot the same evidence gives 0.6 sigma and applies
+ *    nothing, which is the honest answer for three shoots. This is the same
+ *    reasoning that makes the trainer hold out whole folders; calibration had no
+ *    business ignoring it.
+ *  - **Every comparison counts inside a shoot, not only the ones somebody moved.**
+ *    The report quotes bias over engaged corrections, which answers "when you
+ *    correct this, by how much". An offset is applied to *every* prediction, so
+ *    within a shoot it is estimated over every prediction — a slider left at
+ *    neutral on nine frames out of ten is nine votes for leaving it alone.
+ *  - **Median at both levels.** Within a shoot it resists the one photograph
+ *    edited from scratch rather than from our sidecar; across shoots it resists
+ *    the one job that was nothing like the others. The tool reports MAE
+ *    throughout, and the median is what minimizes it.
+ *  - **A sign test, not a t-test.** Whether the shoots lean one way is exactly
+ *    what a count of ups against downs answers, and it assumes nothing about a
+ *    distribution that is heavy-tailed and clipped at both ends.
  */
 export function estimateOffsets(
   observations: readonly FeedbackObservation[],
   treatment: Treatment,
-  options: { shrink?: number; minImages?: number } = {},
+  options: { shrink?: number; minShoots?: number } = {},
 ): CalibrationEstimate {
   const shrink = options.shrink ?? DEFAULT_SHRINK;
-  const minImages = options.minImages ?? DEFAULT_MIN_IMAGES;
+  const minShoots = options.minShoots ?? DEFAULT_MIN_SHOOTS;
   const pool = observations.filter((o) => o.treatment === treatment);
   const eligible = new Set(paramsForTreatment(treatment).map((p) => p.key));
+
+  // The capture folder, the same unit the trainer holds out by. A photographer
+  // organises by shoot, and a shoot is where settings get pasted around.
+  const bySession = new Map<string, FeedbackObservation[]>();
+  for (const o of pool) {
+    const key = sessionKey(o.file);
+    bySession.set(key, [...(bySession.get(key) ?? []), o]);
+  }
+  const sessions = [...bySession.values()];
 
   const params: ParamOffset[] = [];
   const offsets: Record<string, number> = {};
 
   for (const param of DEVELOP_PARAMS) {
     if (!eligible.has(param.key)) continue;
-    const deltas: number[] = [];
-    let up = 0;
-    let down = 0;
     const tol = tolerance(param.key);
+    /** One entry per shoot: that shoot's correction for this parameter. */
+    const votes: number[] = [];
+    /** The same in slider units, for the direction test where the tolerance lives. */
+    const votesRaw: number[] = [];
+    let images = 0;
 
-    for (const o of pool) {
-      const predicted = o.predicted[param.key];
-      const current = o.actual[param.key];
-      if (predicted === undefined || current === undefined) continue;
-      deltas.push(toCorrectionSpace(param, current) - toCorrectionSpace(param, predicted));
-      // The direction test stays in slider units, where the tolerance is defined:
-      // it asks "did they move it", not "by how much in log space".
-      if (current - predicted > tol) up++;
-      else if (predicted - current > tol) down++;
+    for (const session of sessions) {
+      const deltas: number[] = [];
+      const raw: number[] = [];
+      for (const o of session) {
+        const predicted = o.predicted[param.key];
+        const current = o.actual[param.key];
+        if (predicted === undefined || current === undefined) continue;
+        deltas.push(toCorrectionSpace(param, current) - toCorrectionSpace(param, predicted));
+        raw.push(current - predicted);
+      }
+      if (deltas.length === 0) continue;
+      images += deltas.length;
+      votes.push(median(deltas));
+      votesRaw.push(median(raw));
     }
 
-    if (deltas.length === 0) continue;
+    if (votes.length === 0) continue;
+    const up = votesRaw.filter((d) => d > tol).length;
+    const down = votesRaw.filter((d) => d < -tol).length;
     const decided = up + down;
     const sigma = decided > 0 ? Math.abs(up - down) / Math.sqrt(decided) : 0;
-    const measured = median(deltas);
+    const measured = median(votes);
 
     const row: ParamOffset = {
-      key: param.key, n: deltas.length, up, down, measured, offset: 0, sigma,
+      key: param.key, n: images, shoots: votes.length, up, down, measured, offset: 0, sigma,
     };
-    if (deltas.length < minImages) row.rejected = 'too-few';
+    if (votes.length < minShoots) row.rejected = 'too-few';
     else if (sigma < 2) row.rejected = 'no-direction';
     else {
       // Shrunk on purpose. The measured offset is the best guess under anchoring
@@ -159,7 +196,20 @@ export function estimateOffsets(
     params.push(row);
   }
 
-  return { treatment, images: pool.length, offsets, params };
+  return { treatment, images: pool.length, shoots: sessions.length, offsets, params };
+}
+
+/**
+ * Observations the model has not been fitted on — the only ones that can measure
+ * its error.
+ *
+ * Once `develop learn` folds a shoot into the training set, the model has seen
+ * those answers and reproduces them better than it ever would on a new shoot.
+ * Calibrating on them would read that back as "the predictions are nearly right"
+ * and quietly shrink every offset toward nothing.
+ */
+export function heldOut(observations: readonly FeedbackObservation[]): FeedbackObservation[] {
+  return observations.filter((o) => !o.trainedOn);
 }
 
 /**
