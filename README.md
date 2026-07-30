@@ -1,3 +1,5 @@
+<img src="assets/shoots.png" alt="" width="88" align="right"/>
+
 # shoots
 
 Scriptable batch automation for professional photography workflows.

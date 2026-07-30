@@ -31,11 +31,13 @@ tools/
   match/      Preference-learning duel tool. Deliberately OUTSIDE the workspaces.
 
 scripts/
-  build-binary.ts            Bun single-binary build
+  build-binary.ts            Bun single-binary build (+ Windows executable metadata)
+  generate-icon.ts           Application icon: assets/shoots.{svg,ico,png}
   prepare-tool-mirror.ts     exiftool archives for the mirror
   prepare-libraw-mirror.ts   LibRaw dcraw_emu, cross-built
   prepare-model-mirror.ts    CLIP ONNX archive + precomputed text embeddings
 
+assets/       Brand assets (icon source + generated .ico/.png), committed
 examples/     Sample pipeline configs
 docs/         This documentation
 test/         Tests
@@ -116,6 +118,40 @@ Output lands in `dist-bin/`. The binary embeds `onnxruntime-node` (MIT) and
 `sharp`'s native addons, which is why builds are **per-arch** — there is no
 universal macOS build, and Intel macOS is not produced at all (no reliable Intel
 CI runner).
+
+### Executable identity
+
+A Bun-compiled executable inherits Bun's own resources unless we replace them,
+so the build stamps ours (Windows only — ELF and Mach-O have no equivalent
+metadata section):
+
+| PE field | Value | Source |
+| --- | --- | --- |
+| ProductName | `shoots` | `scripts/build-binary.ts` |
+| CompanyName | author name | root `package.json` → `author` |
+| FileDescription | product description | `packages/cli/package.json` → `description` |
+| FileVersion / ProductVersion | `X.Y.Z.0` | root `package.json` → `version` |
+| LegalCopyright | copyright + license | `LICENSE` (`Required Notice:`) + `license` |
+| Icon | `assets/shoots.ico` | `npm run build:icon` |
+
+Nothing here needs editing on a version bump. Verify a build with
+`(Get-Item dist-bin\shoots.exe).VersionInfo` on Windows.
+
+`assets/shoots.ico` (plus the `.svg` source and a 512px `.png` for docs) is
+**committed**, and regenerated only when the mark changes:
+
+```sh
+npm run build:icon                # bun scripts/generate-icon.ts
+```
+
+Two things stay Bun's: the PE `InternalName` field, which its compiler does not
+expose, and the "unknown publisher" warning in SmartScreen/UAC — that one is
+about Authenticode signing, not metadata, and needs a code-signing certificate.
+
+Runtime branding is covered separately: `packages/cli/src/crash.ts` claims
+`uncaughtException` / `unhandledRejection` so a crash reports as `shoots`
+instead of printing Bun's `Bun v1.x.y (…)` banner and `B:/~BUN/root/…` paths.
+`SHOOTS_DEBUG=1` restores the stack trace.
 
 ---
 

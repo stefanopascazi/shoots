@@ -18,6 +18,7 @@
     "clean": "node -e \"for (const p of ['core','imaging','inference','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
     "shoots": "node packages/cli/dist/cli.js",
     "build:binary": "bun scripts/build-binary.ts",
+    "build:icon": "bun scripts/generate-icon.ts",
     "preversion": "npm run typecheck && npm run build",
     "postversion": "git push origin main && git push origin --tags"
   },

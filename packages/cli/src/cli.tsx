@@ -16,7 +16,11 @@ import { registerSetupCommand } from './commands/setup.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerUpdateCommand } from './commands/update.js';
 import { assertShellCatalogInSync } from './shell/catalog.js';
+import { installCrashHandlers } from './crash.js';
 import { VERSION } from './version.js';
+
+// Before anything else: keep the runtime's own crash banner out of our output.
+installCrashHandlers();
 
 const program = new Command();
 

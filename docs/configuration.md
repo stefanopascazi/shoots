@@ -95,6 +95,12 @@ export SHOOTS_MODELS_BASEURL=https://artifacts.studio.internal/shoots/models
 shoots setup
 ```
 
+### Diagnostics
+
+| Variable | Effect |
+| --- | --- |
+| `SHOOTS_DEBUG` | Print the full stack trace when an unexpected error escapes a command (see `packages/cli/src/crash.ts`). Off by default: batch output stays one readable `error:` line. |
+
 ### Build-time only
 
 `SHOOTS_VERSION` and `SHOOTS_AUTHOR` are **not** runtime environment variables.

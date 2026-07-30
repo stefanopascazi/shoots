@@ -18,6 +18,10 @@
  * cache directory (addon + its libraries side by side), and load the addon
  * from there.
  *
+ * On Windows the executable is also stamped with our own PE resources (product
+ * name, publisher, version, description, copyright, icon) so it never presents
+ * itself as Bun — see `windowsMetadata()`.
+ *
  * NOTE: only the ONNX *runtime* is embedded here — the model *weights* are not.
  * Weights are downloaded on demand into ~/.shoots/models (see @shoots/inference
  * provisioning), mirroring how exiftool is provisioned.
@@ -52,9 +56,79 @@ const sharpVersion = pkgVersion(path.join(nodeModules, 'sharp'));
 const shootsPkg = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8')) as {
   version: string;
   author?: string;
+  license?: string;
 };
 const shootsVersion = shootsPkg.version;
 const shootsAuthor = shootsPkg.author ?? '';
+
+// ---------------------------------------------------------------------------
+// Executable identity (Windows PE resources)
+// ---------------------------------------------------------------------------
+//
+// Without these, the compiled binary inherits Bun's own resources: it shows up
+// as "Bun" by "oven-sh" in Explorer's details pane, in the UAC prompt, in
+// SmartScreen warnings and in task manager. Everything below is derived from
+// files already in the repo so a version bump needs no edit here.
+
+/** `Stefano Pascazi <mail@example.com>` -> `Stefano Pascazi`. */
+const publisher = shootsAuthor.replace(/\s*[<(].*$/, '').trim();
+
+/** The CLI package owns the user-facing product description. */
+const productDescription = (
+  JSON.parse(readFileSync(path.join(repoRoot, 'packages', 'cli', 'package.json'), 'utf8')) as {
+    description?: string;
+  }
+).description;
+
+/**
+ * PE's FIXEDFILEINFO is four 16-bit numbers, so semver prereleases/build
+ * metadata cannot be represented: `0.5.0-rc.1` becomes `0.5.0.0`. The exact
+ * version stays available at runtime via `shoots --version`.
+ */
+function peVersion(semver: string): string {
+  const parts = semver.replace(/[-+].*$/, '').split('.');
+  while (parts.length < 4) parts.push('0');
+  return parts.slice(0, 4).join('.');
+}
+
+/**
+ * Reuse the copyright line the license file already carries, so the binary, the
+ * LICENSE and the release page can never drift apart.
+ */
+function copyrightLine(): string {
+  const license = readFileSync(path.join(repoRoot, 'LICENSE'), 'utf8');
+  const notice = /^Required Notice:\s*(.+?)\s*$/m.exec(license)?.[1];
+  const year = notice ? /\d{4}/.exec(notice)?.[0] : undefined;
+  const holder = publisher || 'the shoots authors';
+  const base = `Copyright © ${year ?? new Date().getFullYear()} ${holder}`;
+  return shootsPkg.license ? `${base}. Licensed under ${shootsPkg.license}.` : `${base}.`;
+}
+
+const windowsIcon = path.join(repoRoot, 'assets', 'shoots.ico');
+
+/**
+ * Only Windows executables carry embeddable metadata, and the script only ever
+ * builds for the host (see the file header), so the host platform *is* the
+ * target platform. The icon is committed: a missing file means a broken
+ * checkout, not an optional extra — fail loudly rather than ship a Bun-branded
+ * binary.
+ */
+function windowsMetadata() {
+  if (hostPlatform !== 'win32') return undefined;
+  if (!existsSync(windowsIcon)) {
+    throw new Error(`missing executable icon at ${windowsIcon} (run: bun scripts/generate-icon.ts)`);
+  }
+  return {
+    title: 'shoots',
+    publisher,
+    version: peVersion(shootsVersion),
+    description: productDescription,
+    copyright: copyrightLine(),
+    icon: windowsIcon,
+    // Never hide the console: shoots is a terminal application.
+    hideConsole: false,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Generic native-addon embedding
@@ -280,6 +354,9 @@ const result = await Bun.build({
   plugins: [staticSharpLoader, staticOrtLoader, stubReactDevtools],
   compile: {
     outfile,
+    // Stamps ProductName / CompanyName / FileDescription / FileVersion /
+    // LegalCopyright and the shell icon into the .exe; ignored elsewhere.
+    windows: windowsMetadata(),
   },
   sourcemap: 'none',
 });
