@@ -640,7 +640,7 @@ shoots develop calibrate [options]
 | `--journal <file>` | `~/.shoots/develop/feedback.jsonl` | Journal to read |
 | `--shrink <n>` | `0.5` | Fraction of each measured correction to apply |
 | `--min-shoots <n>` | `4` | Shoots a parameter needs before it is offset |
-| `--include-trained` | off | Also use shoots already folded into training (optimistic — it says so) |
+| `--include-in-sample` | off | Also use observations the model was already fitted on (optimistic — it says so) |
 | `--imported-only` | off | Use only observations still carrying the rendering `predict` wrote |
 | `--reset` | off | Remove the calibration, leaving the model as trained |
 | `--dry-run` | off | Show the decision, write nothing |
@@ -684,10 +684,13 @@ sigma and applies nothing, which is the honest answer for three shoots.
 This is the reasoning that already makes the trainer hold out whole folders. It
 matters to an amateur too: six shoots of eight frames are six votes, not 48.
 
-Shoots already folded into training by [`learn`](#shoots-develop-learn) are
-**excluded** — the model was fitted on their answers and reproduces them better
-than it ever would on a new shoot, which would read back as "the predictions are
-nearly right". `--include-trained` overrides that and says what it is doing.
+What counts as held out is **where the prediction came from**, not where the
+photograph ended up. A pair recorded before its photograph became training data
+stays a genuine measurement forever — folding the file in afterwards cannot reach
+back and change a number already written down. Only a prediction made by a model
+that had *already* seen that photograph's answer is worthless, which takes going
+round the loop twice on one shoot. `feedback` marks those in-sample;
+`--include-in-sample` uses them anyway.
 
 ### Why it only ever proposes a constant
 
@@ -747,12 +750,12 @@ flags `--lambda`, `--folds`, `--group-by`, `--gate-threshold`, `--embedding-dim`
 `learn` writes a whole new profile, so a `calibrate` run before it is silently
 thrown away. That is the whole reason this command exists.
 
-> **Expect `calibrate` to say "nothing to re-measure" right after a refit**, and
-> especially on your first few shoots. The shoot it just learned from can no
-> longer measure the model — it was fitted on those answers — and four shoots of
-> held-out evidence is the floor for an offset. Inventing one from evidence the
-> model has already seen is exactly the mistake the held-out rule prevents, so
-> `refine` reports it and exits successfully.
+> **Expect `calibrate` to say nothing for your first three shoots.** Four is the
+> statistical floor for an offset, not a policy — three shoots agreeing
+> unanimously only reach 1.73 sigma. Steps 1 and 2 do their full work on every
+> pass regardless, and the journal only grows, so from the fourth shoot on the
+> third step contributes too and keeps contributing. `refine` reports it and
+> exits successfully either way.
 
 ---
 

@@ -231,11 +231,18 @@ Five decisions, and the first one is the one that matters:
   tungsten and another in daylight. Correcting it in absolute Kelvin would put
   the schema's biggest accuracy lever on the wrong scale.
 
-**Shoots already folded into training are excluded.** Once `learn` has fitted the
-model on a shoot's answers, the model reproduces them better than it ever would
-on a new one, and calibrating there would read that back as "the predictions are
-nearly right". Held-out evidence is the only kind this tool accepts anywhere
-else. `--include-trained` overrides it and says what it is doing.
+**What counts as held out is where the prediction came from, not where the
+photograph ended up.** A pair recorded before its photograph became training data
+is a genuine held-out measurement and stays one forever — folding the file in
+afterwards cannot reach back and change a number already written down. Only a
+prediction made *by a model that had already seen that photograph's answer* is
+worthless, and reaching that takes going round the loop twice on one shoot:
+`edit`, `learn`, then `edit` and `feedback` again. `feedback` flags those, and
+only those, as in-sample. `--include-in-sample` overrides it.
+
+An earlier version excluded everything `learn` had touched, which guarded against
+the wrong thing and broke the ordinary cycle: after one pass there was nothing
+left to calibrate on, ever.
 
 Only **half** of each measured correction is applied (`--shrink`). Calibrating
 again after the next shoot takes half of what is left, so the loop converges
@@ -316,9 +323,11 @@ the fit of the same row repeated three times (verified to 3e-16), and an
 all-ones weight vector reproduces the unweighted solve bit for bit, so every
 dataset written before this existed trains identically.
 
-`learn` also marks the shoot's observations `trainedOn` in the journal. They stay
-there — they are still a true record of what happened — but they are held out of
-calibration from then on, because the model has seen their answers.
+`learn` notes the shoot's photographs as training data in the journal. Their
+existing pairs keep calibrating — the predictions in them predate the fold. The
+note matters only for the next pass: a second prediction on the same shoot would
+come from a model that has seen the answer, and `feedback` marks that one
+in-sample.
 
 ## The loop, in one command
 
@@ -334,11 +343,11 @@ conventional paths. The order is not a preference:
 `--measure-only` stops after `feedback`, for when you want the number without
 changing the model. `--dry-run` prints the plan.
 
-One honest consequence, visible on every first run: right after `learn`, the
-shoot it just learned from can no longer measure the model, so `calibrate`
-usually has nothing to say and says so. That is correct — inventing an offset
-from evidence the model was fitted on is exactly the mistake the held-out rule
-exists to prevent — and `refine` still exits successfully.
+The journal grows monotonically, so `calibrate` is quiet for the first three
+shoots and contributes from the fourth on — four is the statistical floor, not a
+policy. `feedback` and `learn` do their work on every single pass regardless, so
+the loop never breaks; the third step simply has nothing to say until it has seen
+enough different jobs to tell a habit from one of them.
 
 ## Session context — what the rest of the shoot looks like
 

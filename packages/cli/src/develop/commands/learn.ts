@@ -198,12 +198,14 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
   for (const [name, xml] of refreshed.looks) looks.set(name, xml);
   await writeDataset(dataPath, [...merged.values()], base, looks, summary);
 
-  // These photographs are training data now. They stay in the journal — they are
-  // still a true record — but they can no longer measure the model's error, and
-  // `calibrate` has to know that before it reads them as "nearly right".
+  // These photographs are training data now. Their existing journal pairs stay
+  // fully usable — the predictions in them were made before the fold, so they are
+  // still held-out measurements. The mark matters for the *next* time round: a
+  // second prediction on the same shoot would come from a model that has seen the
+  // answer, and `feedback` flags that one as in-sample.
   const marked = await markTrainedOn(journalPath, refreshed.records.map((r) => r.file));
   if (marked > 0) {
-    printHuman(io, `      marked ${marked} journal observation(s) as trained-on — calibrate will hold them out`);
+    printHuman(io, `      noted ${marked} journal observation(s) as training data — they still calibrate; a re-edit of this shoot would not`);
   }
 
   if (!io.json) reportWeights(weighting.records, summary);

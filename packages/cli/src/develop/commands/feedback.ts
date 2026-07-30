@@ -92,6 +92,15 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
 
   const at = new Date().toISOString();
   const run = path.resolve(args.predictions);
+  const journalPath = args.journal === false ? null : typeof args.journal === 'string' ? path.resolve(args.journal) : developFeedbackPath();
+
+  // A photograph already folded into training means this prediction came from a
+  // model that had seen its answer, so the pair understates the error and cannot
+  // calibrate anything. Only reachable by going round the loop twice on one
+  // shoot; the ordinary first pass is a clean held-out measurement.
+  const alreadyTraining = new Set(
+    journalPath ? (await loadJournal(journalPath)).filter((o) => o.trainedOn).map((o) => o.file) : [],
+  );
   const observations: FeedbackObservation[] = [];
   let missing = 0;
 
@@ -103,13 +112,12 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
     }
     // The curve lives in its own tag, so lift it into the same per-knot keys the
     // prediction speaks before comparing.
-    observations.push(
-      buildObservation(prediction, withCurveTargets(edit.develop, edit.curve), {
-        at,
-        run,
-        render: { profile: edit.baseProfile, look: edit.look },
-      }),
-    );
+    const observation = buildObservation(prediction, withCurveTargets(edit.develop, edit.curve), {
+      at,
+      run,
+      render: { profile: edit.baseProfile, look: edit.look },
+    });
+    observations.push(alreadyTraining.has(prediction.file) ? { ...observation, inSample: true } : observation);
   }
 
   if (observations.length === 0) {
@@ -123,7 +131,6 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
   // The journal is what makes a small shoot readable, so it is on by default and
   // opting out is explicit. Its pool includes this run, whether or not the run
   // was the first one.
-  const journalPath = args.journal === false ? null : typeof args.journal === 'string' ? path.resolve(args.journal) : developFeedbackPath();
   let pool = observations;
   let recorded = false;
   if (journalPath) {

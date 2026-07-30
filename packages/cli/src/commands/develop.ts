@@ -231,7 +231,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--journal <file>', 'journal to read (default: ~/.shoots/develop/feedback.jsonl)')
     .option('--shrink <n>', 'fraction of each measured correction to apply', (v) => parseFloat(v))
     .option('--min-shoots <n>', 'shoots a parameter needs before it is offset', (v) => parseInt(v, 10))
-    .option('--include-trained', 'also use shoots already folded into training (optimistic — it says so)')
+    .option("--include-in-sample", "also use observations the model was already fitted on (optimistic — it says so)")
     .option('--imported-only', 'use only observations still carrying the rendering `predict` wrote')
     .option('--reset', 'remove the calibration and leave the model as trained')
     .option('--dry-run', 'show the decision, write nothing')

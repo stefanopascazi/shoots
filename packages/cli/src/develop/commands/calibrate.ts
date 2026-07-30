@@ -40,8 +40,8 @@ export interface CalibrateArgs {
   shrink?: number;
   /** Shoots a parameter needs before it is offset at all. */
   minShoots?: number;
-  /** Calibrate on shoots already folded into training too — optimistic, and says so. */
-  includeTrained?: boolean;
+  /** Include observations whose prediction came from a model fitted on that photograph. */
+  includeInSample?: boolean;
   /** Only use observations whose rendering still matches what `predict` wrote. */
   importedOnly?: boolean;
   /** Remove any calibration and leave the model as trained. */
@@ -102,17 +102,18 @@ export async function runCalibrate(args: CalibrateArgs): Promise<void> {
   // request: a photographer may have changed the base profile on purpose.
   const known = renderKnown(journal);
   const ours = fromOurSidecar(journal);
-  // Shoots already folded into training cannot measure the model's error: it was
-  // fitted on their answers. They stay in the journal and out of the estimate.
-  const usable = args.includeTrained ? journal : heldOut(journal);
+  // Only observations whose prediction was made by a model that had already seen
+  // the photograph are worthless. Being folded into training *after* the pair was
+  // recorded changes nothing about the pair — see heldOut().
+  const usable = args.includeInSample ? journal : heldOut(journal);
   const burned = journal.length - heldOut(journal).length;
   const pool = args.importedOnly ? usable.filter((o) => ours.includes(o)) : usable;
   if (pool.length === 0) {
     logError(
-      burned > 0 && !args.includeTrained
-        ? `all ${burned} observations have been folded into training by \`develop learn\`, so none of them can ` +
-            'measure this model any more — develop another shoot and run `develop feedback` first ' +
-            '(or --include-trained to calibrate on them anyway, knowing the estimate flatters the model)'
+      burned > 0 && !args.includeInSample
+        ? `all ${burned} observations were predicted by a model already fitted on those photographs, so none ` +
+            'of them can measure anything — develop a shoot the model has not been trained on ' +
+            '(or --include-in-sample to use them anyway, knowing the estimate flatters the model)'
         : '--imported-only left no observations: none of the journal still carries the rendering `predict` wrote',
     );
     process.exitCode = 2;

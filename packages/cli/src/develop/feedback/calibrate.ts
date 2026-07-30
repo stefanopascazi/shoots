@@ -200,16 +200,22 @@ export function estimateOffsets(
 }
 
 /**
- * Observations the model has not been fitted on — the only ones that can measure
- * its error.
+ * Observations that can still measure a model's error.
  *
- * Once `develop learn` folds a shoot into the training set, the model has seen
- * those answers and reproduces them better than it ever would on a new shoot.
- * Calibrating on them would read that back as "the predictions are nearly right"
- * and quietly shrink every offset toward nothing.
+ * The bar is where the *prediction* came from, not where the photograph ended
+ * up. A pair recorded before the photograph became training data is a genuine
+ * held-out measurement and stays one forever — folding the file into the
+ * training set afterwards cannot reach back and change a number already written
+ * down. Only a prediction made *by a model that had already seen this
+ * photograph's answer* is worthless, and that takes developing the same shoot
+ * twice around the loop.
+ *
+ * An earlier version of this excluded everything `learn` had touched, which
+ * guarded against the wrong thing and broke the ordinary edit → correct → learn
+ * cycle: after one pass there was nothing left to calibrate on, ever.
  */
 export function heldOut(observations: readonly FeedbackObservation[]): FeedbackObservation[] {
-  return observations.filter((o) => !o.trainedOn);
+  return observations.filter((o) => !o.inSample);
 }
 
 /**

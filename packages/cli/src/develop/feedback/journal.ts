@@ -47,15 +47,26 @@ export interface FeedbackObservation {
   predictedRender?: string;
   actualRender?: string;
   /**
-   * This photograph has since been folded into the training set by `develop
-   * learn`, so the model has seen its answer.
+   * This photograph is in the training set, folded in by `develop learn`.
    *
-   * It stays in the journal — it is still a true record of what happened — but it
-   * can no longer measure the model's error, because the model was fitted on it.
-   * Held-out evidence is the only kind this tool has ever accepted anywhere else;
-   * calibration is not the place to start making an exception.
+   * Provenance, not a verdict. The pair above is still a perfectly good held-out
+   * measurement — the prediction was made *before* the photograph became training
+   * data, and folding it in afterwards cannot reach back and contaminate a number
+   * already written down. What it does mean is that the *next* prediction for
+   * this file will come from a model that has seen its answer; see
+   * {@link FeedbackObservation.inSample}.
    */
   trainedOn?: boolean;
+  /**
+   * The prediction in this record was made by a model already fitted on this
+   * photograph — so the gap between them understates the real error.
+   *
+   * Only reachable by developing the same shoot twice: `edit` it, `learn` from
+   * it, then `edit` and `feedback` it again. Rare, but it is the one case where
+   * an observation genuinely cannot measure anything, and it is worth one boolean
+   * to keep it out of the calibration rather than to ban a whole workflow.
+   */
+  inSample?: boolean;
 }
 
 export async function loadJournal(file: string): Promise<FeedbackObservation[]> {
@@ -93,7 +104,12 @@ export async function recordObservations(
 ): Promise<FeedbackObservation[]> {
   const merged = new Map<string, FeedbackObservation>();
   for (const existing of await loadJournal(file)) merged.set(existing.file, existing);
-  for (const fresh of observations) merged.set(fresh.file, fresh);
+  for (const fresh of observations) {
+    // `trainedOn` is a fact about the photograph, not about this measurement of
+    // it, so a newer observation inherits it rather than quietly clearing it.
+    const wasTrainedOn = merged.get(fresh.file)?.trainedOn;
+    merged.set(fresh.file, wasTrainedOn ? { ...fresh, trainedOn: true } : fresh);
+  }
 
   const pool = [...merged.values()];
   await mkdir(path.dirname(file), { recursive: true });
