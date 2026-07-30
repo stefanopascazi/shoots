@@ -70,6 +70,17 @@ export function developProfilePath(): string {
   return path.join(developHome(), 'profile', 'export.json');
 }
 
+/**
+ * Every (predicted, kept) observation `develop feedback` has ever recorded.
+ *
+ * Deliberately outside `export/`: everything under there is cache that `develop
+ * clean` may drop, and this is the one develop artifact that cannot be rebuilt —
+ * it describes photographs as they were the day they were developed.
+ */
+export function developFeedbackPath(): string {
+  return path.join(developHome(), 'feedback.jsonl');
+}
+
 /** Root under which each shoot `develop edit` touches keeps its working files. */
 export function developShootsDir(): string {
   return path.join(developHome(), 'export', 'shooting');

@@ -105,7 +105,8 @@ shoots develop train  --data <f> --name <n> --out <f> [--lambda auto|<n>] [--fol
 shoots develop predict --data <f> --profile <f> [--treatment auto|color|bw]
                                                 [--camera-profile <name>]
                                                 [--out <f>] [--xmp <dir>]
-shoots develop feedback --predictions <f> [--out <f>] [--json]
+shoots develop feedback --predictions <f> [--out <f>] [--journal <f>|--no-journal]
+                                          [--min-moved <n>] [--json]
 shoots develop diagnose --data <f> [--folds 5] [--max-k 4]
 
 # ── Maintenance ───────────────────────────────────────────────────────────────

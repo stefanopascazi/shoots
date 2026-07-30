@@ -546,9 +546,35 @@ shoots develop feedback --predictions <file> [options]
 | --- | --- | --- |
 | `--predictions <file>` | **required** | The JSON written by `develop predict --out` |
 | `--editor <id>` | `acr` | Which editor's develop settings to read |
-| `--out <file>` | — | Write the (predicted, corrected) pairs here as JSONL |
+| `--out <file>` | — | Write this run's (predicted, corrected) pairs here as JSONL |
+| `--journal <file>` | `~/.shoots/develop/feedback.jsonl` | Journal to accumulate into |
+| `--no-journal` | off | Measure this run without recording it |
+| `--min-moved <n>` | scaled to the pool | Comparisons a parameter needs to be listed |
 | `--json` | off | Machine-readable JSON on stdout |
 | `--verbose` | off | Verbose logging on stderr |
+
+### It accumulates — one shoot is not a measurement
+
+A per-parameter "kept %" over six images has a fifteen-point standard error, so
+the table has a floor under it. A shoot of ten photographs can never clear a flat
+floor of 20, which is why every run is also written to the journal and the
+breakdown is computed over **everything recorded so far** — this run's own
+acceptance is reported separately, above it.
+
+Observations are per image and say nothing about which shoot they came from, so
+ten shoots of eight are worth as much as one shoot of eighty. An amateur with
+small sets still gets an answer; it just takes six months instead of one
+afternoon.
+
+- The floor scales with the pool: never fewer than 3, never more than a quarter
+  of it, never more than 20. `--min-moved` overrides it.
+- Rows marked `·` cleared the floor on fewer than 20 comparisons — directional,
+  not yet a rate.
+- Newest wins per file, so re-running feedback on a shoot corrects the old
+  observation instead of counting it twice.
+- `develop status` reports how far the journal has got. `develop clean` never
+  removes it, `--all` or not: it records what photographs looked like the day
+  they were developed, and nothing can rebuild that.
 
 ### Why it is not `refresh-targets`
 
@@ -560,19 +586,23 @@ your style, and it is worth more per sample than a fresh catalog edit.
 ### Reading it
 
 ```
-  kept 3.5% of the parameters either of us moved
-       (55.1% counting the sliders we both left at neutral —
-        that number flatters the model and is not the one to quote)
+  this shoot  kept 3.4% of the parameters either of us moved
+              (58.4% counting the sliders we both left at neutral —
+               that number flatters the model and is not the one to quote)
+  journal     kept 3.6% over 21 images from 2 shoots
+
+  over the journal (21 images), listed from 6 comparisons up:
 
   param                           moved   kept   journey   corrected by   offset
   Temperature                       590     0%       91%         463.21   +86.62
   Highlights2012                    590     0%       51%          21.54    +4.16
   Clarity2012                       251     0%      -12%           8.27    -0.14
+  Dehaze                             14·    7%       22%           6.02    +1.30
 ```
 
 | Column | Meaning |
 | --- | --- |
-| `moved` | Comparisons where at least one of you left neutral. Agreeing that a slider stays at zero is not a prediction. |
+| `moved` | Comparisons where at least one of you left neutral. Agreeing that a slider stays at zero is not a prediction. `·` marks fewer than 20 — directional, not yet a rate. |
 | `kept` | Left untouched — the product metric. Held-out skill is its proxy. |
 | `journey` | How much of the move the prediction already made. Negative = further off than doing nothing. |
 | `corrected by` | Mean absolute correction, in slider units |

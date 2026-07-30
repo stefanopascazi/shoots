@@ -29,6 +29,8 @@ shoots develop clean                   # drop the per-shoot working files
 `edit` refuses to overwrite sidecars that already carry a real edit (`--force`
 proceeds), and all of them take `--dry-run`.
 
+`feedback` accumulates: see [the feedback journal](#the-feedback-journal).
+
 The steps underneath, for when the convention is not what you want:
 
 ```
@@ -141,6 +143,40 @@ rewards an exporter bug rather than a model.
 If the grouped number is not clearly positive on a real catalog, the signal is
 too weak to build the plugin on — stop and reconsider the baseline render
 strategy.
+
+## The feedback journal
+
+`develop feedback` answers the only question the cross-validated numbers cannot:
+when the tool hands you a starting point, how much of it do you keep? One shoot
+is rarely enough to answer it per parameter — a "kept %" over six images has a
+fifteen-point standard error — and the first version demanded 20 comparisons
+before it would print a row. On a shoot of ten, no parameter can reach 20, so the
+table was unconditionally empty and "your set is too small" arrived looking like
+a broken command.
+
+The observations are per *image* and carry nothing about which shoot they came
+from, so ten shoots of eight are worth exactly as much as one shoot of eighty —
+provided somebody keeps them. Every run appends to
+`~/.shoots/develop/feedback.jsonl` (`--no-journal` opts out, `--journal <file>`
+points elsewhere) and the breakdown is computed over the whole pool, with this
+run's acceptance reported separately above it. `develop status` says how far the
+journal has got; `develop clean` never touches it, `--all` or not — it is the one
+develop artifact nothing can rebuild, because it records what photographs looked
+like the day they were developed.
+
+Two details that follow:
+
+- **Raw pairs are stored, never the counts.** Tolerance, what counts as a slider
+  somebody moved, how journey is defined: each has already changed once. An
+  aggregate recorded under an old definition cannot be reinterpreted under a new
+  one; a `(predicted, actual)` pair can, forever.
+- **Newest wins per file.** Re-running feedback on a shoot, or developing the
+  same photograph a second time, corrects the old observation instead of voting
+  twice.
+
+The listing floor scales with the pool — never fewer than 3 comparisons, never
+more than a quarter of it, never more than the 20 a large pool can afford anyway.
+Rows a small pool only just clears are marked `·`: directional, not yet a rate.
 
 ## Session context — what the rest of the shoot looks like
 

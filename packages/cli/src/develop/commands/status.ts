@@ -8,7 +8,8 @@
 import path from 'node:path';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { developExportPath, developProfilePath, developShootsDir } from '@shoots/core';
+import { developExportPath, developFeedbackPath, developProfilePath, developShootsDir } from '@shoots/core';
+import { loadJournal, shootCount } from '../feedback/journal.js';
 import { makeIo, printHuman, printJson } from '../../io.js';
 import type { DevelopProfile } from '../types.js';
 
@@ -46,6 +47,8 @@ export async function runStatus(args: StatusArgs): Promise<void> {
     }
   }
   const shoots = existsSync(shootsDir) ? await readdir(shootsDir) : [];
+  const journalPath = developFeedbackPath();
+  const journal = await loadJournal(journalPath);
 
   if (io.json) {
     printJson({
@@ -61,6 +64,7 @@ export async function runStatus(args: StatusArgs): Promise<void> {
           }
         : { path: profilePath, exists: false },
       shoots,
+      journal: { path: journalPath, images: journal.length, shoots: shootCount(journal) },
     });
     return;
   }
@@ -84,8 +88,16 @@ export async function runStatus(args: StatusArgs): Promise<void> {
     printHuman(io, `Profile           none — run \`shoots develop init <catalog>\``);
   }
 
+  // The journal only grows, and only `develop feedback` grows it — so how far it
+  // has got is the one number telling you whether the per-parameter breakdown is
+  // worth reading yet.
+  printHuman(
+    io,
+    `\nFeedback journal  ${journal.length > 0 ? `${journal.length} images from ${shootCount(journal)} shoots` : 'empty — run `shoots develop feedback` after developing a shoot'}`,
+  );
+
   printHuman(io, `\nCached shoots     ${shoots.length}${shoots.length ? ` in ${shootsDir}` : ''}`);
   for (const name of shoots.slice(0, 10)) printHuman(io, `                  ${name}`);
   if (shoots.length > 10) printHuman(io, `                  … and ${shoots.length - 10} more`);
-  if (shoots.length > 0) printHuman(io, '\n`shoots develop clean` removes the cached shoots; the profile survives.');
+  if (shoots.length > 0) printHuman(io, '\n`shoots develop clean` removes the cached shoots; the profile and journal survive.');
 }

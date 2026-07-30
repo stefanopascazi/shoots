@@ -155,7 +155,10 @@ export function registerDevelopCommand(program: Command): void {
     .description('Compare a prediction against what you actually kept — the real-world quality metric')
     .requiredOption('--predictions <file>', 'predictions JSON from `shoots develop predict --out`')
     .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
-    .option('--out <file>', 'write the (predicted, corrected) pairs here as JSONL')
+    .option('--out <file>', "write this run's (predicted, corrected) pairs here as JSONL")
+    .option('--journal <file>', 'journal to accumulate into (default: ~/.shoots/develop/feedback.jsonl)')
+    .option('--no-journal', 'measure this run without recording it')
+    .option('--min-moved <n>', 'comparisons a parameter needs to be listed', (v) => parseInt(v, 10))
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runFeedback);

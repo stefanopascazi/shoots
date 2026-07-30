@@ -247,15 +247,27 @@ question the tool exists to answer is **how much of the starting point do you
 keep**, and only `develop feedback` measures it.
 
 ```
-  kept 3.5% of the parameters either of us moved
-       (55.1% counting the sliders we both left at neutral —
-        that number flatters the model and is not the one to quote)
+  this shoot  kept 3.4% of the parameters either of us moved
+              (58.4% counting the sliders we both left at neutral —
+               that number flatters the model and is not the one to quote)
+  journal     kept 3.6% over 21 images from 2 shoots
+
+  over the journal (21 images), listed from 6 comparisons up:
 
   param                           moved   kept   journey   corrected by   offset
   Temperature                       590     0%       91%         463.21   +86.62
   Highlights2012                    590     0%       51%          21.54    +4.16
   Clarity2012                       251     0%      -12%           8.27    -0.14
+  Dehaze                             14·    7%       22%           6.02    +1.30
 ```
+
+It accumulates, and it has to. A per-parameter rate over six images is noise, so
+the table has a floor under it — which means one shoot of ten photographs can
+never fill it in. Every run is therefore recorded in
+`~/.shoots/develop/feedback.jsonl` and the breakdown is computed over everything
+seen so far, with this run's own acceptance quoted separately above it. Ten
+shoots of eight carry the same signal as one shoot of eighty; `develop status`
+says how far along the journal is, and `develop clean` never touches it.
 
 - **kept** — left untouched. The product metric; held-out skill is its proxy.
 - **journey** — how much of the move the prediction already made. Negative means

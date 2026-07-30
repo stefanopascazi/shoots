@@ -9,11 +9,15 @@
  * What it will NOT remove: the training dataset and the fitted profile. Those
  * cost a full export and a train to rebuild, and are what everything else
  * depends on. `--all` includes them, and says what it is doing.
+ *
+ * Nor the feedback journal, `--all` or not. It is the only develop artifact that
+ * is not regenerable at any price: it records what photographs looked like the
+ * day they were developed, and re-reading them now cannot recover that.
  */
 import path from 'node:path';
 import { readdir, rm, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { developExportPath, developProfilePath, developShootsDir } from '@shoots/core';
+import { developExportPath, developFeedbackPath, developProfilePath, developShootsDir } from '@shoots/core';
 import { logError, makeIo, printHuman, printJson } from '../../io.js';
 
 export interface CleanArgs {
@@ -108,5 +112,8 @@ export async function runClean(args: CleanArgs): Promise<void> {
   printHuman(io, `\nRemoved ${removed}/${entries.length}.`);
   if (args.all) {
     printHuman(io, 'The profile is gone too — `shoots develop init <catalog>` rebuilds it.');
+  }
+  if (existsSync(developFeedbackPath())) {
+    printHuman(io, `The feedback journal is untouched: ${developFeedbackPath()}`);
   }
 }
