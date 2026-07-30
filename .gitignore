@@ -17,3 +17,4 @@ test/
 # local develop-predictor experiment artifacts (predictions / emitted sidecars)
 /predictions*.json
 /out-xmp*/
+aistudio/
