@@ -27,7 +27,7 @@ so scripts are unaffected.
 | Command | Purpose |
 | --- | --- |
 | [`embeddings`](./embeddings.md) | Export profile-neutral CLIP embeddings for preference-learning tools |
-| [`develop`](./develop.md) | Personal develop-setting predictor: `export` → `train` → `predict` → `feedback` → `calibrate`, plus `refresh-targets` and `diagnose` |
+| [`develop`](./develop.md) | Personal develop-setting predictor: `export` → `train` → `predict` → `feedback` → `calibrate` / `learn`, plus `refresh-targets` and `diagnose` |
 
 ### Maintenance
 
@@ -109,6 +109,8 @@ shoots develop feedback --predictions <f> [--out <f>] [--journal <f>|--no-journa
                                           [--min-moved <n>] [--json]
 shoots develop calibrate [--profile <f>] [--journal <f>] [--shrink 0.5]
                          [--min-images 10] [--imported-only] [--reset] [--dry-run]
+shoots develop learn <shoot> [--data <f>] [--out <f>] [--min-weight 0.25]
+                             [--max-weight 3] [--no-train] [--dry-run] [--json]
 shoots develop diagnose --data <f> [--folds 5] [--max-k 4]
 
 # ── Maintenance ───────────────────────────────────────────────────────────────

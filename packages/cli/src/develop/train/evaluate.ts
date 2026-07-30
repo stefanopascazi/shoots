@@ -45,6 +45,16 @@ export interface EvalRow {
   meta: AsShotMeta;
   /** Session key: photographs sharing one belong to the same fold. */
   group: string;
+  /**
+   * Importance in the *fit*, defaulting to 1.
+   *
+   * Never in the score. A weight says "this photograph is worth paying more
+   * attention to", and letting it into the held-out error would let the same
+   * choice that emphasized a row also decide how well the model did on it —
+   * which is how a skill number stops being comparable to the one before it.
+   * Weights change the model; the gate keeps measuring it the way it always did.
+   */
+  weight?: number;
 }
 
 /** Per-parameter held-out statistics under one fold policy. */
@@ -194,7 +204,7 @@ export function crossValidate(
     const valX = val.map((r) => apply(r.x));
     const fs = columnStats(trainX);
     const ds = columnStats(train.map((r) => r.deltas));
-    const ne = buildNormalEquations(trainX.map((x) => standardize(x, fs)), train.map((r) => standardize(r.deltas, ds)));
+    const ne = buildNormalEquations(trainX.map((x) => standardize(x, fs)), train.map((r) => standardize(r.deltas, ds)), train.map((r) => r.weight ?? 1));
 
     // "Apply my average edit", in delta space.
     const meanDelta = new Array<number>(P).fill(0);
@@ -276,7 +286,7 @@ function accumulateFolds(
     const valX = val.map((r) => apply(r.x));
     const fs = columnStats(trainX);
     const ds = columnStats(train.map((r) => r.deltas));
-    const ne = buildNormalEquations(trainX.map((x) => standardize(x, fs)), train.map((r) => standardize(r.deltas, ds)));
+    const ne = buildNormalEquations(trainX.map((x) => standardize(x, fs)), train.map((r) => standardize(r.deltas, ds)), train.map((r) => r.weight ?? 1));
 
     // "Apply my average edit", in delta space (see the module header).
     const meanDelta = new Array<number>(P).fill(0);

@@ -222,8 +222,9 @@ shoots develop edit ~/Shoots/2026-07-new
 # after developing them in Lightroom, see how much of the prediction survived
 shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-new/prediction.json
 
-# every so often — teach the profile what you keep correcting
+# every so often — fix the average, then refit on the shoot itself
 shoots develop calibrate
+shoots develop learn ~/Shoots/2026-07-new
 ```
 
 `init` runs `export --edited-only` then `train`; `edit` runs `export` then
@@ -297,6 +298,39 @@ Most of the value so far has been on **gated** parameters — those where the mo
 lost to "apply my average edit" and emits the photographer's constant instead. A
 constant that is reliably wrong is exactly what an offset fixes, without touching
 the model at all.
+
+### The other half — `develop learn`
+
+An offset cannot track something that varies, and the part of an edit that
+changes photograph to photograph is most of what anyone would call an eye. That
+only moves if the model is **refitted**, which means the corrected shoot has to be
+inside the training set.
+
+`shoots develop learn <shoot>` puts it there. Nothing is recomputed — `edit`
+already left the shoot's embeddings and colour features on disk, and developing
+the photographs changed only the targets, so those are re-read from the sidecars
+and merged in by file.
+
+The difference from simply adding more photographs to the catalog is the
+**weight**. Each frame counts in proportion to how much of the prediction the
+photographer had to change, normalized against the median correction for that
+shoot: a typical correction weighs 1, like any catalog edit; twice the usual
+weighs 2; a frame accepted almost untouched sinks to 0.25.
+
+That is also the safeguard, and it is the same mechanism. Editing *from* a
+prediction contaminates the target — a frame you accepted wholesale is largely
+the model's own output returning as ground truth, which is how a model trained on
+its own predictions collapses onto its own habits. Those frames have the smallest
+corrections, so weighting by correction size **down-weights exactly the
+contaminated samples without needing to identify them**. What dominates the refit
+is where the photographer overruled the model: the least anchored evidence there
+is.
+
+Weights act on the fit and never on the score, so the GATE number stays
+comparable across a refit; and standardization stays unweighted, so a corrected
+shoot cannot redefine the constant a gated parameter emits. A refit does
+invalidate any calibration — the offsets described a model that no longer
+exists — so the order is refit → develop → `feedback` → `calibrate`.
 
 - **kept** — left untouched. The product metric; held-out skill is its proxy.
 - **journey** — how much of the move the prediction already made. Negative means

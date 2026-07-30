@@ -105,6 +105,8 @@ interface RawRow {
   meta: AsShotMeta;
   treatment: Treatment;
   render: RenderProfile;
+  /** Importance in the fit; 1 for an ordinary catalog edit. See dataset/weight.ts. */
+  weight: number;
 }
 
 /** How often each rendering appears in a branch, most common first. */
@@ -175,6 +177,9 @@ function buildRows(dataset: DevelopDataset): RawRow[] {
       meta: r.asShot,
       treatment: deriveTreatment(r),
       render: { profile: r.baseProfile, look: r.look },
+      // Absent on every ordinary export, and on every dataset written before
+      // weighting existed: an unmarked photograph is worth exactly one.
+      weight: Number.isFinite(r.weight) && r.weight! > 0 ? r.weight! : 1,
     });
   }
   return rows;
@@ -222,6 +227,7 @@ function trainBranch(
     abs: actualAbsVec(params, r.develop, r.meta),
     meta: r.meta,
     group: sessionKey(r.file),
+    weight: r.weight,
   }));
 
   const degenerate = degenerateTargets(rows, params.length);
@@ -289,7 +295,15 @@ function trainBranch(
 
   const featStats = columnStats(finalX);
   const deltaStats = columnStats(rows.map((r) => r.deltas));
-  const ne = buildNormalEquations(finalX.map((x) => standardize(x, featStats)), rows.map((r) => standardize(r.deltas, deltaStats)));
+  // Standardization stays unweighted on purpose: deltaMean is what a gated
+  // parameter emits as "the photographer's constant", and a corrected shoot must
+  // not quietly redefine that — `develop calibrate` is where a wrong constant is
+  // fixed, on evidence built for the job. Weights belong to the fit alone.
+  const ne = buildNormalEquations(
+    finalX.map((x) => standardize(x, featStats)),
+    rows.map((r) => standardize(r.deltas, deltaStats)),
+    rows.map((r) => r.weight ?? 1),
+  );
   // The normal equations are shared across λ, so each parameter can take its own
   // row out of the solution fitted at its own shrinkage for one Cholesky per
   // distinct λ — never one per parameter.

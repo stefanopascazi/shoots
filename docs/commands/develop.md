@@ -16,7 +16,8 @@ shoots develop <subcommand> [options]
 | [`init`](#shoots-develop-init) | Learn your style from an edited catalog (`export` + `train`) |
 | [`edit`](#shoots-develop-edit) | Develop a shoot with it (`export` + `predict`) |
 | [`feedback`](#shoots-develop-feedback) | How much of that prediction you kept |
-| [`calibrate`](#shoots-develop-calibrate) | Fold those corrections back into the profile |
+| [`calibrate`](#shoots-develop-calibrate) | Fix what it is wrong by on average (a constant offset) |
+| [`learn`](#shoots-develop-learn) | Refit on a shoot you developed, weighted by how much you changed |
 | [`status`](#shoots-develop-status) | What this machine holds |
 | [`clean`](#shoots-develop-clean) | Drop the per-shoot working files |
 
@@ -51,9 +52,12 @@ shoots develop edit ~/Shoots/2026-07-19
 # after developing them in Lightroom
 shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-19/prediction.json
 
-# every so often — teach the profile what you keep correcting
+# every so often — fix what it is wrong by on average
 shoots develop calibrate --dry-run
 shoots develop calibrate
+
+# and fold the shoot itself back into training, weighted by your corrections
+shoots develop learn ~/Shoots/2026-07-19
 
 # when the working files pile up
 shoots develop clean
@@ -695,6 +699,85 @@ you *edited* rather than files you *approved*.
 > The offsets sit beside the model in `profile.calibration`, never merged into
 > its weights — `--reset` takes them back, `predict` reports how many it carries,
 > and a retrain invalidates them (both `predict` and `status` say so).
+
+---
+
+## `shoots develop learn`
+
+Fold a shoot you have already developed back into the training set — **weighted
+by how much of the prediction you had to change** — and refit the profile.
+
+```
+shoots develop learn <shoot> [options]
+```
+
+`calibrate` moves the *average* of the predictions. It cannot move the part that
+varies photograph to photograph, because a constant cannot track a variable —
+and that varying part is most of what anyone would call an eye. Only refitting
+the model moves it, and this is the refit.
+
+### Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `<shoot>` | **required** | The folder you ran `develop edit` on and have since developed |
+| `--data <file>` | `~/.shoots/develop/export/export.jsonl` | Training dataset to fold into |
+| `--out <file>` | `~/.shoots/develop/profile/export.json` | Profile to refit |
+| `--shoot-dir <dir>` | conventional | The shoot's working directory, if not the usual one |
+| `--min-weight <n>` | `0.25` | Floor for a frame you accepted wholesale |
+| `--max-weight <n>` | `3` | Ceiling for a frame you overhauled |
+| `--no-train` | off | Update the dataset but stop before refitting |
+| `--dry-run` | off | Show the weighting and the plan, write nothing |
+| `--name`, `--lambda`, `--folds`, `--group-by`, `--gate-threshold`, `--embedding-dim`, `--all` | — | As [`train`](#shoots-develop-train) |
+
+Nothing is recomputed: `develop edit` already left the shoot's embeddings and
+colour features on disk, and only the *targets* changed when you developed the
+photographs. They are re-read from the sidecars and merged by file — same file
+twice means the newer state wins.
+
+### Reading it
+
+```
+  12 developed frames, weighted by how much you changed:
+    1 you overruled     (weight ≥ 1.5 — these drive the refit)
+    11 you adjusted      (around 1, like an ordinary catalog edit)
+    0 you accepted      (weight ≤ 0.6 — mostly our own output coming back)
+
+    file                                weight   correction
+    R-5686.CR3                           1.80         0.38
+    R-5682.CR3                           1.34         0.29
+    R-5692.CR3                           0.81         0.17
+    (correction 1.00 = the median for this shoot, 0.2132 in standardized units)
+```
+
+### Why the weight is the whole point
+
+```
+z_i      = mean over parameters of |actual − predicted| / spread(parameter)
+weight_i = clamp(z_i / median(z), 0.25, 3)
+```
+
+Editing *from* a prediction contaminates the target: a frame you accepted almost
+untouched is largely the model's own output coming back as ground truth, and a
+model trained on its own predictions collapses onto its own habits. Those are
+exactly the frames with the smallest correction — **so weighting by correction
+size down-weights the contaminated samples without having to identify them**. The
+frames that dominate the refit are the ones where you overruled the model: the
+least anchored and the most informative at once.
+
+Normalizing against the *median* correction rather than an absolute scale keeps
+this working as the model improves — when predictions get better every correction
+shrinks, and a fixed scale would quietly stop weighting anything.
+
+> **Weights are in the fit, never in the score.** Letting them into the held-out
+> error would let the same choice that emphasized a row also decide how well the
+> model did on it. The GATE keeps measuring what it always measured, so before
+> and after are comparable. Standardization stays unweighted too, so a corrected
+> shoot cannot quietly redefine the constant a gated parameter emits — that is
+> `calibrate`'s job.
+
+> **A refit invalidates the calibration**: its offsets described a model that no
+> longer exists. The order is refit → develop a shoot → `feedback` → `calibrate`.
 
 ---
 

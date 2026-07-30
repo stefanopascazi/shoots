@@ -38,6 +38,16 @@ export interface DevelopExportResult {
   curve?: number[];
   /** Present only in the legacy per-record format; the baseline lives on the dataset. */
   baseline?: string;
+  /**
+   * How much this photograph counts in the fit. Absent ⇒ 1.
+   *
+   * Set by `develop learn`, which folds a shoot you have already developed back
+   * into the training set weighted by how much of the prediction you had to
+   * change. A frame you overhauled teaches more about where the model is wrong
+   * than a frame you accepted — and a frame you accepted is partly the model's
+   * own output coming back, which is precisely what should count for least.
+   */
+  weight?: number;
 }
 
 /** The whole `shoots develop-export` payload. */

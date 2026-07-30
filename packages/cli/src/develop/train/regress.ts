@@ -30,18 +30,39 @@ export interface NormalEquations {
   p: number;
 }
 
-export function buildNormalEquations(X: number[][], Y: number[][]): NormalEquations {
+/**
+ * @param weights Per-sample importance, or omitted for the unweighted fit.
+ *
+ * Weighted least squares, and nothing more exotic: every cross-product is scaled
+ * by the sample's weight, which is the same as fitting on a set where that
+ * photograph appears `w` times. λ then shrinks against Σw rather than n — the
+ * weights this tool produces are normalized around 1, so the effective sample
+ * size stays close to the real one and the λ grid keeps meaning what it meant.
+ */
+export function buildNormalEquations(X: number[][], Y: number[][], weights?: readonly number[]): NormalEquations {
   const n = X.length;
   if (n === 0) throw new Error('ridge: empty training set');
   const d = X[0]!.length;
   const p = Y[0]!.length;
+  const w = (i: number): number => weights?.[i] ?? 1;
+  let sw = 0;
+  for (let i = 0; i < n; i++) sw += w(i);
+  if (sw <= 0) throw new Error('ridge: training weights sum to zero');
 
   const xbar = new Float64Array(d);
-  for (const row of X) for (let j = 0; j < d; j++) xbar[j]! += row[j]!;
-  for (let j = 0; j < d; j++) xbar[j]! /= n;
+  for (let i = 0; i < n; i++) {
+    const row = X[i]!;
+    const wi = w(i);
+    for (let j = 0; j < d; j++) xbar[j]! += wi * row[j]!;
+  }
+  for (let j = 0; j < d; j++) xbar[j]! /= sw;
   const ybar = new Float64Array(p);
-  for (const row of Y) for (let k = 0; k < p; k++) ybar[k]! += row[k]!;
-  for (let k = 0; k < p; k++) ybar[k]! /= n;
+  for (let i = 0; i < n; i++) {
+    const row = Y[i]!;
+    const wi = w(i);
+    for (let k = 0; k < p; k++) ybar[k]! += wi * row[k]!;
+  }
+  for (let k = 0; k < p; k++) ybar[k]! /= sw;
 
   const xtx: number[][] = Array.from({ length: d }, () => new Array<number>(d).fill(0));
   const rhs: Float64Array[] = Array.from({ length: p }, () => new Float64Array(d));
@@ -49,14 +70,15 @@ export function buildNormalEquations(X: number[][], Y: number[][]): NormalEquati
   for (let i = 0; i < n; i++) {
     const xr = X[i]!;
     const yr = Y[i]!;
+    const wi = w(i);
     for (let a = 0; a < d; a++) xc[a] = xr[a]! - xbar[a]!;
     for (let a = 0; a < d; a++) {
-      const xa = xc[a]!;
+      const xa = wi * xc[a]!;
       const Aa = xtx[a]!;
       for (let b = a; b < d; b++) Aa[b]! += xa * xc[b]!;
     }
     for (let k = 0; k < p; k++) {
-      const yc = yr[k]! - ybar[k]!;
+      const yc = wi * (yr[k]! - ybar[k]!);
       const rk = rhs[k]!;
       for (let a = 0; a < d; a++) rk[a]! += xc[a]! * yc;
     }
@@ -85,8 +107,8 @@ export function solveRidge(ne: NormalEquations, lambda: number): MultiRidgeResul
   return { weights, bias };
 }
 
-export function fitMultiRidge(X: number[][], Y: number[][], lambda: number): MultiRidgeResult {
-  return solveRidge(buildNormalEquations(X, Y), lambda);
+export function fitMultiRidge(X: number[][], Y: number[][], lambda: number, weights?: readonly number[]): MultiRidgeResult {
+  return solveRidge(buildNormalEquations(X, Y, weights), lambda);
 }
 
 /** Predict the P standardized outputs for one standardized feature vector. */

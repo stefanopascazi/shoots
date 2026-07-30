@@ -22,7 +22,8 @@ Two levels. The everyday pair wraps the steps with conventional paths under
 shoots develop init <edited-catalog>   # export --edited-only + train
 shoots develop edit <shoot>            # export + predict, sidecars by the photos
 shoots develop feedback --predictions ~/.shoots/develop/export/shooting/<shoot>/prediction.json
-shoots develop calibrate               # fold those corrections back into the profile
+shoots develop calibrate               # fix what it is wrong by on average
+shoots develop learn <shoot>           # refit on that shoot, weighted by your corrections
 shoots develop status                  # what this machine holds
 shoots develop clean                   # drop the per-shoot working files
 ```
@@ -232,6 +233,70 @@ reader can see how much of a prediction is model and how much is correction.
 Gated parameters are offset too, and that is where most of the value has been:
 a gated parameter emits the photographer's constant, and a constant that is
 reliably wrong is exactly what this fixes without touching the model.
+
+## Learning from a corrected shoot
+
+An offset cannot track something that varies. `calibrate` moves the *average* of
+the predictions onto the photographer's average; the part that changes from
+photograph to photograph — most of what anyone would call an eye — only moves if
+the model is refitted. `shoots develop learn <shoot>` does that, on a shoot that
+has been through the whole loop.
+
+Nothing is recomputed. `develop edit` already left the shoot's CLIP embedding,
+colour features and session description under
+`~/.shoots/develop/export/shooting/<shoot>/`, and the photographs have since been
+developed; the features are still valid, only the targets have changed. So the
+targets are re-read from the sidecars (`dataset/refresh.ts`, shared with
+`refresh-targets`), merged into the training dataset by file — newest state wins —
+and the profile is refitted. An export that costs minutes becomes a pass over
+sidecars.
+
+### The weight is the whole point
+
+Each frame enters the fit scaled by **how much of the prediction the photographer
+had to change**:
+
+```
+z_i      = mean over parameters of |actual − predicted| / spread(parameter)
+weight_i = clamp(z_i / median(z), 0.25, 3)
+```
+
+A frame corrected by a typical amount weighs 1, exactly like an ordinary catalog
+edit. Twice the usual correction weighs 2. One accepted nearly untouched sinks to
+the floor.
+
+That last case is why weighting is not a refinement here but the thing that makes
+refitting safe at all. Editing *from* a prediction contaminates the target: a
+frame accepted wholesale is largely the model's own output coming back as ground
+truth, and a model trained on its own predictions collapses onto its own habits.
+Those are exactly the frames with the smallest correction — **so weighting by
+correction size down-weights the contaminated samples without having to identify
+them**, and the frames that dominate the fit are the ones where the photographer
+overruled the model: the least anchored and the most informative at once.
+
+Normalizing against the *median* correction rather than an absolute scale keeps
+that true as the model improves. When predictions get better every correction
+shrinks, and a fixed scale would quietly stop weighting anything; the question is
+always "large compared to what you usually change".
+
+Three consequences worth knowing:
+
+- **Weights are in the fit, never in the score.** Letting them into the held-out
+  error would let the same choice that emphasized a row decide how well the model
+  did on it. The GATE keeps measuring what it always measured, so the number
+  before and the number after are comparable.
+- **Standardization stays unweighted.** `deltaMean` is what a gated parameter
+  emits as the photographer's constant, and a corrected shoot must not quietly
+  redefine it — that is `calibrate`'s job, on evidence built for it. Verified:
+  the refit leaves `deltaMean` bit-identical.
+- **A refit invalidates the calibration**, whose offsets described a model that
+  no longer exists. `learn` says so; the order is refit → develop → `feedback` →
+  `calibrate`.
+
+The weighted ridge is ordinary weighted least squares — weight 3 gives exactly
+the fit of the same row repeated three times (verified to 3e-16), and an
+all-ones weight vector reproduces the unweighted solve bit for bit, so every
+dataset written before this existed trains identically.
 
 ## Session context — what the rest of the shoot looks like
 
