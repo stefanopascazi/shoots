@@ -15,6 +15,7 @@ import {
 } from './develop/schema.js';
 import { assembleFeatures, renderOneHot } from './develop/assemble.js';
 import { applyPca } from './train/pca.js';
+import { applyOffset } from './feedback/calibrate.js';
 import type { PredictedEdit } from './adapters/types.js';
 import type { BranchModel, DevelopDataset, DevelopExportResult, DevelopProfile } from './types.js';
 
@@ -134,6 +135,12 @@ export function predictOne(
     ...renderOneHot(renderKey(render), branch.renderVocab),
   ];
   const gated = new Set(branch.gatedParams ?? []);
+  // Measured on the photographer's own corrections rather than on the catalog,
+  // so it is applied after the model has spoken — in absolute units, where the
+  // correction was observed — and never merged into the weights. A gated
+  // parameter is offset too: it emits a constant, and a constant that is
+  // reliably wrong is precisely what this fixes.
+  const offsets = profile.calibration?.offsets[treatment] ?? {};
   const develop: Record<string, number> = {};
   for (let k = 0; k < params.length; k++) {
     const param = params[k]!;
@@ -150,7 +157,11 @@ export function predictOne(
       }
       delta = dot * branch.deltaStd[k]! + branch.deltaMean[k]!;
     }
-    develop[param.key] = Math.round(decodeDelta(param, delta, meta) * 1e4) / 1e4;
+    const offset = offsets[param.key];
+    const value = offset === undefined
+      ? decodeDelta(param, delta, meta)
+      : applyOffset(param, decodeDelta(param, delta, meta), offset);
+    develop[param.key] = Math.round(value * 1e4) / 1e4;
   }
   return { file: result.file, treatment, develop, render };
 }

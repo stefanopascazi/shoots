@@ -164,6 +164,27 @@ export interface BranchModel {
  * plus the guards (schema version + dims + embedding model) that gate
  * applicability, exactly like the linear-embedding rating profile.
  */
+/**
+ * What the photographer's own corrections say this profile is wrong by.
+ *
+ * Kept beside the model rather than folded into its weights, on purpose: it is
+ * measured on different evidence (real corrections, not held-out catalog edits),
+ * it is reversible in one command, and a reader can see exactly how much of a
+ * prediction is model and how much is correction. Folding it in would make all
+ * three impossible.
+ */
+export interface DevelopCalibration {
+  at: string;
+  /** The profile this was measured against — a retrain invalidates it. */
+  profileTrainedAt: string;
+  /** Observations behind it, per branch. */
+  images: Partial<Record<Treatment, number>>;
+  /** Fraction of the measured correction actually applied. */
+  shrink: number;
+  /** Absolute offsets per branch, in each parameter's correction space. */
+  offsets: Partial<Record<Treatment, Record<string, number>>>;
+}
+
 export interface DevelopProfile {
   name: string;
   description: string;
@@ -183,4 +204,6 @@ export interface DevelopProfile {
     /** Records that fed the session description — edited or not. */
     described?: number;
   };
+  /** Set by `develop calibrate`; absent until the journal has something to say. */
+  calibration?: DevelopCalibration;
 }

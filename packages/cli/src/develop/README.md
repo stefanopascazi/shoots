@@ -22,6 +22,7 @@ Two levels. The everyday pair wraps the steps with conventional paths under
 shoots develop init <edited-catalog>   # export --edited-only + train
 shoots develop edit <shoot>            # export + predict, sidecars by the photos
 shoots develop feedback --predictions ~/.shoots/develop/export/shooting/<shoot>/prediction.json
+shoots develop calibrate               # fold those corrections back into the profile
 shoots develop status                  # what this machine holds
 shoots develop clean                   # drop the per-shoot working files
 ```
@@ -177,6 +178,60 @@ Two details that follow:
 The listing floor scales with the pool — never fewer than 3 comparisons, never
 more than a quarter of it, never more than the 20 a large pool can afford anyway.
 Rows a small pool only just clears are marked `·`: directional, not yet a rate.
+
+## Calibration — the loop closing
+
+`shoots develop calibrate` reads the journal and gives the profile a
+**per-parameter constant offset**: the amount it is reliably wrong by, in the
+same direction, on every photograph. It is the only step that improves
+predictions from evidence the catalog does not contain.
+
+**Why only a constant, when the journal holds enough to retrain on.** The
+photographer edits *from* our sidecar, which makes every observation partly a
+reaction to what we proposed rather than an independent opinion. Feeding that
+back as ground truth teaches the model that its own output was right; do it
+repeatedly and the predictions stop tracking the photographs and start tracking
+themselves. An offset is the one correction where the anchoring is *safe* — a
+photographer who accepts a value they would have pushed further only makes the
+measured offset **smaller**, so the estimate errs toward under-correcting, and
+under-correcting a constant costs one more round.
+
+Growing the catalog with the developed shoot is the other half of the idea and is
+deliberately not here: that is `export` + `train`, on files the photographer
+*edited* rather than files the photographer *approved*.
+
+Four decisions, none of them the obvious one:
+
+- **Every comparison counts, not only the ones somebody moved.** The feedback
+  table quotes bias over engaged corrections — "when you correct this, by how
+  much". An offset applies to *every* prediction, so a slider left at neutral on
+  nine images out of ten is nine votes for leaving it alone.
+- **Median, not mean.** The tool reports MAE throughout and the median minimizes
+  it; it also survives the failure nothing can detect, a photograph edited from
+  scratch instead of from our sidecar — an outlier moves a mean, not a median.
+- **A sign test, not a t-test.** The question is whether the corrections lean one
+  way, which the count of ups against downs answers without assuming anything
+  about a distribution that is heavy-tailed and clipped at both ends. Two sigma
+  of a fair coin, over at least 10 comparisons.
+- **White balance is corrected as a ratio.** Temperature is anchored to the
+  as-shot value and lives in log-Kelvin, so "+500 K" means one thing under
+  tungsten and another in daylight. Correcting it in absolute Kelvin would put
+  the schema's biggest accuracy lever on the wrong scale.
+
+Only **half** of each measured correction is applied (`--shrink`). Calibrating
+again after the next shoot takes half of what is left, so the loop converges
+instead of overshooting — measured on a real catalog, the residual is exactly
+0.50× per round.
+
+The offsets live *beside* the model in `profile.calibration`, never folded into
+its weights: measured on different evidence, reversible with `--reset`, and a
+reader can see how much of a prediction is model and how much is correction.
+`predict` says how many it is carrying; a retrain invalidates them and both
+`predict` and `status` say so. `--dry-run` shows the whole decision first.
+
+Gated parameters are offset too, and that is where most of the value has been:
+a gated parameter emits the photographer's constant, and a constant that is
+reliably wrong is exactly what this fixes without touching the model.
 
 ## Session context — what the rest of the shoot looks like
 

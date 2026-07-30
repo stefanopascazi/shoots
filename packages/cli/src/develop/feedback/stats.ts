@@ -5,7 +5,7 @@
  * same numbers for one shoot as for the whole journal, which is what lets the
  * report show both without two implementations drifting apart.
  */
-import { CURVE_KNOTS, DEVELOP_PARAMS, curveParamKey, type DevelopParam } from '../develop/schema.js';
+import { CURVE_KNOTS, DEVELOP_PARAMS, curveParamKey, renderKey, type DevelopParam, type RenderProfile } from '../develop/schema.js';
 import type { Prediction } from '../predict.js';
 import type { FeedbackObservation } from './journal.js';
 
@@ -85,7 +85,7 @@ export interface FeedbackSummary {
 export function buildObservation(
   prediction: Prediction,
   current: Record<string, number>,
-  meta: { at: string; run: string },
+  meta: { at: string; run: string; render?: RenderProfile },
 ): FeedbackObservation {
   const predicted: Record<string, number> = {};
   const actual: Record<string, number> = {};
@@ -97,7 +97,18 @@ export function buildObservation(
     predicted[param.key] = proposed;
     actual[param.key] = now;
   }
-  return { file: prediction.file, at: meta.at, run: meta.run, treatment: prediction.treatment, predicted, actual };
+  const predictedRender = renderKey(prediction.render);
+  const actualRender = renderKey(meta.render);
+  return {
+    file: prediction.file,
+    at: meta.at,
+    run: meta.run,
+    treatment: prediction.treatment,
+    predicted,
+    actual,
+    ...(predictedRender ? { predictedRender } : {}),
+    ...(actualRender ? { actualRender } : {}),
+  };
 }
 
 interface Accumulator {

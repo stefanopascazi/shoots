@@ -16,6 +16,7 @@ shoots develop <subcommand> [options]
 | [`init`](#shoots-develop-init) | Learn your style from an edited catalog (`export` + `train`) |
 | [`edit`](#shoots-develop-edit) | Develop a shoot with it (`export` + `predict`) |
 | [`feedback`](#shoots-develop-feedback) | How much of that prediction you kept |
+| [`calibrate`](#shoots-develop-calibrate) | Fold those corrections back into the profile |
 | [`status`](#shoots-develop-status) | What this machine holds |
 | [`clean`](#shoots-develop-clean) | Drop the per-shoot working files |
 
@@ -50,6 +51,10 @@ shoots develop edit ~/Shoots/2026-07-19
 # after developing them in Lightroom
 shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-19/prediction.json
 
+# every so often — teach the profile what you keep correcting
+shoots develop calibrate --dry-run
+shoots develop calibrate
+
 # when the working files pile up
 shoots develop clean
 ```
@@ -59,11 +64,15 @@ Everything lives under `~/.shoots/develop` (override the root with `SHOOTS_HOME`
 ```
 develop/
   export/export.jsonl              the training dataset      ← init
-  profile/export.json              the fitted style profile  ← init
+  profile/export.json              the fitted style profile  ← init, calibrate
+  feedback.jsonl                   every correction, ever    ← feedback → calibrate
   export/shooting/<folder>/        one directory per shoot   ← edit
     export.jsonl                     what the shoot looks like
     prediction.json                  what we proposed        → feedback
 ```
+
+`feedback.jsonl` is the one file here that cannot be rebuilt — `clean` never
+touches it, `--all` or not.
 
 Every one of these accepts `--dry-run`.
 
@@ -612,6 +621,80 @@ your style, and it is worth more per sample than a fresh catalog edit.
 > says today. If the sidecar was never imported and the photograph was edited
 > from scratch, the gap is two independent opinions rather than the model's
 > error. Run it on a set you actually developed *from* the sidecars.
+
+---
+
+## `shoots develop calibrate`
+
+Fold the feedback journal back into the profile as **per-parameter offsets** —
+the only step that improves predictions from evidence the catalog does not
+contain.
+
+```
+shoots develop calibrate [options]
+```
+
+### Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--profile <file>` | `~/.shoots/develop/profile/export.json` | Profile to calibrate |
+| `--journal <file>` | `~/.shoots/develop/feedback.jsonl` | Journal to read |
+| `--shrink <n>` | `0.5` | Fraction of each measured correction to apply |
+| `--min-images <n>` | `10` | Comparisons a parameter needs before it is offset |
+| `--imported-only` | off | Use only observations still carrying the rendering `predict` wrote |
+| `--reset` | off | Remove the calibration, leaving the model as trained |
+| `--dry-run` | off | Show the decision, write nothing |
+| `--json` | off | Machine-readable JSON on stdout |
+
+### Reading it
+
+```
+  journal: 21 images from 2 shoots
+  21/21 still carry the rendering we wrote (100% — evidence the sidecars were imported)
+  applying 50% of each measured correction, from 10 comparisons up
+
+  color — 20 images, 24 parameters offset
+    param                           n    up/down   sigma   measured   applied
+    SplitToningShadowHue            20      0/20     4.5     -18.71     -9.36
+    Saturation                      20      18/2     3.6      +3.71     +1.85
+    Contrast2012                    20      13/3     2.5      +1.18     +0.59
+    Temperature                     20     10/10     0.0      -0.01      —     (no direction)
+```
+
+| Column | Meaning |
+| --- | --- |
+| `n` | Comparisons behind the estimate — **every** prediction, not only the ones somebody moved, because the offset applies to every prediction |
+| `up/down` | How the corrections split by direction. This is the test: a lopsided split is a constant, an even one is noise |
+| `sigma` | How lopsided, in standard deviations of a fair coin. Below 2 nothing is applied |
+| `measured` | The median correction. Median, not mean, so one photograph edited from scratch cannot drag it |
+| `applied` | …after `--shrink`. Half, by default |
+
+White balance is corrected as a **ratio**, not in absolute Kelvin: Temperature is
+anchored to the as-shot value and lives in log-Kelvin, so a constant there is a
+multiplier. The `measured` column shows log units for those parameters.
+
+### Why it only ever proposes a constant
+
+The photographer edits *from* the sidecar, so every observation is partly a
+reaction to what was proposed rather than an independent opinion. Feeding that
+back as ground truth teaches the model its own output was right — repeat it and
+the predictions stop tracking the photographs and start tracking themselves.
+
+An offset is the one correction where that anchoring is **safe**: a photographer
+who accepts a value they would have pushed further only makes the measured offset
+*smaller*, so the estimate errs toward under-correcting. Applying half of it
+means calibrating again after the next shoot takes half of what is left — the
+loop converges (measured: exactly 0.50× residual per round) rather than
+overshoots.
+
+Growing the training set with the developed shoot is the other half of the idea
+and is deliberately **not** this command: that is `export` + `train`, on files
+you *edited* rather than files you *approved*.
+
+> The offsets sit beside the model in `profile.calibration`, never merged into
+> its weights — `--reset` takes them back, `predict` reports how many it carries,
+> and a retrain invalidates them (both `predict` and `status` say so).
 
 ---
 

@@ -103,7 +103,13 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
     }
     // The curve lives in its own tag, so lift it into the same per-knot keys the
     // prediction speaks before comparing.
-    observations.push(buildObservation(prediction, withCurveTargets(edit.develop, edit.curve), { at, run }));
+    observations.push(
+      buildObservation(prediction, withCurveTargets(edit.develop, edit.curve), {
+        at,
+        run,
+        render: { profile: edit.baseProfile, look: edit.look },
+      }),
+    );
   }
 
   if (observations.length === 0) {

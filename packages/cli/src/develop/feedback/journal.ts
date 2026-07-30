@@ -32,6 +32,20 @@ export interface FeedbackObservation {
   predicted: Record<string, number>;
   /** What the file says now, over exactly the same keys. */
   actual: Record<string, number>;
+  /**
+   * The base rendering we wrote, and the one the file carries now.
+   *
+   * The nearest thing to evidence that our sidecar was actually imported: every
+   * slider is measured against the rendering underneath it, and a file still
+   * carrying the rendering `predict` wrote is a file that read our sidecar. When
+   * they differ, the "correction" may be two independent opinions rather than
+   * our error — which matters enormously to anything that acts on it.
+   *
+   * Optional: journals written before this existed are still perfectly good
+   * observations, they just cannot answer the question.
+   */
+  predictedRender?: string;
+  actualRender?: string;
 }
 
 export async function loadJournal(file: string): Promise<FeedbackObservation[]> {

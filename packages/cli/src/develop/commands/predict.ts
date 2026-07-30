@@ -30,6 +30,20 @@ export async function runPredict(args: PredictArgs): Promise<void> {
   const profile = JSON.parse(await readFile(args.profile, 'utf8')) as DevelopProfile;
   assertApplicable(profile, dataset);
 
+  // Offsets from `develop calibrate` ride on top of every prediction, so say so
+  // rather than leaving a silently different number to be discovered.
+  const calibration = profile.calibration;
+  if (calibration) {
+    const n = Object.values(calibration.offsets).reduce((a, o) => a + Object.keys(o ?? {}).length, 0);
+    process.stderr.write(`Carrying ${n} calibration offset(s) from your own corrections (\`develop calibrate --reset\` drops them)\n`);
+    if (calibration.profileTrainedAt !== profile.trainedAt) {
+      process.stderr.write(
+        'warn: the calibration was measured against an older training of this profile — its offsets describe a model ' +
+          'that no longer exists; re-run `shoots develop calibrate`\n',
+      );
+    }
+  }
+
   const requested = args.treatment as Treatment | 'auto';
   if (!['auto', 'color', 'bw'].includes(requested)) {
     throw new Error(`invalid --treatment '${args.treatment}' (use auto | color | bw)`);

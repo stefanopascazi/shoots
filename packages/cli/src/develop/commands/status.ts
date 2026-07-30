@@ -58,6 +58,15 @@ export async function runStatus(args: StatusArgs): Promise<void> {
         ? {
             path: profilePath, name: profile.name, trainedAt: profile.trainedAt,
             baseline: profile.baseline, stats: profile.stats,
+            calibration: profile.calibration
+              ? {
+                  at: profile.calibration.at,
+                  stale: profile.calibration.profileTrainedAt !== profile.trainedAt,
+                  offsets: Object.fromEntries(
+                    Object.entries(profile.calibration.offsets).map(([t, o]) => [t, Object.keys(o ?? {}).length]),
+                  ),
+                }
+              : null,
             skill: Object.fromEntries(
               Object.entries(profile.branches).map(([t, b]) => [t, b?.imageDependentSkill ?? null]),
             ),
@@ -83,6 +92,18 @@ export async function runStatus(args: StatusArgs): Promise<void> {
         `                  ${treatment.padEnd(5)} skill ${skill === null ? 'n/a' : skill.toFixed(4)}, ` +
           `${gated}/${branch.perParam.length} params gated to your constant`,
       );
+    }
+    const calibration = profile.calibration;
+    if (calibration) {
+      const counts = Object.entries(calibration.offsets)
+        .map(([t, o]) => `${t} ${Object.keys(o ?? {}).length}`)
+        .join(', ');
+      printHuman(io, `                  calibrated ${age(calibration.at)}: ${counts} offsets from your corrections`);
+      // A retrain replaces the model the offsets were measured against, so an
+      // offset that survived one is measuring a model that no longer exists.
+      if (calibration.profileTrainedAt !== profile.trainedAt) {
+        printHuman(io, '                  ⚠ measured against an older training — re-run `shoots develop calibrate`');
+      }
     }
   } else {
     printHuman(io, `Profile           none — run \`shoots develop init <catalog>\``);

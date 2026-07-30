@@ -221,6 +221,9 @@ shoots develop edit ~/Shoots/2026-07-new
 
 # after developing them in Lightroom, see how much of the prediction survived
 shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-new/prediction.json
+
+# every so often — teach the profile what you keep correcting
+shoots develop calibrate
 ```
 
 `init` runs `export --edited-only` then `train`; `edit` runs `export` then
@@ -268,6 +271,32 @@ never fill it in. Every run is therefore recorded in
 seen so far, with this run's own acceptance quoted separately above it. Ten
 shoots of eight carry the same signal as one shoot of eighty; `develop status`
 says how far along the journal is, and `develop clean` never touches it.
+
+### Closing the loop — `develop calibrate`
+
+The journal is not only a report. `shoots develop calibrate` turns it into a
+**per-parameter constant offset** on the profile: the amount the predictions are
+reliably wrong by, in the same direction, on every photograph. It is the only
+step that improves the model from evidence the catalog does not contain.
+
+It proposes a constant and nothing more, on purpose. The photographer edits
+*from* the sidecar, so every observation is partly a reaction to what was
+proposed; feeding that back as ground truth would teach the model that its own
+output was right, and repeated, the predictions would stop tracking the
+photographs and start tracking themselves. An offset is the one correction where
+that anchoring is safe — accepting a value you would have pushed further only
+makes the measured offset *smaller*, so the estimate errs toward
+under-correcting. Half of it is applied, so the next round takes half of what is
+left and the loop converges.
+
+The offsets sit beside the model rather than inside it: `--reset` removes them,
+`--dry-run` shows the decision first, `predict` reports how many it carries, and
+a retrain invalidates them out loud.
+
+Most of the value so far has been on **gated** parameters — those where the model
+lost to "apply my average edit" and emits the photographer's constant instead. A
+constant that is reliably wrong is exactly what an offset fixes, without touching
+the model at all.
 
 - **kept** — left untouched. The product metric; held-out skill is its proxy.
 - **journey** — how much of the move the prediction already made. Negative means

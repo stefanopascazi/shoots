@@ -221,6 +221,10 @@ shoots develop edit ~/Shoots/2026-07-new
 # after developing them, how much of the prediction did you keep?
 shoots develop feedback --predictions ~/.shoots/develop/export/shooting/2026-07-new/prediction.json
 
+# every so often — fold what you keep correcting back into the profile
+shoots develop calibrate --dry-run
+shoots develop calibrate
+
 # housekeeping
 shoots develop status
 shoots develop clean

@@ -8,6 +8,8 @@
  *   init     export + train, from an edited catalog → a reusable style profile.
  *   edit     export + predict, over one shoot → sidecars next to the photographs.
  *   feedback how much of that prediction survived contact with the photographer.
+ *   calibrate fold those corrections back in — the only step that improves the
+ *            profile from evidence the catalog does not contain.
  *   status   what this machine holds.   clean  drop the per-shoot working files.
  *
  * …over the individual steps, which stay available whenever the convention is
@@ -29,6 +31,7 @@ import { runRefreshTargets } from '../develop/commands/refresh.js';
 import { runTrain } from '../develop/commands/train.js';
 import { runPredict } from '../develop/commands/predict.js';
 import { runFeedback } from '../develop/commands/feedback.js';
+import { runCalibrate } from '../develop/commands/calibrate.js';
 import { runDiagnose } from '../develop/commands/diagnose.js';
 import { runInit, runEdit } from '../develop/commands/pipeline.js';
 import { runClean } from '../develop/commands/clean.js';
@@ -162,6 +165,20 @@ export function registerDevelopCommand(program: Command): void {
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runFeedback);
+
+  develop
+    .command('calibrate')
+    .description('Fold the feedback journal back into the profile as per-parameter offsets')
+    .option('--profile <file>', 'profile to calibrate (default: ~/.shoots/develop/profile/export.json)')
+    .option('--journal <file>', 'journal to read (default: ~/.shoots/develop/feedback.jsonl)')
+    .option('--shrink <n>', 'fraction of each measured correction to apply', (v) => parseFloat(v))
+    .option('--min-images <n>', 'comparisons a parameter needs before it is offset', (v) => parseInt(v, 10))
+    .option('--imported-only', 'use only observations still carrying the rendering `predict` wrote')
+    .option('--reset', 'remove the calibration and leave the model as trained')
+    .option('--dry-run', 'show the decision, write nothing')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runCalibrate);
 
   develop
     .command('diagnose')
