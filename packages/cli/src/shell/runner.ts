@@ -5,8 +5,7 @@
  * stdout (so its own Ink progress view never activates).
  */
 import { spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { selfArgv } from '../selfInvoke.js';
 
 export type OutputStream = 'out' | 'err';
 
@@ -16,42 +15,12 @@ export interface RunningCommand {
   kill: () => void;
 }
 
-/** The bundled entry lives next to this chunk in dist/. */
-function cliEntryPath(): string {
-  return path.join(path.dirname(fileURLToPath(import.meta.url)), 'cli.js');
-}
-
-/**
- * Whether we're running as a Bun-compiled standalone executable (the shipped
- * binary) rather than under a bare interpreter (node dist/cli.js in dev).
- * In a standalone binary `Bun.main` points inside Bun's virtual filesystem
- * ($bunfs / ~BUN), whereas under an interpreter it's a real file path.
- */
-function isStandaloneBinary(): boolean {
-  const bun = (globalThis as { Bun?: { main?: string } }).Bun;
-  const main = bun?.main;
-  return typeof main === 'string' && (main.includes('~BUN') || main.includes('$bunfs'));
-}
-
-/**
- * Build the argv to re-invoke the CLI as a child process.
- *
- * A Bun standalone binary *is* the entry: it must be re-run as
- * `execPath <args>` — Bun injects its own argv[0]/argv[1] (the executable and
- * the bunfs main path), so passing a script path here would surface as a bogus
- * leading argument that commander then reads as the command name. Under a bare
- * interpreter we instead spawn `node dist/cli.js <args>`.
- */
-function childArgs(args: string[]): string[] {
-  return isStandaloneBinary() ? args : [cliEntryPath(), ...args];
-}
-
 export function runCli(
   args: string[],
   cwd: string,
   onLine: (text: string, stream: OutputStream) => void,
 ): RunningCommand {
-  const child = spawn(process.execPath, childArgs(args), {
+  const child = spawn(process.execPath, selfArgv(args), {
     cwd,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

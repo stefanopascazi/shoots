@@ -150,6 +150,21 @@ SHOOTS_HOME=/opt/shoots-home
 0 2 * * * /usr/local/bin/shoots cull /mnt/incoming --dest /mnt/rejects --json >> /var/log/shoots.log 2>&1
 ```
 
+### The develop refine loop has its own installer
+
+Do not hand-write a crontab entry for `develop refine`. It needs a shoot path,
+and which paths are still valid changes every time you move, re-edit or clean a
+shoot — plus re-running it on an unchanged shoot is actively harmful (see
+[`shoots schedule`](./commands/schedule.md#why-unchanged-is-skipped-and-why-it-matters)).
+`shoots schedule install` registers one entry that resolves the paths at run time
+and skips whatever has not changed, on cron and on the Windows Task Scheduler
+alike:
+
+```sh
+shoots schedule install --at 02:30
+shoots schedule status
+```
+
 ---
 
 ## Watch folders

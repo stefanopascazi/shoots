@@ -33,6 +33,7 @@ so scripts are unaffected.
 
 | Command | Purpose |
 | --- | --- |
+| [`schedule`](./schedule.md) | Run `develop refine` daily and unattended, via cron / the Windows Task Scheduler |
 | [`setup`](./setup.md) | Download & verify exiftool, LibRaw and the inference model into `~/.shoots` |
 | [`doctor`](./doctor.md) | Environment health check |
 | [`update`](./update.md) | Self-update the standalone binary |
@@ -114,6 +115,12 @@ shoots develop calibrate [--profile <f>] [--journal <f>] [--shrink 0.5]
 shoots develop learn <shoot> [--data <f>] [--out <f>] [--min-weight 0.25]
                              [--max-weight 3] [--no-train] [--dry-run] [--json]
 shoots develop diagnose --data <f> [--folds 5] [--max-k 4]
+
+# ── Unattended ────────────────────────────────────────────────────────────────
+shoots schedule install [--at 03:00] [--dry-run] [--json]
+shoots schedule status  [--json]
+shoots schedule uninstall [--json]
+shoots schedule run [--force] [--editor <id>] [--home <dir>] [--dry-run] [--json]
 
 # ── Maintenance ───────────────────────────────────────────────────────────────
 shoots setup  [--json]

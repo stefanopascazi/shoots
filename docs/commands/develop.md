@@ -757,6 +757,16 @@ thrown away. That is the whole reason this command exists.
 > third step contributes too and keeps contributing. `refine` reports it and
 > exits successfully either way.
 
+### Running it once per developed shoot
+
+`refine` stores nothing twice — the journal and the training dataset are both
+keyed by absolute file path, newest wins — but it is **not** a no-op on a shoot
+nothing has touched: `learn` refits (discarding the calibration measured against
+the profile it replaces) and the re-recorded observations come back flagged
+in-sample, which takes them out of future calibrations. Run it once per shoot you
+have developed, and let [`shoots schedule`](./schedule.md) decide when: it skips a
+shoot whose photographs and sidecars have not moved since the last pass.
+
 ---
 
 ## `shoots develop learn`

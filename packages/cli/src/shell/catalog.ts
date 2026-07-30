@@ -49,6 +49,11 @@ export const COMMANDS: CommandSpec[] = [
     usage: '/develop export <path> --out <f> [--edited-only] · train --data <f> --name <n> --out <f> · predict --data <f> --profile <f> [--xmp <dir>] · diagnose --data <f>',
   },
   {
+    name: 'schedule',
+    summary: 'Run `develop refine` daily and unattended, via the OS scheduler (cron / Task Scheduler)',
+    usage: '/schedule install [--at 03:00] [--dry-run] · status · uninstall · run [--force] [--dry-run] [--json]',
+  },
+  {
     name: 'setup',
     summary: 'Download & verify external tools (exiftool, libraw) and the inference model into ~/.shoots',
     usage: '/setup [--json]',

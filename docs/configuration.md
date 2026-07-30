@@ -22,8 +22,15 @@ so no environment variables need to be set on end-user machines.
 │                                   keywords.json
 │                                   aesthetics.json
 ├── profiles/                     Your learned rating profiles (*.json)
+├── develop/                      The develop predictor's own working files
+│   ├── profile/export.json         your fitted style profile
+│   ├── feedback.jsonl              every (predicted, kept) pair ever recorded
+│   └── export/                     the training dataset, and one dir per shoot
+│       └── shooting/<shoot>/         export.jsonl · prediction.json
+│                                     refine-state.json (what `schedule` last saw)
 ├── cache/                        Regenerable: thumbnails, RAW previews
 ├── logs/
+│   └── schedule.log                the daily `schedule run` transcript
 └── config.json
 ```
 
@@ -34,8 +41,12 @@ On Windows the same tree lives at `%USERPROFILE%\.shoots`.
 selectable as `shoots rate --profile <filename-without-.json>`. See
 [Rating profiles](./profiles.md).
 
-Everything else is regenerable: delete the whole tree and `shoots setup` rebuilds
-it.
+**`develop/feedback.jsonl` is the one file that cannot be rebuilt at any price.**
+It records what photographs looked like the day they were developed, and re-reading
+them now cannot recover that. `develop clean` never touches it, `--all` or not.
+
+Everything else is regenerable: delete the tree and `shoots setup` rebuilds the
+tools and models, `develop init` the dataset and the profile.
 
 ---
 
