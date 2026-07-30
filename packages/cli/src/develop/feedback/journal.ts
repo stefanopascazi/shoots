@@ -58,15 +58,61 @@ export interface FeedbackObservation {
    */
   trainedOn?: boolean;
   /**
+   * When {@link trainedOn} happened, and when the prediction in this record was
+   * made. Two timestamps rather than one boolean, because the question
+   * {@link inSample} answers is *which came first* — and a boolean recorded under
+   * one reading of that question cannot be reinterpreted under another, while the
+   * pair of instants can, forever. Same reasoning as storing the raw
+   * (predicted, actual) pair instead of a kept-count.
+   *
+   * Both optional: journals written before this existed are still perfectly good
+   * observations, they just have to fall back on {@link inSample} as recorded.
+   */
+  trainedAt?: string;
+  predictedAt?: string;
+  /**
    * The prediction in this record was made by a model already fitted on this
    * photograph — so the gap between them understates the real error.
    *
-   * Only reachable by developing the same shoot twice: `edit` it, `learn` from
-   * it, then `edit` and `feedback` it again. Rare, but it is the one case where
-   * an observation genuinely cannot measure anything, and it is worth one boolean
-   * to keep it out of the calibration rather than to ban a whole workflow.
+   * The derived verdict, cached here for journals that predate the timestamps
+   * above; {@link isInSample} prefers the timestamps when both are present.
+   *
+   * Reachable only by predicting a shoot *again* after having learned from it:
+   * `edit` it, `learn` from it, then `edit` and `feedback` it once more. Merely
+   * re-running `feedback` on the same prediction does not qualify, and treating
+   * it as if it did is how a repeated `refine` used to throw a shoot's
+   * calibration evidence away — see {@link isInSample}.
    */
   inSample?: boolean;
+}
+
+/**
+ * Was this pair's prediction made by a model that had already seen the answer?
+ *
+ * The bar is *which came first*, and nothing else. A photograph folded into
+ * training after the prediction was made is still a clean held-out measurement —
+ * the number was written down before the model could see it, and nothing that
+ * happens afterwards reaches back to change that. Only a prediction produced
+ * after the fold is worthless.
+ *
+ * That distinction is the whole point. Reading it as "this photograph is in the
+ * training set" instead is what made a repeated `develop refine` destructive:
+ * re-running `feedback` on an unchanged shoot re-recorded its perfectly good
+ * observations as in-sample and put them permanently beyond {@link heldOut},
+ * even though the prediction being measured had not changed at all.
+ *
+ * Journals predating the timestamps fall back on the boolean recorded at the
+ * time. Those rows cannot be re-decided from what they hold; running `feedback`
+ * on the shoot once more re-measures and re-decides them properly.
+ */
+export function isInSample(observation: FeedbackObservation): boolean {
+  const { predictedAt, trainedAt } = observation;
+  // Strictly after: a prediction produced once the photograph was already in the
+  // training set is the contaminated one. Predicted first — which is every
+  // ordinary edit → refine, and every re-run of `feedback` on that same record —
+  // is held out.
+  if (predictedAt && trainedAt) return Date.parse(predictedAt) > Date.parse(trainedAt);
+  return observation.inSample === true;
 }
 
 export async function loadJournal(file: string): Promise<FeedbackObservation[]> {
@@ -105,10 +151,13 @@ export async function recordObservations(
   const merged = new Map<string, FeedbackObservation>();
   for (const existing of await loadJournal(file)) merged.set(existing.file, existing);
   for (const fresh of observations) {
-    // `trainedOn` is a fact about the photograph, not about this measurement of
-    // it, so a newer observation inherits it rather than quietly clearing it.
-    const wasTrainedOn = merged.get(fresh.file)?.trainedOn;
-    merged.set(fresh.file, wasTrainedOn ? { ...fresh, trainedOn: true } : fresh);
+    // Being in the training set is a fact about the photograph, not about this
+    // measurement of it, so a newer observation inherits it — with the instant it
+    // happened — rather than quietly clearing it.
+    const previous = merged.get(fresh.file);
+    merged.set(fresh.file, previous?.trainedOn
+      ? { ...fresh, trainedOn: true, ...(previous.trainedAt ? { trainedAt: previous.trainedAt } : {}) }
+      : fresh);
   }
 
   const pool = [...merged.values()];
@@ -125,21 +174,32 @@ export function shootCount(observations: readonly FeedbackObservation[]): number
 }
 
 /**
- * Mark photographs as consumed by training.
+ * Mark photographs as consumed by training, and when.
  *
  * Called by `develop learn` once the files are in the dataset. Rewrites in place
  * and silently does nothing when the journal is missing — a photographer who
  * never ran `feedback` still gets to run `learn`.
+ *
+ * The instant matters as much as the fact: it is what lets a later `feedback`
+ * tell a prediction made *before* this fold (still a valid held-out measurement)
+ * from one made *after* it (worthless). See {@link isInSample}.
  */
-export async function markTrainedOn(file: string, files: readonly string[]): Promise<number> {
+export async function markTrainedOn(
+  file: string,
+  files: readonly string[],
+  at: string = new Date().toISOString(),
+): Promise<number> {
   if (!existsSync(file)) return 0;
   const wanted = new Set(files);
   const pool = await loadJournal(file);
   let marked = 0;
   const updated = pool.map((o) => {
+    // An already-marked photograph keeps its original instant: it entered the
+    // training set once, and that is the moment every later prediction is
+    // measured against.
     if (!wanted.has(o.file) || o.trainedOn) return o;
     marked++;
-    return { ...o, trainedOn: true };
+    return { ...o, trainedOn: true, trainedAt: at };
   });
   if (marked === 0) return 0;
   const tmp = `${file}.tmp`;

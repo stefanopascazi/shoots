@@ -109,7 +109,16 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     }
   }
 
-  const payload = { command: 'develop-predict' as const, profile: profile.name, count: predictions.length, predictions };
+  // Stamped, because `feedback` has to know whether this prediction predates the
+  // photographs entering the training set — that ordering is the whole of what
+  // makes a later comparison held-out or worthless (see journal.isInSample).
+  const payload = {
+    command: 'develop-predict' as const,
+    at: new Date().toISOString(),
+    profile: profile.name,
+    count: predictions.length,
+    predictions,
+  };
   if (args.out) {
     await writeFile(args.out, JSON.stringify(payload, null, 2) + '\n', 'utf8');
     process.stderr.write(`Wrote ${predictions.length} predictions to ${args.out}\n`);

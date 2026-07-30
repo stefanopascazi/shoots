@@ -85,7 +85,7 @@ export interface FeedbackSummary {
 export function buildObservation(
   prediction: Prediction,
   current: Record<string, number>,
-  meta: { at: string; run: string; render?: RenderProfile },
+  meta: { at: string; run: string; predictedAt?: string; render?: RenderProfile },
 ): FeedbackObservation {
   const predicted: Record<string, number> = {};
   const actual: Record<string, number> = {};
@@ -106,6 +106,7 @@ export function buildObservation(
     treatment: prediction.treatment,
     predicted,
     actual,
+    ...(meta.predictedAt ? { predictedAt: meta.predictedAt } : {}),
     ...(predictedRender ? { predictedRender } : {}),
     ...(actualRender ? { actualRender } : {}),
   };

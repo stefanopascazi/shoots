@@ -689,8 +689,13 @@ photograph ended up. A pair recorded before its photograph became training data
 stays a genuine measurement forever — folding the file in afterwards cannot reach
 back and change a number already written down. Only a prediction made by a model
 that had *already* seen that photograph's answer is worthless, which takes going
-round the loop twice on one shoot. `feedback` marks those in-sample;
-`--include-in-sample` uses them anyway.
+round the loop twice on one shoot — a fresh `develop edit` **after** a `learn`.
+
+`feedback` decides it by comparing two instants: the one `predict` stamped on the
+prediction record, and the one `learn` recorded when it folded the photograph into
+training. Later prediction ⇒ in-sample. Re-running `feedback` on a record that has
+not changed is therefore not going round the loop again, and does not cost the
+shoot its evidence. `--include-in-sample` uses the in-sample pairs anyway.
 
 ### Why it only ever proposes a constant
 
@@ -757,15 +762,32 @@ thrown away. That is the whole reason this command exists.
 > third step contributes too and keeps contributing. `refine` reports it and
 > exits successfully either way.
 
-### Running it once per developed shoot
+### Repeating it on the same shoot
 
-`refine` stores nothing twice — the journal and the training dataset are both
-keyed by absolute file path, newest wins — but it is **not** a no-op on a shoot
-nothing has touched: `learn` refits (discarding the calibration measured against
-the profile it replaces) and the re-recorded observations come back flagged
-in-sample, which takes them out of future calibrations. Run it once per shoot you
-have developed, and let [`shoots schedule`](./schedule.md) decide when: it skips a
-shoot whose photographs and sidecars have not moved since the last pass.
+`refine` stores nothing twice — the journal and the training dataset are both keyed
+by absolute file path, newest wins — and repeating it is **safe**, but it is not
+free.
+
+Safe, because of how "in-sample" is decided. An observation is worthless only when
+its *prediction* came from a model that had already been fitted on that photograph,
+so `feedback` compares the instant `predict` stamped on the record against the
+instant `learn` folded the photograph in, and marks it in-sample only when the
+prediction is the later of the two. Re-measuring a prediction that has not changed
+therefore stays the clean held-out measurement it was — including after `learn` has
+folded the shoot in. Only genuinely re-running `develop edit` **after** a `learn`
+produces an in-sample pair, which is the one case that cannot measure anything.
+
+> Journals written before this existed have no timestamps to compare and fall back
+> on the boolean recorded at the time. If a repeated `refine` has already marked a
+> shoot in-sample, one more `feedback` on it re-measures and clears the flag —
+> under the scheduler that needs `shoots schedule run --force`, since an unchanged
+> shoot is otherwise skipped.
+
+Not free, because `learn` refits, and a refit writes a whole new profile — which
+discards the calibration offsets measured against the old one. On identical data
+that is minutes of work to arrive where you already were. Run it once per shoot you
+develop, and let [`shoots schedule`](./schedule.md) decide when: it skips a shoot
+whose photographs and sidecars have not moved since the last pass.
 
 ---
 

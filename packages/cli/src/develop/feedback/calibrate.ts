@@ -31,7 +31,7 @@ import {
 } from '../develop/schema.js';
 import { sessionKey } from '../develop/session.js';
 import { tolerance } from './stats.js';
-import type { FeedbackObservation } from './journal.js';
+import { isInSample, type FeedbackObservation } from './journal.js';
 
 /** Correction shrunk toward zero before it is applied. See {@link estimateOffsets}. */
 export const DEFAULT_SHRINK = 0.5;
@@ -203,19 +203,15 @@ export function estimateOffsets(
  * Observations that can still measure a model's error.
  *
  * The bar is where the *prediction* came from, not where the photograph ended
- * up. A pair recorded before the photograph became training data is a genuine
- * held-out measurement and stays one forever — folding the file into the
- * training set afterwards cannot reach back and change a number already written
- * down. Only a prediction made *by a model that had already seen this
- * photograph's answer* is worthless, and that takes developing the same shoot
- * twice around the loop.
+ * up — see {@link isInSample}, which owns that decision and explains why reading
+ * it any other way costs a catalog its calibration evidence.
  *
  * An earlier version of this excluded everything `learn` had touched, which
  * guarded against the wrong thing and broke the ordinary edit → correct → learn
  * cycle: after one pass there was nothing left to calibrate on, ever.
  */
 export function heldOut(observations: readonly FeedbackObservation[]): FeedbackObservation[] {
-  return observations.filter((o) => !o.inSample);
+  return observations.filter((o) => !isInSample(o));
 }
 
 /**

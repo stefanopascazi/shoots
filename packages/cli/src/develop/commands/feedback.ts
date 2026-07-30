@@ -39,7 +39,7 @@
  * tell those apart, and says so.
  */
 import path from 'node:path';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import { developFeedbackPath } from '@shoots/core';
 import { withCurveTargets } from '../develop/schema.js';
 import { DEFAULT_EDITOR, EDITOR_IDS, resolveAdapter } from '../adapters/registry.js';
@@ -75,6 +75,7 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
 
   const payload = JSON.parse(await readFile(args.predictions, 'utf8')) as {
     command?: string;
+    at?: string;
     predictions?: Prediction[];
   };
   const predictions = payload.predictions ?? [];
@@ -94,13 +95,23 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
   const run = path.resolve(args.predictions);
   const journalPath = args.journal === false ? null : typeof args.journal === 'string' ? path.resolve(args.journal) : developFeedbackPath();
 
-  // A photograph already folded into training means this prediction came from a
-  // model that had seen its answer, so the pair understates the error and cannot
-  // calibrate anything. Only reachable by going round the loop twice on one
-  // shoot; the ordinary first pass is a clean held-out measurement.
-  const alreadyTraining = new Set(
-    journalPath ? (await loadJournal(journalPath)).filter((o) => o.trainedOn).map((o) => o.file) : [],
-  );
+  // When this prediction was made. Records written before `predict` stamped
+  // itself fall back on the file's own mtime, which is the same instant to within
+  // the time it took to serialize — and a great deal closer than assuming it was
+  // made just now.
+  const predictedAt = payload.at ?? (await stat(args.predictions)).mtime.toISOString();
+
+  // When each photograph entered the training set, if it ever did. A prediction
+  // made *after* that came from a model that had already seen the answer, so the
+  // pair understates the error and cannot calibrate anything. A prediction made
+  // before it — which includes every re-run of `feedback` on the same record — is
+  // a clean held-out measurement and stays one. See journal.isInSample.
+  const foldedInAt = new Map<string, string>();
+  if (journalPath) {
+    for (const o of await loadJournal(journalPath)) {
+      if (o.trainedAt) foldedInAt.set(o.file, o.trainedAt);
+    }
+  }
   const observations: FeedbackObservation[] = [];
   let missing = 0;
 
@@ -115,9 +126,15 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
     const observation = buildObservation(prediction, withCurveTargets(edit.develop, edit.curve), {
       at,
       run,
+      predictedAt,
       render: { profile: edit.baseProfile, look: edit.look },
     });
-    observations.push(alreadyTraining.has(prediction.file) ? { ...observation, inSample: true } : observation);
+    const trainedAt = foldedInAt.get(prediction.file);
+    observations.push(
+      trainedAt !== undefined && Date.parse(predictedAt) > Date.parse(trainedAt)
+        ? { ...observation, inSample: true }
+        : observation,
+    );
   }
 
   if (observations.length === 0) {

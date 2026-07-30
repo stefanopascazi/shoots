@@ -69,30 +69,31 @@ A shoot is passed over, with the reason, when:
 
 ---
 
-## Why "unchanged" is skipped, and why it matters
+## Why "unchanged" is skipped
 
 `develop refine` is idempotent about the **data** it stores. Both the feedback
 journal and the training dataset are keyed by absolute file path, newest wins, so
 a second pass over an untouched shoot adds no rows and duplicates no photograph.
 Nothing is "reintroduced".
 
-It is **not** idempotent about the state around them, and an unattended nightly
-re-run is exactly the thing that would expose that:
+It is also safe to repeat, which it was not before this command existed: a
+re-`feedback` used to re-record the shoot's observations as *in-sample* and put
+them permanently beyond `calibrate`. `feedback` now decides that by comparing
+**when the prediction was made** against **when the photograph entered training**,
+so re-measuring an unchanged prediction stays the clean held-out measurement it
+always was. See
+[`develop refine`](./develop.md#running-it-once-per-developed-shoot).
 
-- `learn` marks every photograph it folds in as `trainedOn`. On the next pass
-  `feedback` sees an already-trained photograph and flags its observation
-  `inSample` — and `calibrate` skips in-sample observations. The clean held-out
-  measurement recorded on the first pass gets overwritten by an identical pair
-  carrying that flag, and the shoot is lost as calibration evidence for good.
-- `learn` refits, and a refit writes a whole new profile — which discards the
-  calibration offsets measured against the old one.
+What a repeat still does is **refit the model on identical data**, and a refit
+writes a whole new profile — which discards the calibration offsets measured
+against the old one. Correctly (they measured a model that no longer exists) but
+for nothing: minutes of exiftool and a full refit, every night, to arrive exactly
+where the catalog already was.
 
-So a nightly re-run of an unchanged shoot would slowly strip a catalog of the
-evidence it needs, in exchange for no new information at all. The guard is a
-fingerprint of what `refine` actually reads — each photograph and its sidecar, by
-size and modification time — kept in `refine-state.json` beside the shoot's
-working files. It is cheap (one `stat` per file, no exiftool, no pixels) and it
-moves for exactly the edits that would give `refine` something new to measure.
+So the guard is a fingerprint of what `refine` actually reads — each photograph and
+its sidecar, by size and modification time — kept in `refine-state.json` beside the
+shoot's working files. It is cheap (one `stat` per file, no exiftool, no pixels) and
+it moves for exactly the edits that would give `refine` something new to measure.
 
 The fingerprint is recorded **whether the refine succeeded or not**, deliberately:
 a shoot nobody has developed yet fails the same way every night, and "something
