@@ -61,9 +61,21 @@ jobs:
       # Bun appends .exe automatically on Windows.
       - run: bun scripts/build-binary.ts --outfile dist-bin/shoots-${{ matrix.target }}
 
-      # Sanity check: the binary must at least start and print its version.
-      - run: ./dist-bin/shoots-${{ matrix.target }}* --version
+      # Sanity check: the binary must start AND report *our* version. Checking
+      # only that `--version` runs is not enough — a standalone binary that lost
+      # its embedded bundle falls back to being the plain Bun CLI, which answers
+      # with the runtime version and exits 0 (see docs/development.md,
+      # "The post-processing trap").
+      - name: Verify the binary reports our own version
         shell: bash
+        run: |
+          expected=$(node -p "require('./package.json').version")
+          actual=$(./dist-bin/shoots-${{ matrix.target }}* --version)
+          echo "expected=$expected actual=$actual"
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::binary reports '$actual' but this is shoots $expected — the embedded bundle is missing or the version was not injected"
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:

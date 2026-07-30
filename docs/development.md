@@ -121,9 +121,50 @@ CI runner).
 
 ### Executable identity
 
-A Bun-compiled executable inherits Bun's own resources unless we replace them,
-so the build stamps ours (Windows only — ELF and Mach-O have no equivalent
-metadata section):
+A Bun-compiled executable inherits Bun's own identity unless we replace it. How
+much can be replaced depends entirely on the executable format:
+
+| Target | Embeddable metadata | What we do |
+| --- | --- | --- |
+| Windows | PE resources (name, publisher, version, description, copyright, icon) | Stamped at build time — table below |
+| Linux | none an OS or desktop reads: ELF has no resource section | Identity lives in the CLI itself and in packaging |
+| macOS | none: an `Info.plist` needs an `.app` bundle, and Bun exposes no `__info_plist` section | Identity comes from the code signature |
+
+Do **not** try to work around this with a post-processing pass — see the trap
+below. On Linux and macOS the identity a user actually sees comes from
+`--version` / `--help` (already ours), the man-page-and-packaging layer, and — on
+macOS — signing:
+
+- **macOS.** The Mach-O the compiler emits is well-formed for signing: the
+  payload sits in a real `__BUN` segment, `LC_CODE_SIGNATURE` is present (Bun
+  ad-hoc signs it) and there are **zero trailing bytes** after `__LINKEDIT`. So
+  `codesign --sign "Developer ID Application: …"` + `notarytool` work on the
+  release artifact as-is, which is what replaces Gatekeeper's "unidentified
+  developer" with our name. Needs an Apple Developer membership; not wired up.
+- **Linux.** `apt show` / `dnf info` fields (Maintainer, Homepage, License,
+  Description) are where a Linux user reads whose product this is, so that
+  identity arrives with `.deb`/`.rpm` packaging, not with the binary. Not wired
+  up either: releases ship the raw binary plus `SHA256SUMS.txt`.
+
+#### The post-processing trap
+
+`objcopy`, `strip` and `patchelf` **silently destroy** a standalone binary. The
+bundle is reachable through absolute file offsets held in a 166-byte `.bun`
+section; any tool that rewrites the ELF shifts the layout, the offsets stop
+resolving, and the executable degrades into **the plain Bun CLI** — with no
+error and exit code 0:
+
+```
+$ objcopy --add-section .note.package=note.bin shoots shoots2   # e.g. systemd
+$ ./shoots2 --version                                           # ELF metadata
+1.3.14                                                          # ...Bun's
+```
+
+That is why the release workflow asserts the reported version *equals* the
+package version instead of merely checking that `--version` runs: the naive
+check passes on a gutted binary.
+
+#### Windows PE resources
 
 | PE field | Value | Source |
 | --- | --- | --- |
