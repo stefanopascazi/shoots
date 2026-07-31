@@ -18,10 +18,10 @@ export function Hero() {
     <section className="border-b border-border-soft">
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 lg:grid-cols-[1fr_1.05fr] lg:items-center lg:py-20">
         <div className="space-y-6">
-          <span className="inline-flex items-center gap-2 rounded-full border border-border-base bg-surface-muted px-3 py-1 text-[11px] font-semibold text-muted">
-            <span className="font-mono text-accent">v{site.version}</span>
-            <span className="text-subtle" aria-hidden>
-              ·
+          <span className="inline-flex items-center gap-2 rounded-full border border-badge-border bg-badge px-3 py-1 text-[11px] font-semibold text-badge-fg">
+            <span className="font-mono">v{site.version}</span>
+            <span className="opacity-50" aria-hidden>
+              |
             </span>
             <span>Standalone binary — no Node.js required</span>
           </span>

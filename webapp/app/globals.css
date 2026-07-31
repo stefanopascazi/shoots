@@ -1,60 +1,43 @@
 @import "tailwindcss";
 
 /*
- * Semantic tokens: components reference `bg-surface`, `text-muted`, … and the
- * dark theme is a single override block here rather than `dark:` on every node.
+ * Semantic tokens. The values are the palette of the aistudio prototype this
+ * site replicates: white/slate base, emerald for actions, indigo for links,
+ * blue for badges, slate-900 for the terminal and footer surfaces.
+ *
+ * Light only, on purpose — there is no `prefers-color-scheme` override, so the
+ * site looks the same whatever the visitor's OS is set to. `color-scheme: light`
+ * keeps native controls and scrollbars light too.
  */
 :root {
-  --bg: #ffffff;
-  --bg-muted: #f8fafc;
+  color-scheme: light;
+
+  --bg: #ffffff; /* white */
+  --bg-muted: #f8fafc; /* slate-50 */
   --surface: #ffffff;
   --surface-muted: #f8fafc;
-  --border: #e2e8f0;
-  --border-soft: #f1f5f9;
-  --fg: #0f172a;
-  --fg-muted: #475569;
-  --fg-subtle: #94a3b8;
-  --accent: #059669;
+  --border: #e2e8f0; /* slate-200 */
+  --border-soft: #f1f5f9; /* slate-100 */
+  --fg: #0f172a; /* slate-900 */
+  --fg-muted: #475569; /* slate-600 */
+  --fg-subtle: #94a3b8; /* slate-400 */
+  --accent: #059669; /* emerald-600 */
   --accent-fg: #ffffff;
-  --accent-soft: #ecfdf5;
-  --accent-soft-fg: #047857;
-  --link: #4f46e5;
-  --link-hover: #4338ca;
-  --terminal: #0f172a;
-  --terminal-soft: #1e293b;
-  --terminal-fg: #e2e8f0;
+  --accent-soft: #ecfdf5; /* emerald-50 */
+  --accent-soft-fg: #047857; /* emerald-700 */
+  --link: #4f46e5; /* indigo-600 */
+  --link-hover: #3730a3; /* indigo-800 */
+  --badge: #eff6ff; /* blue-50 */
+  --badge-fg: #2563eb; /* blue-600 */
+  --badge-border: #dbeafe; /* blue-100 */
+  --terminal: #0f172a; /* slate-900 */
+  --terminal-soft: #1e293b; /* slate-800 */
+  --terminal-fg: #e2e8f0; /* slate-200 */
   --terminal-border: #1e293b;
-  --terminal-accent: #34d399;
+  --terminal-accent: #34d399; /* emerald-400 */
   --danger-soft: #fef2f2;
   --danger-border: #fecaca;
   --danger-fg: #b91c1c;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #060a12;
-    --bg-muted: #0b111d;
-    --surface: #0d1421;
-    --surface-muted: #111a2b;
-    --border: #1e2a3d;
-    --border-soft: #16202f;
-    --fg: #eef2f7;
-    --fg-muted: #a3b0c2;
-    --fg-subtle: #6b7a90;
-    --accent: #34d399;
-    --accent-fg: #04140d;
-    --accent-soft: #06251b;
-    --accent-soft-fg: #6ee7b7;
-    --link: #a5b4fc;
-    --link-hover: #c7d2fe;
-    --terminal: #060d18;
-    --terminal-soft: #101a2b;
-    --terminal-fg: #dbe4f0;
-    --terminal-border: #1b2739;
-    --danger-soft: #2a1315;
-    --danger-border: #4c1d23;
-    --danger-fg: #fca5a5;
-  }
 }
 
 @theme inline {
@@ -73,6 +56,9 @@
   --color-accent-soft-fg: var(--accent-soft-fg);
   --color-link: var(--link);
   --color-link-hover: var(--link-hover);
+  --color-badge: var(--badge);
+  --color-badge-fg: var(--badge-fg);
+  --color-badge-border: var(--badge-border);
   --color-terminal: var(--terminal);
   --color-terminal-soft: var(--terminal-soft);
   --color-terminal-fg: var(--terminal-fg);

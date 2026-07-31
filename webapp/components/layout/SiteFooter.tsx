@@ -37,27 +37,27 @@ const columns = [
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-border-soft bg-bg-muted">
+    <footer className="bg-terminal text-slate-400">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:px-6 md:grid-cols-[1.4fr_repeat(3,1fr)]">
         <div className="space-y-3">
           <div className="flex items-center gap-2.5">
             <Logo />
-            <span className="text-base font-bold tracking-tight text-fg">shoots</span>
+            <span className="text-base font-bold tracking-tight text-white">shoots</span>
           </div>
-          <p className="max-w-xs text-xs leading-relaxed text-muted">{site.tagline}</p>
+          <p className="max-w-xs text-xs leading-relaxed text-slate-400">{site.tagline}</p>
           <div className="flex items-center gap-2 pt-1">
             <Link
               href={site.repo}
               target="_blank"
               rel="noreferrer"
-              className="rounded-full border border-border-base p-2 text-muted transition-colors hover:text-fg"
+              className="rounded-full border border-slate-700 p-2 text-slate-400 transition-colors hover:text-white"
               aria-label="GitHub repository"
             >
               <GitHubIcon />
             </Link>
             <Link
               href={`mailto:${site.email}`}
-              className="rounded-full border border-border-base p-2 text-muted transition-colors hover:text-fg"
+              className="rounded-full border border-slate-700 p-2 text-slate-400 transition-colors hover:text-white"
               aria-label="Email the author"
             >
               <Mail className="size-4" aria-hidden />
@@ -67,7 +67,7 @@ export function SiteFooter() {
 
         {columns.map((column) => (
           <div key={column.title} className="space-y-3">
-            <h3 className="text-[11px] font-bold uppercase tracking-widest text-subtle">
+            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
               {column.title}
             </h3>
             <ul className="space-y-2 text-xs">
@@ -78,7 +78,7 @@ export function SiteFooter() {
                     {...("external" in link && link.external
                       ? { target: "_blank", rel: "noreferrer" }
                       : {})}
-                    className="text-muted transition-colors hover:text-fg"
+                    className="text-slate-400 transition-colors hover:text-white"
                   >
                     {link.label}
                   </Link>
@@ -89,15 +89,15 @@ export function SiteFooter() {
         ))}
       </div>
 
-      <div className="border-t border-border-soft">
-        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-6 text-[11px] text-subtle sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="border-t border-slate-800">
+        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-6 text-[11px] text-slate-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p>
             © 2026 {site.author}. Source-available under the{" "}
             <Link
               href={site.license.url}
               target="_blank"
               rel="noreferrer"
-              className="text-muted underline underline-offset-2 hover:text-fg"
+              className="text-slate-400 underline underline-offset-2 hover:text-white"
             >
               {site.license.name}
             </Link>
@@ -107,7 +107,7 @@ export function SiteFooter() {
             Commercial use requires a separate licence —{" "}
             <Link
               href={`mailto:${site.email}`}
-              className="text-muted underline underline-offset-2 hover:text-fg"
+              className="text-slate-400 underline underline-offset-2 hover:text-white"
             >
               {site.email}
             </Link>

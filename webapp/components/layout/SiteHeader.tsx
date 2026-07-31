@@ -28,7 +28,7 @@ export function SiteHeader() {
           <Link href="/" className="flex items-center gap-2.5">
             <Logo />
             <span className="text-[17px] font-bold tracking-tight text-fg">shoots</span>
-            <span className="rounded-full border border-border-base bg-surface-muted px-2 py-0.5 font-mono text-[10px] font-semibold text-muted">
+            <span className="rounded-full border border-badge-border bg-badge px-2 py-0.5 font-mono text-[10px] font-semibold text-badge-fg">
               v{site.version}
             </span>
           </Link>
