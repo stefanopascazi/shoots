@@ -14,34 +14,32 @@ that generalizes **your** taste to photos you have never judged.
 ```
 shoots embeddings <my-photos> --out bundle          # CLIP features + previews
        ↓
-match import --data bundle/embeddings.json          # → SQLite
+shoots match import --data bundle/embeddings.json --name my-eye
        ↓
-match serve                                         # duel UI at 127.0.0.1:4576
+shoots match serve --name my-eye                    # duel UI at 127.0.0.1:4576
        ↓
-match train --name my-eye --out ~/.shoots/profiles/my-eye.json
+shoots match train --name my-eye                    # → ~/.shoots/profiles/my-eye.json
        ↓
 shoots rate <new-shoot> --profile my-eye            # your eye, on new work
 ```
 
+One `--name` runs through all of it: it names the duel database, the profile it
+trains, and the argument `rate` takes. Nothing has to be remembered between
+sessions and nothing has to be copied into place.
+
 ---
 
-## Why `match` lives outside the CLI
+## What it costs to run
 
-`match` is a **separate tool** in `tools/match` — its own `package.json`, its own
-build, not part of the monorepo workspaces.
-
-`shoots` is the feature extractor: it is the only place with CLIP and
-onnxruntime. `match` only ever touches numeric embeddings and image files for the
-UI. Keeping it out of `packages/*` keeps it off the CLI's dependency graph and out
-of the single binary.
+Nothing beyond `shoots` itself. `match` is part of the binary — no runtime to
+install, no toolchain, no build step.
 
 | | |
 | --- | --- |
-| **Runtime deps** | `express` and `commander` (both MIT) |
-| **Storage** | Node's built-in `node:sqlite` — no native build, no dependency |
-| **Requires** | **Node ≥ 22.5** (for `node:sqlite`) |
-| **Never loads** | onnxruntime |
-| **License** | PolyForm-Noncommercial-1.0.0, inherited from the repo |
+| **Storage** | SQLite via `bun:sqlite` (binary) or `node:sqlite` (from source) — no native build, no dependency |
+| **Server** | `node:http`, page served from the binary; loopback by default |
+| **Never loads** | onnxruntime — `shoots embeddings` did the feature extraction already |
+| **Writes** | `~/.shoots/match/<name>.db` and `~/.shoots/profiles/<name>.json` |
 
 ---
 
@@ -77,33 +75,18 @@ that everything is good; include the mediocre and the bad.
 
 ---
 
-## Step 2 — Build `match`
+## Step 2 — Import into the duel database
 
 ```sh
-cd tools/match
-npm install
-npm run build
-```
-
-Or run from source during development:
-
-```sh
-npm run dev -- import --data ../../bundle/embeddings.json
-```
-
----
-
-## Step 3 — Import into SQLite
-
-```sh
-match import --data ../../bundle/embeddings.json
+shoots match import --data ./bundle/embeddings.json --name my-eye
 ```
 
 | Option | Default | Description |
 | --- | --- | --- |
 | `--data <file>` | **required** | `embeddings.json` from `shoots embeddings` |
+| `--name <name>` | `my-eye` | Profile this database trains — names the DB |
 | `--images <dir>` | — | Base folder for resolving image paths in the UI |
-| `--db <file>` | `./match.db` | SQLite database file |
+| `--db <file>` | `~/.shoots/match/<name>.db` | SQLite database file |
 
 Import is **idempotent on path**: re-running it after adding photos merges the new
 ones without losing your existing duels.
@@ -113,19 +96,21 @@ bundle stays movable.
 
 ---
 
-## Step 4 — Duel
+## Step 3 — Duel
 
 ```sh
-match serve
+shoots match serve --name my-eye
 ```
 
 ```
-Duel UI at http://127.0.0.1:4576
+Duel UI on http://127.0.0.1:4576  (Ctrl+C to stop)
+1204 photos, 0 duels recorded so far
 ```
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--db <file>` | `./match.db` | SQLite database file |
+| `--name <name>` | `my-eye` | Profile this database trains — names the DB |
+| `--db <file>` | `~/.shoots/match/<name>.db` | SQLite database file |
 | `--port <n>` | `4576` | Port |
 | `--host <host>` | `127.0.0.1` | Host — **local by default** |
 
@@ -156,17 +141,17 @@ noise, and `space` is always available.
 
 ---
 
-## Step 5 — Train
+## Step 4 — Train
 
 ```sh
-match train --name my-eye --out ~/.shoots/profiles/my-eye.json
+shoots match train --name my-eye
 ```
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--name <name>` | **required** | Profile name |
-| `--out <file>` | **required** | Output profile JSON path |
-| `--db <file>` | `./match.db` | SQLite database file |
+| `--name <name>` | `my-eye` | Profile name — also names the DB and `rate --profile` |
+| `--out <file>` | `~/.shoots/profiles/<name>.json` | Output profile JSON path |
+| `--db <file>` | `~/.shoots/match/<name>.db` | SQLite database file |
 | `--lambda <n>` | `1` | Ridge regularization strength |
 | `--holdout <frac>` | `0.2` | Fraction of duels held out for accuracy measurement |
 
@@ -207,14 +192,15 @@ and ignores your judgements.
 
 ---
 
-## Step 6 — Use it
+## Step 5 — Use it
 
 ```sh
 shoots rate ./new-shoot --profile my-eye --write-xmp
 ```
 
-`--profile my-eye` resolves to `~/.shoots/profiles/my-eye.json` — that is why
-`--out` pointed there. From any other location, copy the file in:
+`--profile my-eye` resolves to `~/.shoots/profiles/my-eye.json`, which is exactly
+where `train` wrote it. If you sent the profile elsewhere with `--out`, copy it
+in:
 
 ```sh
 cp my-eye.json ~/.shoots/profiles/
@@ -239,13 +225,14 @@ Full schema in [Rating profiles](./profiles.md#the-linear-embedding-shape).
 - **RAW workflows need the bundle.** Use `shoots embeddings --out <dir>` so JPEG
   previews exist. A plain `--json` dataset points at the originals, which only
   render in a browser if they are themselves viewable.
-- **The DB is your work.** `match.db` holds every duel you have judged. Back it
-  up. You can retrain from it any number of times with different `--lambda`
-  values without re-judging anything.
+- **The DB is your work.** `~/.shoots/match/<name>.db` holds every duel you have
+  judged — hours of attention that cannot be recomputed. Back up
+  `~/.shoots/match/`. You can retrain from it any number of times with different
+  `--lambda` values without re-judging anything.
 - **Train per genre.** One profile cannot be simultaneously a street eye and a
-  wildlife eye. Separate databases, separate profiles.
+  wildlife eye. Separate names, separate databases, separate profiles.
 - **Re-import to grow.** Add photos, re-run `shoots embeddings` and
-  `match import`; existing duels survive.
+  `shoots match import`; existing duels survive.
 - **Re-train freely.** Training is fast and reads only the DB.
 
 ---
@@ -256,27 +243,19 @@ Full schema in [Rating profiles](./profiles.md#the-linear-embedding-shape).
 # ── 1. Features ───────────────────────────────────────────────────────────────
 shoots embeddings ~/Pictures/street-2020-2026 --out ~/work/street-bundle
 
-# ── 2. Tool ───────────────────────────────────────────────────────────────────
-cd tools/match && npm install && npm run build
+# ── 2. Import ─────────────────────────────────────────────────────────────────
+shoots match import --data ~/work/street-bundle/embeddings.json --name my-street-eye
 
-# ── 3. Import ─────────────────────────────────────────────────────────────────
-node dist/cli.js import \
-  --data ~/work/street-bundle/embeddings.json \
-  --db ~/work/street.db
+# ── 3. Duel — judge ~600 pairs, then Ctrl-C ───────────────────────────────────
+shoots match serve --name my-street-eye
 
-# ── 4. Duel — judge ~600 pairs, then Ctrl-C ───────────────────────────────────
-node dist/cli.js serve --db ~/work/street.db
+# ── 4. Train ──────────────────────────────────────────────────────────────────
+shoots match train --name my-street-eye
 
-# ── 5. Train ──────────────────────────────────────────────────────────────────
-node dist/cli.js train \
-  --db ~/work/street.db \
-  --name my-street-eye \
-  --out ~/.shoots/profiles/my-street-eye.json
-
-# ── 6. Apply to a new shoot ───────────────────────────────────────────────────
+# ── 5. Apply to a new shoot ───────────────────────────────────────────────────
 shoots rate ~/Shoots/2026-07-rome --profile my-street-eye --write-xmp
 
-# ── 7. Sanity-check against the built-in prior ────────────────────────────────
+# ── 6. Sanity-check against the built-in prior ────────────────────────────────
 diff <(shoots rate ~/Shoots/2026-07-rome --profile street        --dry-run --json | jq -r '.results[]|"\(.stars) \(.file)"') \
      <(shoots rate ~/Shoots/2026-07-rome --profile my-street-eye --dry-run --json | jq -r '.results[]|"\(.stars) \(.file)"')
 ```
@@ -285,7 +264,7 @@ diff <(shoots rate ~/Shoots/2026-07-rome --profile street        --dry-run --jso
 
 ## See also
 
+- [`match`](./commands/match.md) — every subcommand and flag
 - [`embeddings`](./commands/embeddings.md) — the export command in full
 - [Rating profiles](./profiles.md) — the profile format and the built-in priors
 - [`rate`](./commands/rate.md) — applying a profile
-- `tools/match/README.md` — the tool's own documentation

@@ -1,6 +1,4 @@
 /**
- * `match train --name <name> --out profiles/<name>.json`
- *
  * Reads the accumulated duels and photos, fits the linear-embedding profile, and
  * writes the deliverable JSON.
  */
@@ -10,6 +8,10 @@ import { openDatabase } from '../db/database.js';
 import { allPhotos, countPhotos, distinctModels } from '../db/photos.js';
 import { allComparisons, countComparisons } from '../db/comparisons.js';
 import { train } from '../ranking/train.js';
+import type { LinearEmbeddingProfile } from '../types.js';
+
+/** Below this the fit is noise, not taste. */
+export const MIN_DUELS = 10;
 
 export interface TrainArgs {
   name: string;
@@ -19,19 +21,33 @@ export interface TrainArgs {
   holdout: number;
 }
 
-export async function runTrain(args: TrainArgs): Promise<void> {
-  const db = openDatabase(args.db);
+export interface TrainResult {
+  profile: LinearEmbeddingProfile;
+  out: string;
+  duels: number;
+  photos: number;
+  dim: number;
+  embeddingModel: string;
+  heldOutPairAccuracy: number | null;
+}
+
+export async function runTrain(args: TrainArgs): Promise<TrainResult> {
+  const db = await openDatabase(args.db);
 
   const models = distinctModels(db);
   if (models.length > 1) {
     db.close();
-    throw new Error(`mixed embedding spaces in DB (${models.join(', ')}) — a profile needs one model`);
+    throw new Error(
+      `mixed embedding spaces in DB (${models.join(', ')}) — a profile needs one model`,
+    );
   }
   const photos = allPhotos(db);
   const comparisons = allComparisons(db);
-  if (comparisons.length < 10) {
+  if (comparisons.length < MIN_DUELS) {
     db.close();
-    throw new Error(`only ${comparisons.length} duels recorded — collect more via 'match serve' before training`);
+    throw new Error(
+      `only ${comparisons.length} duels recorded — collect more via 'shoots match serve' before training`,
+    );
   }
   const dim = photos[0]?.embedding.length ?? 0;
   const photoCount = countPhotos(db);
@@ -54,8 +70,13 @@ export async function runTrain(args: TrainArgs): Promise<void> {
   await mkdir(dirname(args.out), { recursive: true });
   await writeFile(args.out, JSON.stringify(profile, null, 2) + '\n', 'utf8');
 
-  const acc = profile.stats.heldOutPairAccuracy;
-  console.log(`Trained '${args.name}' from ${duelCount} duels over ${photoCount} photos`);
-  console.log(`  → ${args.out}  (dim ${dim}, model ${profile.embeddingModel})`);
-  console.log(`  held-out pairwise accuracy: ${acc === null ? 'n/a (too few duels)' : acc}`);
+  return {
+    profile,
+    out: args.out,
+    duels: duelCount,
+    photos: photoCount,
+    dim,
+    embeddingModel: profile.embeddingModel,
+    heldOutPairAccuracy: profile.stats.heldOutPairAccuracy,
+  };
 }

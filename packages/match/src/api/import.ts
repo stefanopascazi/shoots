@@ -1,8 +1,7 @@
 /**
- * `match import --data dataset.json [--images <dir>]`
- *
- * Loads a `shoots embeddings --json` dataset into SQLite. Idempotent on path, so
- * re-importing an updated dataset refreshes embeddings without duplicating rows.
+ * Loads a `shoots embeddings` dataset into SQLite. Idempotent on path, so
+ * re-importing an updated dataset refreshes embeddings without duplicating rows
+ * and without losing a single recorded duel.
  */
 import { readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, resolve } from 'node:path';
@@ -17,6 +16,16 @@ export interface ImportArgs {
   db: string;
 }
 
+export interface ImportResult {
+  db: string;
+  data: string;
+  model: string;
+  dim: number;
+  imported: number;
+  total: number;
+  added: number;
+}
+
 /** Resolve an image path, optionally rebased under --images for portable datasets. */
 function resolvePath(file: string, imagesDir?: string): string {
   if (imagesDir && !isAbsolute(file)) return resolve(imagesDir, file);
@@ -27,7 +36,7 @@ function resolvePath(file: string, imagesDir?: string): string {
   return resolve(file);
 }
 
-export async function runImport(args: ImportArgs): Promise<void> {
+export async function runImport(args: ImportArgs): Promise<ImportResult> {
   const raw = JSON.parse(await readFile(args.data, 'utf8')) as Dataset;
   if (raw.command !== 'embeddings' || !Array.isArray(raw.results)) {
     throw new Error(`${args.data} is not a 'shoots embeddings' dataset`);
@@ -36,7 +45,7 @@ export async function runImport(args: ImportArgs): Promise<void> {
   // Bundle previews are stored relative to the dataset file; resolve against it.
   const datasetDir = dirname(resolve(args.data));
 
-  const db = openDatabase(args.db);
+  const db = await openDatabase(args.db);
   const before = countPhotos(db);
 
   // Wrap the bulk load in a single transaction (fast, all-or-nothing).
@@ -63,10 +72,16 @@ export async function runImport(args: ImportArgs): Promise<void> {
     throw err;
   }
 
-  const after = countPhotos(db);
+  const total = countPhotos(db);
   db.close();
-  console.log(
-    `Imported ${raw.results.length} photos from ${args.data} (model ${raw.model}, dim ${raw.dim}) → ${args.db}`,
-  );
-  console.log(`Photos in DB: ${after} (${after - before} new)`);
+
+  return {
+    db: args.db,
+    data: args.data,
+    model: raw.model,
+    dim: raw.dim,
+    imported: raw.results.length,
+    total,
+    added: total - before,
+  };
 }

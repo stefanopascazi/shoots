@@ -91,6 +91,22 @@ export function developShootDir(folderName: string): string {
   return path.join(developShootsDir(), folderName);
 }
 
+/**
+ * Root for the preference-learning duel databases.
+ *
+ * One database per profile, named after it: a profile is trained on one genre
+ * and one embedding space, and mixing genres in a single DB trains a linear head
+ * to be a street eye and a wildlife eye at once — which it cannot be.
+ */
+export function matchHome(): string {
+  return path.join(shootsHome(), 'match');
+}
+
+/** The duel database backing a named profile. */
+export function matchDbPath(name: string): string {
+  return path.join(matchHome(), `${name}.db`);
+}
+
 /** Root for log files. */
 export function logsDir(): string {
   return path.join(shootsHome(), 'logs');

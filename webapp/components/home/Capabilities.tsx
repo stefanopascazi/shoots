@@ -1,4 +1,4 @@
-import { Brain, HardDriveDownload, Star, Tags, Target } from "lucide-react";
+import { Brain, HardDriveDownload, Sparkles, Star, Tags, Target } from "lucide-react";
 import Link from "next/link";
 
 import { SectionHeading } from "@/components/home/SectionHeading";
@@ -34,9 +34,16 @@ const capabilities = [
   },
   {
     icon: Brain,
+    command: "shoots match",
+    title: "Learn your eye",
+    body: "Duel your own photos two at a time; the outcomes train a rating profile that generalizes your taste to work you have never judged.",
+    href: "/docs/commands/match",
+  },
+  {
+    icon: Sparkles,
     command: "shoots develop",
-    title: "Learn your taste",
-    body: "Train a rating profile on your own eye, and a predictor for your own develop settings from your edited catalog.",
+    title: "Learn your edit",
+    body: "Fit a predictor on a catalog you have already developed, and get a per-image starting point as an XMP sidecar.",
     href: "/docs/develop-predictor",
   },
 ];
@@ -47,7 +54,7 @@ export function Capabilities() {
       <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
         <SectionHeading
           eyebrow="What it does"
-          title="Five jobs, one binary"
+          title="Six jobs, one binary"
           description="Each one is a standalone command. Run them by hand, chain them in a script, or drive them from the interactive shell."
         />
 

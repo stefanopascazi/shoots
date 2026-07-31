@@ -181,20 +181,16 @@ The presets are priors. This makes the ratings actually yours.
 # 1. Features from work you already know well
 shoots embeddings ~/Pictures/street-2020-2026 --out ~/work/street-bundle
 
-# 2. Build the duel tool
-cd tools/match && npm install && npm run build
+# 2. Import into the duel database
+shoots match import --data ~/work/street-bundle/embeddings.json --name my-street-eye
 
-# 3. Import
-node dist/cli.js import --data ~/work/street-bundle/embeddings.json --db ~/work/street.db
+# 3. Duel ~600 pairs at http://127.0.0.1:4576, then Ctrl-C
+shoots match serve --name my-street-eye
 
-# 4. Duel ~600 pairs at http://127.0.0.1:4576, then Ctrl-C
-node dist/cli.js serve --db ~/work/street.db
+# 4. Train straight into the profiles directory
+shoots match train --name my-street-eye
 
-# 5. Train straight into the profiles directory
-node dist/cli.js train --db ~/work/street.db \
-  --name my-street-eye --out ~/.shoots/profiles/my-street-eye.json
-
-# 6. Use it
+# 5. Use it
 shoots rate ~/Shoots/2026-07-rome --profile my-street-eye --write-xmp
 ```
 

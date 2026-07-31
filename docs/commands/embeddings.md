@@ -128,10 +128,9 @@ IMG_0002.CR3  dim=512  aspects=7  seed=0.541  [portrait, indoor]
 
 ```sh
 shoots embeddings ~/Pictures/my-best-work --out ./bundle
-cd tools/match
-match import --data ../../bundle/embeddings.json
-match serve                                       # duel at http://127.0.0.1:4576
-match train --name my-eye --out ~/.shoots/profiles/my-eye.json
+shoots match import --data ./bundle/embeddings.json --name my-eye
+shoots match serve --name my-eye                  # duel at http://127.0.0.1:4576
+shoots match train --name my-eye                  # → ~/.shoots/profiles/my-eye.json
 shoots rate ./new-shoot --profile my-eye --write-xmp
 ```
 

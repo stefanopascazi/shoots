@@ -76,6 +76,10 @@ shoots
 ├── cull         focus-aware blur detection; relocate or review rejects
 ├── rate         0–5 star ratings + keywords via the ONNX CLIP model
 ├── embeddings   profile-neutral CLIP export for preference learning
+├── match        learn your eye from duels → a personal rating profile
+│   ├── import      an embeddings bundle → the duel database
+│   ├── serve       the duel UI at 127.0.0.1:4576
+│   └── train       Bradley-Terry + ridge → ~/.shoots/profiles/<name>.json
 ├── develop      personal develop-setting predictor
 │   ├── export      build a training dataset from an edited catalog
 │   ├── train       fit a per-catalog develop profile

@@ -20,6 +20,7 @@
     "@shoots/core": "^0.1.0",
     "@shoots/imaging": "^0.1.0",
     "@shoots/inference": "^0.1.0",
+    "@shoots/match": "^0.1.0",
     "commander": "^14.0.0",
     "ink": "^6.0.0",
     "react": "^19.0.0",

@@ -13,7 +13,7 @@
     "node": ">=20.9.0"
   },
   "scripts": {
-    "build": "npm run build -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/cli",
+    "build": "npm run build -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/match -w @shoots/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "clean": "node -e \"for (const p of ['core','imaging','inference','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
     "shoots": "node packages/cli/dist/cli.js",

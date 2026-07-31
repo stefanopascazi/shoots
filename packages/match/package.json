@@ -1,0 +1,24 @@
+{
+  "name": "@shoots/match",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pairwise photo-preference learning: duels → Bradley-Terry ranking → linear-embedding rating profile. Consumes `shoots embeddings` datasets; never loads an ML runtime.",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  }
+}

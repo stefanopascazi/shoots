@@ -24,6 +24,8 @@ export {
   developFeedbackPath,
   developShootsDir,
   developShootDir,
+  matchHome,
+  matchDbPath,
   logsDir,
   configPath,
 } from './paths.js';

@@ -44,6 +44,12 @@ export const COMMANDS: CommandSpec[] = [
     usage: '/embeddings <path> [--out <dir>] [--previews auto|always|never] [--preview-size 1024] [--preview-quality 82] [--json]',
   },
   {
+    name: 'match',
+    summary: 'Learn your eye from pairwise duels → a rating profile that generalizes it',
+    usage:
+      '/match import --data <embeddings.json> [--name my-eye] · serve [--name my-eye] [--port 4576] · train [--name my-eye] [--lambda 1]',
+  },
+  {
     name: 'develop',
     summary: 'Personal develop-setting predictor (local "Lightroom AI", global look): export → train → predict',
     usage: '/develop export <path> --out <f> [--edited-only] · train --data <f> --name <n> --out <f> · predict --data <f> --profile <f> [--xmp <dir>] · diagnose --data <f>',

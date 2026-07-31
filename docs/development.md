@@ -10,7 +10,7 @@ Building, testing and releasing `shoots` from source.
 | --- | --- |
 | **Node.js ≥ 20.9** | Enforced by the root `engines` field |
 | **Bun** | Only for `npm run build:binary` (the single-binary build) |
-| **Node ≥ 22.5** | Only for `tools/match` (it uses `node:sqlite`) |
+| **Node ≥ 22.5** | Only to run `shoots match` from source — it needs `node:sqlite`. The binary uses Bun's own SQLite and has no such floor. |
 
 `sharp` installs prebuilt libvips binaries automatically via npm. External tools
 (exiftool, LibRaw) and the ONNX model are provisioned at runtime into `~/.shoots`,
@@ -26,9 +26,7 @@ packages/
   core/       Pipeline engine, templating, file discovery, job queue, checksums, provisioning, net.
   imaging/    exiftool wrapper, sharp thumbnails, Laplacian blur + focus-map analysis.
   inference/  QualityModel interface, ONNX CLIP backend, aesthetics, keywords, profiles.
-
-tools/
-  match/      Preference-learning duel tool. Deliberately OUTSIDE the workspaces.
+  match/      Preference-learning: duel storage, active-learning pairing, Bradley-Terry + ridge.
 
 scripts/
   build-binary.ts            Bun single-binary build (+ Windows executable metadata)
@@ -48,20 +46,27 @@ test/         Tests
 ### Dependency direction
 
 ```
-cli → core, imaging, inference
+cli → core, imaging, inference, match
 imaging → core
+match → (nothing)
 ```
 
 `core`, `imaging` and `inference` **never** depend on `cli` or Ink. They are usable
 headlessly, from a library, or from a future REST layer, unchanged. This is a hard
 architectural rule, not a preference.
 
-### Why `tools/match` is outside the workspaces
+### Why `match` is its own package
 
 `shoots` is the feature extractor — the only place with CLIP and onnxruntime.
-`match` only touches numeric embeddings and image files for its UI. Keeping it out
-of `packages/*` keeps it off the CLI's dependency graph and out of the single
-binary. It has its own `package.json` and its own build.
+`@shoots/match` only touches numeric embeddings and the image files its UI
+displays, and it must stay that way: it depends on neither `inference` nor
+`imaging`, so no amount of growth there can drag a model runtime into a duel.
+
+It used to live in `tools/match` as a separate npm project, which meant the tool
+that makes ratings honest required Node ≥ 22.5 and a build from source. It is now
+part of the binary. Nothing was added to the dependency tree by the move —
+`commander` was already there, `express` was dropped for `node:http`, and SQLite
+comes from whichever runtime is executing.
 
 ---
 
@@ -69,7 +74,7 @@ binary. It has its own `package.json` and its own build.
 
 ```sh
 npm install
-npm run build          # builds core → imaging → inference → cli, in order
+npm run build          # builds core → imaging → inference → match → cli, in order
 ```
 
 ### Running the CLI in development
@@ -90,6 +95,7 @@ npm link -w @shoots/cli && shoots --help
 npm run dev -w @shoots/core       # tsup --watch, per package
 npm run dev -w @shoots/imaging
 npm run dev -w @shoots/inference
+npm run dev -w @shoots/match
 npm run dev -w @shoots/cli
 ```
 
@@ -360,23 +366,40 @@ GitHub release. `shoots update` and both installers consume that release.
 
 ---
 
-## `tools/match`
+## `@shoots/match`
 
-Its own project, its own build:
+Built with everything else; no separate install:
 
 ```sh
-cd tools/match
-npm install
-npm run dev -- import --data ../../bundle/embeddings.json   # from source, via tsx
-npm run build && npm start -- serve                          # compiled
+npm run build
+node packages/cli/dist/cli.js match import --data ./bundle/embeddings.json --name dev
+node packages/cli/dist/cli.js match serve --name dev
 ```
 
 | | |
 | --- | --- |
-| Requires | **Node ≥ 22.5** (for `node:sqlite`) |
-| Runtime deps | `express`, `commander` — both MIT |
-| Storage | `node:sqlite`, built in — no native build |
-| Never loads | onnxruntime |
+| Storage | `bun:sqlite` in the binary, `node:sqlite` from source — picked at runtime |
+| Server | `node:http`; the page is a string constant, nothing is written to disk |
+| Runtime deps | none |
+| Never loads | onnxruntime, sharp — it depends on neither `inference` nor `imaging` |
+
+### The SQLite specifier is deliberately not a literal
+
+```ts
+const specifier = isBun ? 'bun:sqlite' : 'node:sqlite';
+const mod = await import(specifier);
+```
+
+esbuild's builtin list predates `node:sqlite`, so it rewrites the literal
+`import('node:sqlite')` to a bare `import('sqlite')`, which resolves to nothing
+at runtime. A computed specifier is left alone and handed to the runtime, which
+is the one that actually knows. Do not "simplify" this back to a literal.
+
+Use `SHOOTS_HOME` to keep experiments away from your real duel database:
+
+```sh
+SHOOTS_HOME=/tmp/shoots-dev node packages/cli/dist/cli.js match import --data ./bundle/embeddings.json
+```
 
 See [Preference learning](./preference-learning.md).
 
@@ -417,4 +440,4 @@ Read, use, modify and share for **noncommercial purposes** only. All commercial
 rights are reserved by the copyright holder. Contributions require a CLA. For a
 commercial license, contact stefanopascazi@gmail.com.
 
-`tools/match` and `packages/cli/src/develop` inherit the same license.
+`packages/match` and `packages/cli/src/develop` inherit the same license.

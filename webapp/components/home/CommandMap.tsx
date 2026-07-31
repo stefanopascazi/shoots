@@ -40,6 +40,12 @@ const commands: { name: string; slug?: string; blurb: string; children?: string[
     blurb: "profile-neutral CLIP export for preference learning",
   },
   {
+    name: "match",
+    slug: "match",
+    blurb: "learn your eye from duels → a personal rating profile",
+    children: ["import", "serve", "train"],
+  },
+  {
     name: "develop",
     slug: "develop",
     blurb: "personal develop-setting predictor",

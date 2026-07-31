@@ -27,6 +27,7 @@ so scripts are unaffected.
 | Command | Purpose |
 | --- | --- |
 | [`embeddings`](./embeddings.md) | Export profile-neutral CLIP embeddings for preference-learning tools |
+| [`match`](./match.md) | Learn your eye from pairwise duels: `import` → `serve` → `train` a rating profile |
 | [`develop`](./develop.md) | Personal develop-setting predictor: `init` → `edit` → `refine`, plus the steps underneath (`export`, `train`, `predict`, `feedback`, `learn`, `calibrate`, `diagnose`) |
 
 ### Maintenance
@@ -94,6 +95,11 @@ shoots rate <path> [--model onnx] [--profile <name>] [--write-xmp]
 shoots embeddings <path> [--out <dir>] [--previews auto|always|never]
                          [--preview-size 1024] [--preview-quality 82]
                          [--concurrency 4] [--json]
+
+shoots match import --data <f> [--name my-eye] [--images <dir>] [--db <f>] [--json]
+shoots match serve  [--name my-eye] [--db <f>] [--port 4576] [--host 127.0.0.1]
+shoots match train  [--name my-eye] [--out <f>] [--db <f>] [--lambda 1]
+                                    [--holdout 0.2] [--json]
 
 shoots develop init <path> [--out-export <f>] [--out-train <f>] [--name <n>] [--dry-run]
 shoots develop edit <path> [--profile <f>] [--treatment auto|color|bw] [--force] [--dry-run]

@@ -22,6 +22,8 @@ so no environment variables need to be set on end-user machines.
 │                                   keywords.json
 │                                   aesthetics.json
 ├── profiles/                     Your learned rating profiles (*.json)
+├── match/                        Preference-learning duel databases
+│   └── <profile>.db                every duel you have judged — not recomputable
 ├── develop/                      The develop predictor's own working files
 │   ├── profile/export.json         your fitted style profile
 │   ├── feedback.jsonl              every (predicted, kept) pair ever recorded
@@ -37,7 +39,7 @@ so no environment variables need to be set on end-user machines.
 On Windows the same tree lives at `%USERPROFILE%\.shoots`.
 
 **`profiles/` is the one directory you write to yourself.** Drop a
-`linear-embedding` profile JSON there (as emitted by `match train`) and it becomes
+`linear-embedding` profile JSON there (as emitted by `shoots match train`) and it becomes
 selectable as `shoots rate --profile <filename-without-.json>`. See
 [Rating profiles](./profiles.md).
 

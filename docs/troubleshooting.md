@@ -321,7 +321,7 @@ loudly rather than producing silent garbage stars.
 | `unsupported type 'x' (expected 'linear-embedding')` | Wrong profile kind |
 | `aestheticStars must be a non-empty list of { min:number, stars:0–5 }` | Malformed cut-offs |
 
-Re-run `match train` to regenerate it.
+Re-run `shoots match train` to regenerate it.
 
 ### `XMP sidecar already exists, refusing to overwrite`
 
