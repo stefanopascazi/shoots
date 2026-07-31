@@ -21,3 +21,4 @@ aistudio/
 
 # screenshot capture staging (scripts/capture-screens.tsx)
 /demo/
+/webapp/
