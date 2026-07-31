@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# synced from the repo by scripts/sync-content.mjs — never edit here
+/content
+/public/assets
