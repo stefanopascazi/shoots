@@ -1,0 +1,56 @@
+name: sync-webapp
+
+# Pushes docs/, assets/ and the version into the webapp repo
+# (stefanopascazi/shoots-ai), which lives outside this monorepo since Vercel
+# could not build it from a subdirectory here. This workflow is what keeps the
+# two in sync: the content is authored ONLY in this repo.
+#
+# The push to shoots-ai is what triggers the Vercel deployment, and it only
+# happens when the mirrored content actually changed — so a commit that touches
+# neither docs, assets nor the version costs nothing downstream.
+#
+# Requires the WEBAPP_SYNC_TOKEN secret: a fine-grained PAT scoped to
+# stefanopascazi/shoots-ai with Contents: read and write.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'assets/**'
+      - 'package.json'
+      - 'scripts/sync-webapp-content.mjs'
+      - '.github/workflows/sync-webapp.yml'
+  workflow_dispatch:
+
+# Two pushes in quick succession would race on the same branch of shoots-ai.
+concurrency:
+  group: sync-webapp
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: stefanopascazi/shoots-ai
+          token: ${{ secrets.WEBAPP_SYNC_TOKEN }}
+          path: webapp
+
+      - run: node scripts/sync-webapp-content.mjs --out webapp
+
+      - name: Commit and push
+        working-directory: webapp
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add content public/assets
+          if git diff --cached --quiet; then
+            echo 'content already up to date — nothing to push'
+            exit 0
+          fi
+          git commit -m "chore(content): sync docs and assets from shoots@${GITHUB_SHA:0:7}"
+          git push
