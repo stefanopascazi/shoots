@@ -29,15 +29,26 @@ enabled by default for every project created after 2020-08-27. With it off,
 `sync-content` fails immediately with an explicit message rather than building a
 site with no documentation.
 
-The framework is pinned in `vercel.json` (`"framework": "nextjs"`) rather than
-left to the dashboard preset, because getting it wrong fails silently: with the
-preset on *Other*, `next build` still runs and the log still prints the full
-route table, but Vercel then collects its zero-config static output — `public/`
-if it exists — and discards `.next` entirely. The result is a deployment that
-serves `/assets/*` and answers every real page with a plain-text platform 404.
-Settings in `vercel.json` override the dashboard, so the preset can no longer
-drift. If the project also has an explicit *Output Directory* override, clear it:
-the Next.js builder owns that.
+**Root Directory `webapp` is load-bearing, not cosmetic.** Vercel reads
+`vercel.json` from the Root Directory and nowhere else, so with the setting left
+empty this file is silently ignored — framework preset, ignore command and all —
+and the deployment is whatever the dashboard overrides happen to say. Leave
+*Build Command* and *Output Directory* on their defaults: with the Root Directory
+correct, Vercel runs the `build` script of `webapp/package.json` and the Next.js
+builder owns the output.
+
+Two failure modes worth recognising, because neither is obvious from the log:
+
+- Output Directory pointed at `webapp/public` — `next build` runs, the log prints
+  the full route table, and Vercel then publishes `public/` as a static site. The
+  deployment serves `/assets/*` and answers every real page with a plain-text
+  platform 404 (`x-vercel-error: NOT_FOUND`), never the app's `not-found.tsx`.
+- Root Directory empty with the Next.js preset — the build dies on
+  `ENOENT … /vercel/path0/.next/package.json`, because Next writes `webapp/.next`
+  while Vercel looks for `.next` at the repo root.
+
+The framework is pinned here (`"framework": "nextjs"`) so the preset cannot drift
+back once the Root Directory is right.
 
 ### When a deployment actually happens
 
