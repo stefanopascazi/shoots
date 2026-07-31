@@ -10,7 +10,7 @@
     "match": "./dist/cli.js"
   },
   "engines": {
-    "node": ">=18.17"
+    "node": ">=22.5"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
