@@ -23,11 +23,21 @@ diff, in `docs/`.
 
 The build reads the monorepo root, so the deployment must expose it.
 
-On **Vercel**: Root Directory `webapp`, framework Next.js, and the Root Directory
-setting *Include source files outside of the Root Directory in the Build Step*
-left **on** — it is enabled by default for every project created after
-2020-08-27. With it off, `sync-content` fails immediately with an explicit
-message rather than building a site with no documentation.
+On **Vercel**: Root Directory `webapp`, and the Root Directory setting *Include
+source files outside of the Root Directory in the Build Step* left **on** — it is
+enabled by default for every project created after 2020-08-27. With it off,
+`sync-content` fails immediately with an explicit message rather than building a
+site with no documentation.
+
+The framework is pinned in `vercel.json` (`"framework": "nextjs"`) rather than
+left to the dashboard preset, because getting it wrong fails silently: with the
+preset on *Other*, `next build` still runs and the log still prints the full
+route table, but Vercel then collects its zero-config static output — `public/`
+if it exists — and discards `.next` entirely. The result is a deployment that
+serves `/assets/*` and answers every real page with a plain-text platform 404.
+Settings in `vercel.json` override the dashboard, so the preset can no longer
+drift. If the project also has an explicit *Output Directory* override, clear it:
+the Next.js builder owns that.
 
 ### When a deployment actually happens
 
