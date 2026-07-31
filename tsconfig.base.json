@@ -22,7 +22,8 @@
     "paths": {
       "@shoots/core": ["packages/core/src/index.ts"],
       "@shoots/imaging": ["packages/imaging/src/index.ts"],
-      "@shoots/inference": ["packages/inference/src/index.ts"]
+      "@shoots/inference": ["packages/inference/src/index.ts"],
+      "@shoots/match": ["packages/match/src/index.ts"]
     }
   }
 }

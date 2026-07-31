@@ -15,7 +15,7 @@
   "scripts": {
     "build": "npm run build -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/match -w @shoots/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "clean": "node -e \"for (const p of ['core','imaging','inference','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
+    "clean": "node -e \"for (const p of ['core','imaging','inference','match','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
     "shoots": "node packages/cli/dist/cli.js",
     "build:binary": "bun scripts/build-binary.ts",
     "build:icon": "bun scripts/generate-icon.ts",
