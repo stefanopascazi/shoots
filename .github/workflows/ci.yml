@@ -23,3 +23,25 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
+  webapp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webapp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      - run: npm ci
+
+      # The site ships a committed copy of docs/ (a Vercel build rooted at
+      # webapp/ cannot read ../docs) — fail if a docs edit landed without it.
+      - run: npm run check-content
+
+      - run: npm run build
