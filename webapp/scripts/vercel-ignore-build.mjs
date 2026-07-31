@@ -38,9 +38,25 @@ function decide() {
   const head = process.env.VERCEL_GIT_COMMIT_SHA || "HEAD";
   const base = process.env.VERCEL_GIT_PREVIOUS_SHA;
 
+  // A skipped build is not "keep the previous deployment": Vercel still creates a
+  // deployment and still collects its output, which without `next build` is an
+  // empty `.next`. Promote that to production and every page 404s. So the
+  // optimisation is only ever safe on previews.
+  if (process.env.VERCEL_ENV === "production") {
+    log("production deployment — building");
+    return BUILD;
+  }
+
   // First deployment on this branch, or the variable is not exposed.
   if (!base) {
     log("no previous successful deployment — building");
+    return BUILD;
+  }
+
+  // Redeploying the same commit: base === head, so the diff below is empty and
+  // would skip the build the redeploy exists to run.
+  if (base === head) {
+    log("redeploy of the same commit — building");
     return BUILD;
   }
 

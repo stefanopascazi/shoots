@@ -69,6 +69,15 @@ configured) against the pushed commit, and **fails safe**: no previous SHA, a
 base outside Vercel's `--depth=10` clone, or any error at all means build. It
 never stays silent when it cannot tell.
 
+**Previews only.** A skipped build does not mean "keep serving the previous
+deployment": Vercel creates the deployment anyway and collects whatever output is
+on disk, which without `next build` is nothing. Promoted to production that is a
+site where every route answers with a platform 404 — and with the Next.js preset
+the collection step fails outright on `ENOENT … .next/package.json`. The script
+therefore always builds when `VERCEL_ENV` is `production`, and always builds when
+`VERCEL_GIT_PREVIOUS_SHA` equals the pushed commit, which is what a dashboard
+redeploy looks like and would otherwise diff to nothing.
+
 Two notes. Exit codes are inverted by Vercel's convention — `1` builds, `0`
 skips. And a skipped build still counts against deployment quota and concurrent
 build slots, because the ignore command runs inside the build step; Vercel's own
