@@ -40,8 +40,6 @@ jobs:
 
       - run: npm ci
 
-      # The site ships a committed copy of docs/ (a Vercel build rooted at
-      # webapp/ cannot read ../docs) — fail if a docs edit landed without it.
-      - run: npm run check-content
-
+      # `prebuild` mirrors ../docs into the site, so this also proves every docs
+      # page still renders and is reachable from the sidebar.
       - run: npm run build

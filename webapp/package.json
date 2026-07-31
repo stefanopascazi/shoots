@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "sync-content": "node scripts/sync-content.mjs",
-    "check-content": "node scripts/sync-content.mjs --check",
     "predev": "npm run sync-content",
     "dev": "next dev",
     "prebuild": "npm run sync-content",

@@ -6,7 +6,7 @@ Turbopack) + Tailwind CSS 4.
 ## Content is not authored here
 
 The documentation rendered by this site **is** the repository documentation.
-`scripts/sync-content.mjs` mirrors:
+`scripts/sync-content.mjs` mirrors, into gitignored folders:
 
 | Source | Destination |
 | --- | --- |
@@ -17,22 +17,18 @@ The documentation rendered by this site **is** the repository documentation.
 
 It runs automatically on `predev`, `prebuild` and `pretypecheck`. **Never edit
 `content/` or `public/assets/`** — change the markdown in `../docs/` instead, and
-the next build rewrites them.
+the next build rewrites them. Nothing is duplicated in git: a docs edit is one
+diff, in `docs/`.
 
-### Why the snapshot is committed
+## Deploying
 
-Both folders are generated *and* committed. A Vercel project with a Root
-Directory of `webapp` cannot rely on the parent: the Root Directory docs state
-the app "will not be able to access files outside of that directory" and that
-`..` cannot be used, and access to the rest of the monorepo is a dashboard
-toggle (*Include source files outside of the Root Directory in the Build Step*).
-Committing the snapshot means the site builds from `webapp/` alone, whatever that
-toggle says. When the parent *is* available the prebuild sync just rewrites it
-identically; when it is not, the script logs that it is using the snapshot and
-carries on.
+The build reads the monorepo root, so the deployment must expose it.
 
-`npm run check-content` re-syncs and fails if the snapshot is stale — CI runs it,
-so a docs edit can never ship without the site picking it up.
+On **Vercel**: Root Directory `webapp`, framework Next.js, and the Root Directory
+setting *Include source files outside of the Root Directory in the Build Step*
+left **on** — it is enabled by default for every project created after
+2020-08-27. With it off, `sync-content` fails immediately with an explicit
+message rather than building a site with no documentation.
 
 Every markdown file under `docs/` must also appear in `lib/docs/nav.ts`; the docs
 layout asserts this and fails the build otherwise, so a new page can never end up
@@ -41,10 +37,9 @@ unreachable.
 ## Commands
 
 ```sh
-npm run dev            # sync content, then next dev
-npm run build          # sync content, then next build
-npm run typecheck      # sync content, then tsc --noEmit
-npm run check-content  # fail if the committed snapshot is stale (CI)
+npm run dev         # sync content, then next dev
+npm run build       # sync content, then next build
+npm run typecheck   # sync content, then tsc --noEmit
 ```
 
 ## Layout
