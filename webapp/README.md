@@ -11,7 +11,6 @@ The documentation rendered by this site **is** the repository documentation.
 | Source | Destination |
 | --- | --- |
 | `../docs/**/*.md` | `content/docs/` |
-| `../README.md` | `content/README.md` |
 | `../assets/` (PNG captures, logo) | `public/assets/` |
 | `../package.json` version | `content/meta.json` |
 
@@ -29,6 +28,31 @@ setting *Include source files outside of the Root Directory in the Build Step*
 left **on** — it is enabled by default for every project created after
 2020-08-27. With it off, `sync-content` fails immediately with an explicit
 message rather than building a site with no documentation.
+
+### When a deployment actually happens
+
+`vercel.json` sets `ignoreCommand` to `scripts/vercel-ignore-build.mjs`, so a
+push only redeploys the site when it touched something the site is built from:
+
+| Path | Why |
+| --- | --- |
+| `webapp/` | the site itself |
+| `docs/` | every documentation page |
+| `assets/` | logo and terminal captures |
+| `package.json` | the shoots version shown in the header and the sidebar |
+
+Anything else — `packages/`, `scripts/`, `test/`, `.github/`, the installers —
+skips the build. The script diffs `VERCEL_GIT_PREVIOUS_SHA` (the last
+*successful* deployment for the branch, exposed only when an ignore command is
+configured) against the pushed commit, and **fails safe**: no previous SHA, a
+base outside Vercel's `--depth=10` clone, or any error at all means build. It
+never stays silent when it cannot tell.
+
+Two notes. Exit codes are inverted by Vercel's convention — `1` builds, `0`
+skips. And a skipped build still counts against deployment quota and concurrent
+build slots, because the ignore command runs inside the build step; Vercel's own
+*Skip deployment* toggle (Root Directory settings, on by default) runs earlier
+and does not, so leaving both enabled is the cheaper combination.
 
 Every markdown file under `docs/` must also appear in `lib/docs/nav.ts`; the docs
 layout asserts this and fails the build otherwise, so a new page can never end up

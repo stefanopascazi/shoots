@@ -31,7 +31,6 @@ async function main() {
   await mkdir(contentDir, { recursive: true });
 
   await cp(join(repo, "docs"), join(contentDir, "docs"), { recursive: true });
-  await cp(join(repo, "README.md"), join(contentDir, "README.md"));
 
   await rm(publicAssets, { recursive: true, force: true });
   await mkdir(publicAssets, { recursive: true });
