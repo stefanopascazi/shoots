@@ -32,6 +32,7 @@ import { assembleFeatures, targetDeltas, actualAbsVec, renderOneHot, AS_SHOT_DIM
 import { applyMask, featureMask, featureSetKey, type FeatureLayout } from '../develop/featureSets.js';
 import { buildSessionContext, contextFor, sessionKey } from '../develop/session.js';
 import { buildNormalEquations, solveRidge } from './regress.js';
+import { VERSION } from '../../version.js';
 import { fitPca, applyPca } from './pca.js';
 import {
   EPS,
@@ -444,6 +445,7 @@ export function train(dataset: DevelopDataset, options: TrainOptions): DevelopPr
     baseline: dataset.baseline,
     branches,
     trainedAt: new Date().toISOString(),
+    toolVersion: VERSION,
     stats: {
       edited: rows.length,
       color: byTreatment.color.length,

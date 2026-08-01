@@ -104,6 +104,9 @@ export function refreshedMeta(
     colorDim: dataset.colorDim,
     baseline: dataset.baseline,
     ...(looks.size > 0 ? { looks: Object.fromEntries(looks) } : {}),
+    // Carried over, never re-stamped: refreshing targets does not re-extract the
+    // features, so the dataset is still as old as the export that produced it.
+    ...(dataset.toolVersion ? { toolVersion: dataset.toolVersion } : {}),
     summary,
   };
 }

@@ -34,6 +34,7 @@ tedious parts around them.
 | Page | What it covers |
 | --- | --- |
 | [Configuration](./configuration.md) | `~/.shoots` layout, every environment variable |
+| [Migration notes](./migrations.md) | What each release asks of you — printed by `shoots release-notes` |
 | [Troubleshooting](./troubleshooting.md) | Common failures and their fixes |
 | [Development](./development.md) | Monorepo layout, build, release process |
 
@@ -88,6 +89,7 @@ shoots
 ├── setup        provision exiftool + LibRaw + the inference model
 ├── doctor       environment health check
 ├── update       self-update the standalone binary
+├── release-notes  the migration steps this release needs, checked against ~/.shoots
 └── shell        the interactive shell (default with no arguments)
 ```
 

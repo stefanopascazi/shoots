@@ -59,6 +59,7 @@ import {
   type CliIo,
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
+import { VERSION } from '../version.js';
 import type { AsShotMeta, Treatment } from './develop/schema.js';
 import { ensureClipModelReady, ensureExiftoolReady, ensureLibrawReady } from '../tools.js';
 // Nothing here knows how an editor stores an edit: the adapter does.
@@ -332,6 +333,9 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     colorDim: COLOR_FEATURE_NAMES.length,
     baseline,
     ...(looks.size > 0 ? { looks: Object.fromEntries(looks) } : {}),
+    // Which build extracted these features — `release-notes` compares it against
+    // the running version to spot a dataset that a release has left behind.
+    toolVersion: VERSION,
     summary,
   });
   await new Promise<void>((resolve) => stream.end(resolve));

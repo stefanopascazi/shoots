@@ -49,7 +49,8 @@ export function assertApplicable(profile: DevelopProfile, dataset: DatasetGuards
     throw new Error(
       `profile color dim ${profile.colorDim} != dataset color dim ${dataset.colorDim} — ` +
         `the ${older} was built with a different version of shoots. ` +
-        'Re-run `shoots develop init <your-edited-catalog>` to refit the profile against the current features.',
+        'Re-run `shoots develop init <your-edited-catalog>` to refit the profile against the current features ' +
+        '(`shoots release-notes` shows the full note).',
     );
   }
   // The photometric features are only comparable within one baseline render

@@ -71,7 +71,13 @@ export interface LearnArgs {
 function assertMergeable(base: DevelopDataset, shoot: DevelopDataset): string | null {
   if (base.model !== shoot.model) return `embedding model differs ('${base.model}' vs '${shoot.model}')`;
   if (base.dim !== shoot.dim) return `embedding dim differs (${base.dim} vs ${shoot.dim})`;
-  if (base.colorDim !== shoot.colorDim) return `colour feature count differs (${base.colorDim} vs ${shoot.colorDim})`;
+  if (base.colorDim !== shoot.colorDim) {
+    // A release widened the vector: the older dataset is stale, not corrupt.
+    return (
+      `colour feature count differs (${base.colorDim} vs ${shoot.colorDim}) — ` +
+      'run `shoots release-notes` for the migration step'
+    );
+  }
   if (base.baseline !== shoot.baseline) {
     return `baseline render differs ('${base.baseline}' vs '${shoot.baseline}') — the colour features are not comparable across baselines`;
   }

@@ -20,6 +20,7 @@ interface MetaLine {
   colorFeatureNames?: string[];
   baseline: string;
   looks?: Record<string, string>;
+  toolVersion?: string;
 }
 
 export async function loadDataset(file: string): Promise<DevelopDataset> {
@@ -69,6 +70,7 @@ export async function loadDataset(file: string): Promise<DevelopDataset> {
     colorDim: meta.colorDim,
     baseline: meta.baseline,
     ...(meta.looks ? { looks: meta.looks } : {}),
+    ...(meta.toolVersion ? { toolVersion: meta.toolVersion } : {}),
     results,
   };
 }

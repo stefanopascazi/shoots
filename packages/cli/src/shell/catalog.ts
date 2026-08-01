@@ -74,6 +74,11 @@ export const COMMANDS: CommandSpec[] = [
     summary: 'Update the standalone binary to the latest release',
     usage: '/update [--check]',
   },
+  {
+    name: 'release-notes',
+    summary: 'Migration steps this release needs, checked against what is stored in ~/.shoots',
+    usage: '/release-notes [--all] [--json]',
+  },
   { name: 'cd', builtin: true, summary: 'Change the shell working directory', usage: '/cd <path>' },
   { name: 'pwd', builtin: true, summary: 'Print the shell working directory', usage: '/pwd' },
   { name: 'clear', builtin: true, summary: 'Clear the screen', usage: '/clear' },

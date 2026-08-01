@@ -38,6 +38,7 @@ so scripts are unaffected.
 | [`setup`](./setup.md) | Download & verify exiftool, LibRaw and the inference model into `~/.shoots` |
 | [`doctor`](./doctor.md) | Environment health check |
 | [`update`](./update.md) | Self-update the standalone binary |
+| [`release-notes`](./release-notes.md) | The migration steps this release needs, checked against `~/.shoots` |
 | `shell` | Open the interactive shell explicitly |
 
 ---
@@ -132,6 +133,7 @@ shoots schedule run [--force] [--editor <id>] [--home <dir>] [--dry-run] [--json
 shoots setup  [--json]
 shoots doctor [--json]
 shoots update [--check] [--json]
+shoots release-notes [--all] [--json]
 ```
 
 ---

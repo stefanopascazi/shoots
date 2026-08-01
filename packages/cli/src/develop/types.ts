@@ -65,6 +65,13 @@ export interface DevelopDataset {
    * put tens of megabytes of identical text into a 20k-image dataset.
    */
   looks?: Record<string, string>;
+  /**
+   * The shoots version that *extracted the features* — read by `release-notes`.
+   * Deliberately not refreshed by `develop refresh-targets`: that command
+   * rewrites the targets and leaves the feature vectors exactly as exported, so
+   * re-stamping it would hide a migration that is still outstanding.
+   */
+  toolVersion?: string;
   results: DevelopExportResult[];
   summary?: unknown;
 }
@@ -209,6 +216,12 @@ export interface DevelopProfile {
   baseline: string;
   branches: Partial<Record<Treatment, BranchModel>>;
   trainedAt: string;
+  /**
+   * The shoots version that fitted this profile — what `release-notes` compares
+   * against to decide whether a migration step is outstanding. Absent on
+   * profiles written by 0.4.8 or earlier, which is itself the answer.
+   */
+  toolVersion?: string;
   stats: {
     edited: number;
     color: number;

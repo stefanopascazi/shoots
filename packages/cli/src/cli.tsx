@@ -17,6 +17,7 @@ import { registerScheduleCommand } from './commands/schedule.js';
 import { registerSetupCommand } from './commands/setup.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerUpdateCommand } from './commands/update.js';
+import { registerReleaseNotesCommand } from './commands/release-notes.js';
 import { assertShellCatalogInSync } from './shell/catalog.js';
 import { installCrashHandlers } from './crash.js';
 import { VERSION } from './version.js';
@@ -47,6 +48,7 @@ registerScheduleCommand(program);
 registerSetupCommand(program);
 registerDoctorCommand(program);
 registerUpdateCommand(program);
+registerReleaseNotesCommand(program);
 
 program
   .command('shell')

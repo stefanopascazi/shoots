@@ -364,6 +364,24 @@ That triggers:
 CI builds the per-platform binaries, generates `SHA256SUMS.txt`, and publishes the
 GitHub release. `shoots update` and both installers consume that release.
 
+### Migration notes
+
+**Before tagging**, if the release asks anything of the photographer — a rebuild,
+a re-run, a moved file — add an entry to
+`packages/cli/src/release-notes/migrations.ts` and regenerate the doc:
+
+```sh
+npm run docs:migrations              # writes docs/migrations.md
+npm run docs:migrations -- --check   # fails when the doc is stale
+```
+
+The TypeScript list is the source of truth: the standalone binary ships no
+`docs/` directory, and `shoots release-notes` has to print the notes at runtime.
+`docs/migrations.md` is its published mirror — never edit it by hand.
+
+git-cliff already lists *what changed*; a migration note says *what to do about
+it*, which cannot be derived from any commit. Only the second half belongs here.
+
 ---
 
 ## `@shoots/match`

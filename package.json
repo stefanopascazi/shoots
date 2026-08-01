@@ -20,7 +20,8 @@
     "build:binary": "bun scripts/build-binary.ts",
     "build:icon": "bun scripts/generate-icon.ts",
     "build:screens": "bun scripts/capture-screens.tsx",
-    "preversion": "npm run typecheck && npm run build",
+    "docs:migrations": "bun scripts/generate-migrations-doc.ts",
+    "preversion": "npm run typecheck && npm run build && npm run docs:migrations -- --check",
     "postversion": "git push origin main && git push origin --tags"
   },
   "devDependencies": {

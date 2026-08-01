@@ -393,6 +393,19 @@ export SHOOTS_RAW_DEVELOPER_ARGS='-w -W -o 1 -q 0 -T -Z {out} {in}'
 
 `dcraw_emu` needs **LibRaw ≥ 0.20** for CR3 support.
 
+### `profile color dim 44 != dataset color dim 50`
+
+Your profile predates a release that widened the feature vector; it is stale, not
+broken. Ask what is outstanding, then rebuild:
+
+```sh
+shoots release-notes
+shoots develop init <your-edited-catalog>
+```
+
+`develop refresh-targets` does not help — the features changed, not the targets.
+See [Migration notes](./migrations.md).
+
 ### The dataset is empty
 
 Almost always `--edited-only` on a folder with no develop settings.
