@@ -41,7 +41,16 @@ export function assertApplicable(profile: DevelopProfile, dataset: DatasetGuards
     throw new Error(`profile embedding dim ${profile.embeddingDim} != dataset dim ${dataset.dim}`);
   }
   if (profile.colorDim !== dataset.colorDim) {
-    throw new Error(`profile color dim ${profile.colorDim} != dataset color dim ${dataset.colorDim}`);
+    // Almost always an upgrade rather than a mistake: a release that adds a
+    // photometric feature widens this vector, and every profile fitted before it
+    // is stale. Say so, because "50 != 44" reads like a bug in the tool when it
+    // is really a one-line fix the photographer can run.
+    const older = profile.colorDim < dataset.colorDim ? 'profile' : 'dataset';
+    throw new Error(
+      `profile color dim ${profile.colorDim} != dataset color dim ${dataset.colorDim} — ` +
+        `the ${older} was built with a different version of shoots. ` +
+        'Re-run `shoots develop init <your-edited-catalog>` to refit the profile against the current features.',
+    );
   }
   // The photometric features are only comparable within one baseline render
   // strategy: an embedded camera JPEG and a neutral external render put the same
