@@ -56,6 +56,17 @@ interface FeatureSet {
   colour: string[] | 'all';
   /** Semantic embedding: only groups whose choice plausibly follows the subject. */
   embedding: boolean;
+  /**
+   * Whether the session block — the same colour features averaged over the shoot
+   * — is narrowed by `colour` too, or passed whole.
+   *
+   * Measured, and the two halves disagree. Narrowing it costs the tonal
+   * parameters dearly (Exposure 10.2% -> -0.9%, Contrast 23.8% -> -2.5%): what
+   * the rest of the shoot looks like IS the exposure decision, more than the
+   * single frame is. It pays for the taste parameters, where the same columns
+   * are only noise (Clarity -34.6% -> -5.6%, Texture -6.2% -> +2.2%).
+   */
+  narrowSession?: boolean;
 }
 
 /**
@@ -74,7 +85,7 @@ interface FeatureSet {
 const SETS: Record<string, FeatureSet> = {
   tone: { colour: TONE_COLOUR, embedding: false },
   wb: { colour: CAST_COLOUR, embedding: false },
-  presence: { colour: TONE_COLOUR, embedding: true },
+  presence: { colour: TONE_COLOUR, embedding: true, narrowSession: true },
   // Curve knots and calibration have no measured story of their own yet; they
   // keep the full vector rather than inheriting a guess made for another group.
   paramCurve: { colour: 'all', embedding: true },
@@ -104,10 +115,10 @@ const PARAM_SETS: Record<string, FeatureSet> = {
   Highlights2012: { colour: ['clipHigh', 'lumaP99', 'lumaMean', 'lumaStd'], embedding: false },
   Shadows2012: { colour: ['clipShadow', 'shadowFloor', 'lumaMean', 'lumaStd'], embedding: false },
   // Detail energy is the whole question: is there sand, foliage, fabric — or skin.
-  Texture: { colour: ['detailFine', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true },
-  Clarity2012: { colour: ['detailCoarse', 'detailFine', 'lumaStd', 'lumaMedian'], embedding: true },
+  Texture: { colour: ['detailFine', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true, narrowSession: true },
+  Clarity2012: { colour: ['detailCoarse', 'detailFine', 'lumaStd', 'lumaMedian'], embedding: true, narrowSession: true },
   // Haze lifts the dark channel and flattens local contrast.
-  Dehaze: { colour: ['darkChannel', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true },
+  Dehaze: { colour: ['darkChannel', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true, narrowSession: true },
 };
 
 /**
@@ -144,7 +155,17 @@ export function featureMask(key: string, group: string, layout: FeatureLayout): 
     mask[at + i] = set.colour === 'all' || set.colour.includes(COLOR_FEATURE_NAMES[i] ?? '');
   }
   at += layout.colour;
-  for (let i = 0; i < layout.session + layout.asShot + layout.render; i++) mask[at + i] = true;
+  // The session block is the SAME colour features averaged over the shoot, so it
+  // has to take the same mask. Letting it through whole was the bug that made
+  // every earlier masking experiment measure exactly zero: four selected columns
+  // arrived alongside fifty session columns carrying the very features that had
+  // just been excluded, and the fit read them right back.
+  for (let i = 0; i < layout.session; i++) {
+    mask[at + i] =
+      !set.narrowSession || set.colour === 'all' || set.colour.includes(COLOR_FEATURE_NAMES[i] ?? '');
+  }
+  at += layout.session;
+  for (let i = 0; i < layout.asShot + layout.render; i++) mask[at + i] = true;
   return mask;
 }
 
