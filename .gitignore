@@ -22,3 +22,10 @@ aistudio/
 # screenshot capture staging (scripts/capture-screens.tsx)
 /demo/
 /webapp/
+# Local develop-predictor experiment data (large, machine-specific)
+train_v2.jsonl
+train_v2_trained.json
+train_full.jsonl
+train_ext.jsonl
+predictions.json
+profile-my-style.json

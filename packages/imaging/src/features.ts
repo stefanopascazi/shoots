@@ -57,6 +57,7 @@ export const COLOR_FEATURE_NAMES: string[] = [
   // just how bright the frame is. See the block comment on each computation.
   'lumaP01',
   'lumaP99',
+  'shadowFloor',
   'detailFine',
   'detailCoarse',
   'darkChannel',
@@ -257,6 +258,29 @@ export async function extractColorFeatures(input: string | Buffer): Promise<Colo
   const detailCoarse = detailEnergy(coarse, halfW, halfH) / 1020;
   const darkChannel = darkSum / n / 255;
 
+  /**
+   * Where the shadows actually bottom out, measured so noise cannot fake it.
+   *
+   * `lumaP01` on the full-resolution plane reads the darkest one percent of
+   * *pixels*, and in a neutral render — no noise reduction applied — that one
+   * percent is largely sensor noise: it moved Blacks the wrong way when it was
+   * the only shadow-end feature (4.7% against 6.8% without it). Two changes make
+   * it describe the scene instead: read the 2× box-averaged plane, which halves
+   * the noise while leaving tonal structure intact, and take the 5th percentile
+   * rather than the 1st, so a handful of dead pixels cannot set the floor.
+   */
+  const coarseHist = new Float64Array(256);
+  for (let i = 0; i < coarse.length; i++) coarseHist[Math.min(255, coarse[i]! | 0)]! += 1;
+  const shadowFloor = ((): number => {
+    const want = coarse.length * 0.05;
+    let seen = 0;
+    for (let i = 0; i < 256; i++) {
+      seen += coarseHist[i]!;
+      if (seen >= want) return i;
+    }
+    return 255;
+  })();
+
   const vector: number[] = [
     lumaMean / 255,
     lumaMedian / 255,
@@ -278,6 +302,7 @@ export async function extractColorFeatures(input: string | Buffer): Promise<Colo
     ...hueHistNorm,
     lumaP01 / 255,
     lumaP99 / 255,
+    shadowFloor / 255,
     detailFine,
     detailCoarse,
     darkChannel,
