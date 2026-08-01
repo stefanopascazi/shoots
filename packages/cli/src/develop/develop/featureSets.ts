@@ -106,8 +106,11 @@ const SETS: Record<string, FeatureSet> = {
  */
 const PARAM_SETS: Record<string, FeatureSet> = {
   // The ends of the histogram: what was sacrificed, and what was protected.
-  // shadowFloor, not lumaP01: the 1st percentile of a neutral render is mostly
-  // sensor noise, and using it cost Blacks 2 points. See features.ts.
+  // shadowFloor earns its place: dropping it takes Blacks from 4.7% to 3.1%.
+  // Note it was nearly cut on a bad comparison — the 6.8% it was measured against
+  // came from the run where the session block still leaked the masked columns
+  // back in (see ca0532d), so that figure belonged to a different model. Once the
+  // leak was closed, the honest baseline for this set is 3.1%.
   Blacks2012: { colour: ['clipShadow', 'shadowFloor', 'lumaMedian', 'lumaStd'], embedding: false },
   Whites2012: { colour: ['clipHigh', 'lumaP99', 'lumaMedian', 'lumaStd'], embedding: false },
   // Where the bulk of the light sits, which is the exposure decision itself.
