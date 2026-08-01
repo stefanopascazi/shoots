@@ -254,15 +254,15 @@ function trainBranch(
   };
   const buckets = new Map<string, number[]>();
   for (let k = 0; k < params.length; k++) {
-    const key = featureSetKey(params[k]!.group);
+    const key = featureSetKey(params[k]!.key, params[k]!.group);
     const at = buckets.get(key);
     if (at) at.push(k);
     else buckets.set(key, [k]);
   }
   const maskFor = new Map(
-    [...buckets.keys()].map((key) => {
-      const group = params[buckets.get(key)![0]!]!.group;
-      return [key, featureMask(group, layout)];
+    [...buckets.keys()].map((bucket) => {
+      const first = params[buckets.get(bucket)![0]!]!;
+      return [bucket, featureMask(first.key, first.group, layout)];
     }),
   );
 

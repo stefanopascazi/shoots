@@ -81,8 +81,37 @@ const SETS: Record<string, FeatureSet> = {
   calibration: { colour: 'all', embedding: true },
 };
 
-/** Groups sharing a mask are fitted together, so this key is what buckets them. */
-export function featureSetKey(group: string): string {
+/**
+ * Per-parameter overrides, where the *cause* of a choice is narrower than its
+ * group's.
+ *
+ * A photographer who exposes for the highlights takes one decision at capture —
+ * nothing clipped on the right — and Blacks at -100 is its consequence, not a
+ * separate aesthetic act. So Blacks and Whites are questions about where the
+ * histogram ends, while Exposure is a question about where its bulk sits. Same
+ * group, different evidence.
+ *
+ * Anything absent here inherits its group's set.
+ */
+const PARAM_SETS: Record<string, FeatureSet> = {
+  // The ends of the histogram: what was sacrificed, and what was protected.
+  Blacks2012: { colour: ['clipShadow', 'lumaMedian', 'lumaStd', 'lumaMean'], embedding: false },
+  Whites2012: { colour: ['clipHigh', 'lumaMedian', 'lumaStd', 'lumaMean'], embedding: false },
+  // Where the bulk of the light sits, which is the exposure decision itself.
+  Exposure2012: { colour: ['lumaMedian', 'lumaMean', 'clipHigh', 'clipShadow'], embedding: false },
+  Highlights2012: { colour: ['clipHigh', 'lumaMean', 'lumaStd', 'valMean'], embedding: false },
+  Shadows2012: { colour: ['clipShadow', 'lumaMean', 'lumaStd', 'valMean'], embedding: false },
+};
+
+/**
+ * Parameters sharing a mask are fitted together, so this key is what buckets them.
+ *
+ * Named parameters get their own bucket — one extra normal-equation system each,
+ * which on a few hundred rows is cheap next to being fitted on evidence that does
+ * not describe the decision.
+ */
+export function featureSetKey(key: string, group: string): string {
+  if (PARAM_SETS[key]) return `param:${key}`;
   return SETS[group] ? group : '*';
 }
 
@@ -93,8 +122,8 @@ export function featureSetKey(group: string): string {
  * the shoot looks like* and *what the base rendering was*, which every parameter
  * needs regardless of the evidence it reads from the frame itself.
  */
-export function featureMask(group: string, layout: FeatureLayout): boolean[] {
-  const set = SETS[group];
+export function featureMask(key: string, group: string, layout: FeatureLayout): boolean[] {
+  const set = PARAM_SETS[key] ?? SETS[group];
   const width = layout.embedding + layout.colour + layout.session + layout.asShot + layout.render;
   // An unknown group keeps everything — new parameters behave as they did before
   // this file existed until someone measures them.
