@@ -28,7 +28,8 @@ import {
   type RenderProfile,
   type Treatment,
 } from '../develop/schema.js';
-import { assembleFeatures, targetDeltas, actualAbsVec, renderOneHot } from '../develop/assemble.js';
+import { assembleFeatures, targetDeltas, actualAbsVec, renderOneHot, AS_SHOT_DIM } from '../develop/assemble.js';
+import { applyMask, featureMask, featureSetKey, type FeatureLayout } from '../develop/featureSets.js';
 import { buildSessionContext, contextFor, sessionKey } from '../develop/session.js';
 import { buildNormalEquations, solveRidge } from './regress.js';
 import { fitPca, applyPca } from './pca.js';
@@ -241,6 +242,36 @@ function trainBranch(
       }
     : undefined;
 
+  // Each parameter group sees only the evidence its choice can rest on (see
+  // develop/featureSets.ts). Groups sharing a mask are fitted together, so this
+  // costs one pass per distinct mask rather than one per parameter.
+  const layout: FeatureLayout = {
+    embedding: keep,
+    colour: raw[0]?.features.length ?? 0,
+    session: useContext ? contextWidth : 0,
+    asShot: AS_SHOT_DIM,
+    render: renderVocab.length,
+  };
+  const buckets = new Map<string, number[]>();
+  for (let k = 0; k < params.length; k++) {
+    const key = featureSetKey(params[k]!.group);
+    const at = buckets.get(key);
+    if (at) at.push(k);
+    else buckets.set(key, [k]);
+  }
+  const maskFor = new Map(
+    [...buckets.keys()].map((key) => {
+      const group = params[buckets.get(key)![0]!]!.group;
+      return [key, featureMask(group, layout)];
+    }),
+  );
+
+  /** The branch transform (PCA, when compressing) with a group's mask behind it. */
+  const maskedTransform = (mask: boolean[]): RowTransform => (train) => {
+    const base = transform ? transform(train) : (x: number[]) => x;
+    return (x) => applyMask(base(x), mask);
+  };
+
   let gateStats: ParamStats[] = [];
   let randomStats: ParamStats[] = [];
   // λ per parameter. A fixed --lambda applies to all of them; otherwise each one
@@ -249,16 +280,39 @@ function trainBranch(
   let heldOut = 0;
 
   if (rows.length >= folds * 4) {
-    if (options.lambda === undefined) {
-      lambdas = selectLambdas(rows, params, { folds, groupBy, grid: LAMBDA_GRID, transform });
-      // The gate has to pay for that search: λ is re-chosen inside each outer
-      // fold, so no parameter is scored on the split that picked its λ.
-      gateStats = nestedEvaluate(rows, params, { folds, groupBy, grid: LAMBDA_GRID, transform });
-    } else {
-      gateStats = evaluateWithLambda(rows, params, { folds, groupBy, transform }, lambdas);
+    gateStats = new Array<ParamStats>(params.length);
+    randomStats = new Array<ParamStats>(params.length);
+
+    for (const [key, at] of buckets) {
+      const sub = at.map((k) => params[k]!);
+      // Same photographs, targets narrowed to this bucket's parameters.
+      const subRows: EvalRow[] = rows.map((r) => ({
+        ...r,
+        deltas: at.map((k) => r.deltas[k]!),
+        abs: at.map((k) => r.abs[k]!),
+      }));
+      const tf = maskedTransform(maskFor.get(key)!);
+
+      let subLambdas: number[];
+      let subGate: ParamStats[];
+      if (options.lambda === undefined) {
+        subLambdas = selectLambdas(subRows, sub, { folds, groupBy, grid: LAMBDA_GRID, transform: tf });
+        // The gate has to pay for that search: λ is re-chosen inside each outer
+        // fold, so no parameter is scored on the split that picked its λ.
+        subGate = nestedEvaluate(subRows, sub, { folds, groupBy, grid: LAMBDA_GRID, transform: tf });
+      } else {
+        subLambdas = sub.map(() => options.lambda!);
+        subGate = evaluateWithLambda(subRows, sub, { folds, groupBy, transform: tf }, subLambdas);
+      }
+      // The leakage-prone split, at the same λ, purely for contrast in the report.
+      const subRandom = evaluateWithLambda(subRows, sub, { folds, groupBy: 'none', transform: tf }, subLambdas);
+
+      at.forEach((k, i) => {
+        lambdas[k] = subLambdas[i]!;
+        gateStats[k] = subGate[i]!;
+        randomStats[k] = subRandom[i]!;
+      });
     }
-    // The leakage-prone split, at the same λ, purely for contrast in the report.
-    randomStats = evaluateWithLambda(rows, params, { folds, groupBy: 'none', transform }, lambdas);
     heldOut = rows.length;
   }
 
@@ -299,17 +353,34 @@ function trainBranch(
   // parameter emits as "the photographer's constant", and a corrected shoot must
   // not quietly redefine that — `develop calibrate` is where a wrong constant is
   // fixed, on evidence built for the job. Weights belong to the fit alone.
-  const ne = buildNormalEquations(
-    finalX.map((x) => standardize(x, featStats)),
-    rows.map((r) => standardize(r.deltas, deltaStats)),
-    rows.map((r) => r.weight ?? 1),
-  );
-  // The normal equations are shared across λ, so each parameter can take its own
-  // row out of the solution fitted at its own shrinkage for one Cholesky per
-  // distinct λ — never one per parameter.
-  const solved = new Map(([...new Set(lambdas)]).map((lambda) => [lambda, solveRidge(ne, lambda)]));
-  const weights = params.map((_, k) => solved.get(lambdas[k]!)!.weights[k]!);
-  const bias = params.map((_, k) => solved.get(lambdas[k]!)!.bias[k]!);
+  // Masking happens *after* standardization: a column zeroed first would have its
+  // own mean and spread measured on the zeros, and inference standardizes with the
+  // stats stored here. Zeroed afterwards the column is constant, so centering in
+  // the normal equations kills it and its weight comes out 0 — identical to
+  // dropping it, while every stored width stays what `predict` expects.
+  const stdX = finalX.map((x) => standardize(x, featStats));
+  const stdY = rows.map((r) => standardize(r.deltas, deltaStats));
+  const rowWeights = rows.map((r) => r.weight ?? 1);
+
+  const weights = new Array<number[]>(params.length);
+  const bias = new Array<number>(params.length);
+  // One normal-equation system per distinct mask. Within a bucket they are still
+  // shared across λ, so each parameter takes its own row out of the solution
+  // fitted at its own shrinkage — one Cholesky per distinct λ, never per parameter.
+  for (const [key, at] of buckets) {
+    const mask = maskFor.get(key)!;
+    const ne = buildNormalEquations(
+      stdX.map((x) => applyMask(x, mask)),
+      stdY.map((y) => at.map((k) => y[k]!)),
+      rowWeights,
+    );
+    const solved = new Map(([...new Set(at.map((k) => lambdas[k]!))]).map((l) => [l, solveRidge(ne, l)]));
+    at.forEach((k, i) => {
+      const s = solved.get(lambdas[k]!)!;
+      weights[k] = s.weights[i]!;
+      bias[k] = s.bias[i]!;
+    });
+  }
 
   const skillOf = (stats: ParamStats[]): number | null =>
     stats.length > 0 ? round4(weightedSkill(stats, params, degenerate) ?? 0) : null;
