@@ -1,5 +1,9 @@
 # Develop predictor — reference baseline
 
+> Internal engineering note, deliberately outside `docs/` — that directory is
+> mirrored to the public site by `scripts/sync-webapp-content.mjs`, and these are
+> one photographer's catalog figures, not user documentation.
+
 Regenerated whenever the feature vector or the fit changes. **Compare against
 this file, never against numbers quoted in an older run.** Three separate
 conclusions were drawn against stale baselines before this file existed — a

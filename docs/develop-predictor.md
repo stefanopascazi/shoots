@@ -126,6 +126,23 @@ the same amount of shrinkage and one shared λ is picked by an average the
 unpredictable majority dominates. The gate pays for that search: λ is re-chosen
 inside each held-out fold, so no parameter is scored on the split that picked it.
 
+By default the report lists the parameters that carry the look, and closes with a
+count of the ones it left out. Pass **`--all`** to see every parameter instead —
+including the ones that never move away from their default, and the style sliders
+with negative skill:
+
+```
+shoots develop train --data train.jsonl --name my-style --all
+```
+
+It changes the report only. The profile that gets written is identical either
+way, so `--all` is never something you have to remember before training — it is
+there for when a parameter you expected to be predicted is missing from the list,
+and you want to see what its skill actually was.
+
+> Not to be confused with `develop clean --all`, which is destructive: that one
+> also removes the training dataset and the fitted profile.
+
 **The headline number is the weighted skill over the image-dependent parameters.**
 
 | Headline skill | Reading |
