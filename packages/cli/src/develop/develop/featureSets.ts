@@ -95,12 +95,17 @@ const SETS: Record<string, FeatureSet> = {
  */
 const PARAM_SETS: Record<string, FeatureSet> = {
   // The ends of the histogram: what was sacrificed, and what was protected.
-  Blacks2012: { colour: ['clipShadow', 'lumaMedian', 'lumaStd', 'lumaMean'], embedding: false },
-  Whites2012: { colour: ['clipHigh', 'lumaMedian', 'lumaStd', 'lumaMean'], embedding: false },
+  Blacks2012: { colour: ['clipShadow', 'lumaP01', 'lumaMedian', 'lumaStd'], embedding: false },
+  Whites2012: { colour: ['clipHigh', 'lumaP99', 'lumaMedian', 'lumaStd'], embedding: false },
   // Where the bulk of the light sits, which is the exposure decision itself.
-  Exposure2012: { colour: ['lumaMedian', 'lumaMean', 'clipHigh', 'clipShadow'], embedding: false },
-  Highlights2012: { colour: ['clipHigh', 'lumaMean', 'lumaStd', 'valMean'], embedding: false },
-  Shadows2012: { colour: ['clipShadow', 'lumaMean', 'lumaStd', 'valMean'], embedding: false },
+  Exposure2012: { colour: ['lumaMedian', 'lumaMean', 'lumaP01', 'lumaP99'], embedding: false },
+  Highlights2012: { colour: ['clipHigh', 'lumaP99', 'lumaMean', 'lumaStd'], embedding: false },
+  Shadows2012: { colour: ['clipShadow', 'lumaP01', 'lumaMean', 'lumaStd'], embedding: false },
+  // Detail energy is the whole question: is there sand, foliage, fabric — or skin.
+  Texture: { colour: ['detailFine', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true },
+  Clarity2012: { colour: ['detailCoarse', 'detailFine', 'lumaStd', 'lumaMedian'], embedding: true },
+  // Haze lifts the dark channel and flattens local contrast.
+  Dehaze: { colour: ['darkChannel', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true },
 };
 
 /**

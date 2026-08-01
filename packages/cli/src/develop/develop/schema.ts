@@ -279,6 +279,15 @@ export interface AsShotMeta {
   iso: number | null;
   exposureComp: number | null;
   camera: string | null;
+  /**
+   * Hour of capture, 0..23 local, from EXIF. Absent on older datasets.
+   *
+   * A frame shot at sunset and one shot at noon ask different questions of the
+   * white balance: warming the first is honouring the light, warming the second
+   * is inventing it. Nothing in the pixels separates the two reliably — a warm
+   * scene at noon looks like a neutral scene at golden hour — but the clock does.
+   */
+  hour?: number | null;
 }
 
 function refValue(param: DevelopParam, meta: AsShotMeta): number {

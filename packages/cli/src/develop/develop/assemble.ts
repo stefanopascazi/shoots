@@ -17,12 +17,24 @@
 import { encodeDelta, decodeDelta, type AsShotMeta, type DevelopParam } from './schema.js';
 
 /** Number of appended as-shot scalar features. */
-export const AS_SHOT_DIM = 3;
+export const AS_SHOT_DIM = 5;
 
 export function asShotFeatures(meta: AsShotMeta): number[] {
   const temp = meta.tempAsShot && meta.tempAsShot > 0 ? meta.tempAsShot : 5500;
   const iso = meta.iso && meta.iso > 0 ? meta.iso : 100;
-  return [Math.log(temp), Math.log(iso), meta.exposureComp ?? 0];
+  // The clock is circular: 23:00 and 01:00 are an hour apart, not twenty-two. A
+  // raw hour number would tell the model the opposite, so it goes in as a point
+  // on the unit circle. An unknown hour lands at the origin — equidistant from
+  // every time of day, which is exactly what "we don't know" should mean.
+  const hour = typeof meta.hour === 'number' && meta.hour >= 0 ? meta.hour : null;
+  const angle = hour === null ? 0 : (2 * Math.PI * hour) / 24;
+  return [
+    Math.log(temp),
+    Math.log(iso),
+    meta.exposureComp ?? 0,
+    hour === null ? 0 : Math.sin(angle),
+    hour === null ? 0 : Math.cos(angle),
+  ];
 }
 
 export function assembleFeatures(

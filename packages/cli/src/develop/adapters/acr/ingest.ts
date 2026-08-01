@@ -107,6 +107,9 @@ export const CRS_TAG_ARGS: string[] = [
 export const META_TAGS = [
   'ColorTempAsShot', 'ColorTempMeasured', 'ColorTemperature',
   'ISO', 'ExposureCompensation', 'Model',
+  // Time of day: golden hour and midday ask different things of the white
+  // balance, and the pixels alone cannot tell a warm noon from a neutral sunset.
+  'DateTimeOriginal', 'CreateDate',
 ] as const;
 
 /**
@@ -115,6 +118,19 @@ export const META_TAGS = [
  * reading the RAW, so we must point it at the sidecar. DNG/JPEG embed the crs
  * settings, so those fall back to the file itself.
  */
+/**
+ * Local hour from an EXIF timestamp ("2025:01:01 17:42:03", optionally with a
+ * zone suffix). Local on purpose: the sun is where the photographer was, so the
+ * wall clock is the useful signal and converting to UTC would destroy it.
+ */
+export function captureHour(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const m = /^\d{4}[:-]\d{2}[:-]\d{2}[ T](\d{2}):/.exec(value.trim());
+  if (!m) return null;
+  const hour = parseInt(m[1]!, 10);
+  return Number.isFinite(hour) && hour >= 0 && hour <= 23 ? hour : null;
+}
+
 export function developSource(file: string): string {
   const parsed = path.parse(file);
   const sidecar = path.join(parsed.dir, `${parsed.name}.xmp`);
@@ -234,6 +250,7 @@ export function readAsShot(crs: ExifRecord | undefined, exif: ExifRecord | undef
     iso: num(exif?.['ISO']),
     exposureComp: num(exif?.['ExposureCompensation']),
     camera: typeof exif?.['Model'] === 'string' ? (exif['Model'] as string) : null,
+    hour: captureHour(exif?.['DateTimeOriginal'] ?? exif?.['CreateDate']),
   };
 }
 

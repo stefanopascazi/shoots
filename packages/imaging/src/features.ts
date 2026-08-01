@@ -53,6 +53,13 @@ export const COLOR_FEATURE_NAMES: string[] = [
   'satStd',
   'valMean',
   ...Array.from({ length: HUE_BINS }, (_, i) => `hueHist${i}`),
+  // ── Added for the develop predictor: describe the *cause* of a slider, not
+  // just how bright the frame is. See the block comment on each computation.
+  'lumaP01',
+  'lumaP99',
+  'detailFine',
+  'detailCoarse',
+  'darkChannel',
 ];
 
 /** RGB (0..255) → HSV with h in [0,1), s in [0,1], v in [0,1]. */
@@ -108,6 +115,13 @@ export async function extractColorFeatures(input: string | Buffer): Promise<Colo
   const hueHist = new Float64Array(HUE_BINS);
   let clipHigh = 0;
   let clipShadow = 0;
+  // Per-pixel luma, kept in place so the detail measures below can look at
+  // neighbours. The histograms above are position-free; texture is not.
+  const lumaPlane = new Float32Array(pixels);
+  // Dark-channel prior: in haze-free outdoor pixels at least one RGB channel is
+  // near zero somewhere locally, while haze lifts all three. The frame-wide mean
+  // of the per-pixel minimum is a cheap proxy for how veiled the scene is.
+  let darkSum = 0;
 
   for (let p = 0; p < pixels; p++) {
     const o = p * channels;
@@ -116,6 +130,8 @@ export async function extractColorFeatures(input: string | Buffer): Promise<Colo
     const b = data[o + 2]!;
 
     const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    lumaPlane[p] = luma;
+    darkSum += Math.min(r, g, b);
     lumaHistRaw[Math.min(255, luma | 0)]! += 1;
     if (r >= 250 && g >= 250 && b >= 250) clipHigh++;
     if (r <= 4 && g <= 4 && b <= 4) clipShadow++;
@@ -179,6 +195,68 @@ export async function extractColorFeatures(input: string | Buffer): Promise<Colo
   const rgRatio = gMean > 1 ? rMean / gMean : 1;
   const bgRatio = gMean > 1 ? bMean / gMean : 1;
 
+  /**
+   * Where the histogram *ends*, not where its bulk sits.
+   *
+   * A photographer exposing for the highlights takes one decision at capture —
+   * nothing clipped on the right — and the black point that follows is its
+   * consequence. `clipShadow` only says whether something is already crushed;
+   * these say how far the tails actually reach, which is what the Blacks and
+   * Whites sliders are answering.
+   */
+  const percentile = (q: number): number => {
+    const want = n * q;
+    let seen = 0;
+    for (let i = 0; i < 256; i++) {
+      seen += lumaHistRaw[i]!;
+      if (seen >= want) return i;
+    }
+    return 255;
+  };
+  const lumaP01 = percentile(0.01);
+  const lumaP99 = percentile(0.99);
+
+  /**
+   * High-frequency energy, at two scales: mean |Laplacian| over the luma plane,
+   * and the same over a 2× box-downsampled copy.
+   *
+   * Sand, foliage and fabric are fine detail; a soft portrait background is not,
+   * and skin deliberately is not. Nothing in a luminance or hue histogram can
+   * tell those apart — this is the evidence a Texture or Clarity decision rests
+   * on. Two scales because fine grain and broad structure are different choices.
+   */
+  const detailEnergy = (plane: Float32Array, w: number, h: number): number => {
+    if (w < 3 || h < 3) return 0;
+    let sum = 0;
+    let count = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const lap = 4 * plane[i]! - plane[i - 1]! - plane[i + 1]! - plane[i - w]! - plane[i + w]!;
+        sum += Math.abs(lap);
+        count++;
+      }
+    }
+    return count > 0 ? sum / count : 0;
+  };
+  const width = info.width;
+  const height = info.height;
+  const halfW = width >> 1;
+  const halfH = height >> 1;
+  const coarse = new Float32Array(Math.max(1, halfW * halfH));
+  for (let y = 0; y < halfH; y++) {
+    for (let x = 0; x < halfW; x++) {
+      const i = 2 * y * width + 2 * x;
+      coarse[y * halfW + x] =
+        (lumaPlane[i]! + lumaPlane[i + 1]! + lumaPlane[i + width]! + lumaPlane[i + width + 1]!) / 4;
+    }
+  }
+  // Normalized by the 8-neighbour maximum a Laplacian can reach on 0..255 data,
+  // so the value stays comparable across images and stays in 0..1.
+  const detailFine = detailEnergy(lumaPlane, width, height) / 1020;
+  const detailCoarse = detailEnergy(coarse, halfW, halfH) / 1020;
+  const darkChannel = darkSum / n / 255;
+
   const vector: number[] = [
     lumaMean / 255,
     lumaMedian / 255,
@@ -198,6 +276,11 @@ export async function extractColorFeatures(input: string | Buffer): Promise<Colo
     satStd,
     valMean,
     ...hueHistNorm,
+    lumaP01 / 255,
+    lumaP99 / 255,
+    detailFine,
+    detailCoarse,
+    darkChannel,
   ].map((v) => Math.round(v * 1e6) / 1e6);
 
   return {
