@@ -13,11 +13,11 @@ import {
   type RenderProfile,
   type Treatment,
 } from './develop/schema.js';
-import { assembleFeatures, renderOneHot } from './develop/assemble.js';
+import { baseFeatures, deviationFrom, renderOneHot } from './develop/assemble.js';
 import { applyPca } from './train/pca.js';
 import { applyOffset } from './feedback/calibrate.js';
 import type { PredictedEdit } from './adapters/types.js';
-import type { BranchModel, DevelopDataset, DevelopExportResult, DevelopProfile } from './types.js';
+import type { BranchModel, DevelopDataset, DevelopExportResult, DevelopProfile, HeadModel } from './types.js';
 
 export interface Prediction {
   file: string;
@@ -117,12 +117,41 @@ export function resolveRender(
   };
 }
 
-/** The embedding block as this branch consumes it: raw, projected, or dropped. */
-function embeddingFor(branch: BranchModel, embedding: number[]): number[] {
-  if (branch.embeddingFeatures === 0) return [];
-  return branch.embeddingPca ? applyPca(embedding, branch.embeddingPca) : embedding;
+/**
+ * One head's contribution for parameter `k`, in delta space.
+ *
+ * Three things happen in order, and the order matters: the raw ridge output is
+ * de-standardized, the gate may replace it with the head's own constant, and the
+ * de-shrinking slope restores the reach that shrinkage took off. A gated head
+ * emits its target mean — for the level head that is the photographer's
+ * catalog-wide constant, for the frame head it is "no per-frame modulation".
+ */
+function headDelta(head: HeadModel, x: number[], k: number): number {
+  const mean = head.targetMean[k]!;
+  if (head.gated[k]) return mean;
+  let dot = head.bias[k]!;
+  const w = head.weights[k]!;
+  for (let j = 0; j < x.length; j++) {
+    dot += w[j]! * ((x[j]! - head.featureMean[j]!) / head.featureStd[j]!);
+  }
+  const raw = dot * head.targetStd[k]! + mean;
+  return mean + (head.response[k] ?? 1) * (raw - mean);
 }
 
+/** The embedding block as one head consumes it: raw, projected, or dropped. */
+function projectEmbedding(head: HeadModel, base: number[], rawDim: number): number[] {
+  const rest = base.slice(rawDim);
+  if (head.embeddingFeatures === 0) return rest;
+  const embedding = base.slice(0, rawDim);
+  return head.embeddingPca ? [...applyPca(embedding, head.embeddingPca), ...rest] : [...embedding, ...rest];
+}
+
+/**
+ * @param sessionMean The mean of {@link baseFeatures} over this photograph's whole
+ * shoot — the same vector the trainer described the session with. A frame alone in
+ * its folder is its own mean, so its deviation is zero and only the level head
+ * speaks; that is the correct degradation, not a failure.
+ */
 export function predictOne(
   profile: DevelopProfile,
   result: DevelopExportResult,
@@ -135,16 +164,16 @@ export function predictOne(
   const params = paramsForTreatment(treatment);
   const meta = result.asShot;
   const render = resolveRender(branch, result, renderOverride);
-  const x = [
-    ...assembleFeatures(
-      embeddingFor(branch, result.embedding),
-      result.features,
-      branch.sessionFeatures > 0 ? sessionMean : [],
-      meta,
-    ),
-    ...renderOneHot(renderKey(render), branch.renderVocab),
-  ];
-  const gated = new Set(branch.gatedParams ?? []);
+
+  const base = baseFeatures(result.embedding, result.features, meta);
+  const rawDim = result.embedding.length;
+  // Where the shoot sits, and what this frame does differently. The split is the
+  // whole model: without it the shoot average answered both questions and every
+  // frame in a folder came back with the same numbers.
+  const levelX = projectEmbedding(branch.level, [...sessionMean], rawDim)
+    .concat(renderOneHot(renderKey(render), branch.renderVocab));
+  const frameX = projectEmbedding(branch.frame, deviationFrom(base, sessionMean), rawDim);
+
   // Measured on the photographer's own corrections rather than on the catalog,
   // so it is applied after the model has spoken — in absolute units, where the
   // correction was observed — and never merged into the weights. A gated
@@ -154,19 +183,7 @@ export function predictOne(
   const develop: Record<string, number> = {};
   for (let k = 0; k < params.length; k++) {
     const param = params[k]!;
-    // Gated: held-out evidence says the model does not beat the photographer's
-    // own constant for this parameter, so emit the constant. A prediction that
-    // scores below the mean is worse than no prediction — it moves a slider
-    // away from where this photographer would have left it.
-    let delta = branch.deltaMean[k]!;
-    if (!gated.has(param.key)) {
-      let dot = branch.bias[k]!;
-      const w = branch.weights[k]!;
-      for (let j = 0; j < x.length; j++) {
-        dot += w[j]! * ((x[j]! - branch.featureMean[j]!) / branch.featureStd[j]!);
-      }
-      delta = dot * branch.deltaStd[k]! + branch.deltaMean[k]!;
-    }
+    const delta = headDelta(branch.level, levelX, k) + headDelta(branch.frame, frameX, k);
     const offset = offsets[param.key];
     const value = offset === undefined
       ? decodeDelta(param, delta, meta)

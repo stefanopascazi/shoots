@@ -36,9 +36,9 @@ const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
  * signature of a catalog the model cannot read, and it is the difference between
  * "the predictions are flat" and knowing *why* they are flat.
  */
-function lambdaSpread(b: BranchModel): string {
+function lambdaSpread(lambdas: number[]): string {
   const counts = new Map<number, number>();
-  for (const lambda of b.paramLambda) counts.set(lambda, (counts.get(lambda) ?? 0) + 1);
+  for (const lambda of lambdas) counts.set(lambda, (counts.get(lambda) ?? 0) + 1);
   return [...counts.entries()]
     .sort((x, y) => y[1] - x[1] || x[0] - y[0])
     .map(([lambda, count]) => `${lambda}×${count}`)
@@ -46,19 +46,16 @@ function lambdaSpread(b: BranchModel): string {
 }
 
 function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boolean, all: boolean): void {
-  w.write(`\n  ── ${b.treatment.toUpperCase()} branch — ${b.samples} images ──\n`);
-  const embedding = b.embeddingFeatures === 0
+  w.write(`\n  ── ${b.treatment.toUpperCase()} branch — ${b.samples} images in ${b.sessions} shoots ──\n`);
+  const embedding = b.frame.embeddingFeatures === 0
     ? 'dropped'
-    : b.embeddingPca
-      ? `${b.embeddingFeatures} principal components`
-      : `raw (${b.embeddingFeatures} dims)`;
+    : b.frame.embeddingPca
+      ? `${b.frame.embeddingFeatures} principal components`
+      : `raw (${b.frame.embeddingFeatures} dims)`;
   w.write(`  CLIP embedding: ${embedding}\n`);
-  w.write(
-    b.sessionFeatures > 0
-      ? `  session context: ${b.sessionFeatures} features describing each image's whole shoot\n`
-      : `  session context: off — too few images in this branch to afford it\n`,
-  );
-  w.write(`  λ per param${lambdaAuto ? ' (auto)' : ''}: ${lambdaSpread(b)}\n`);
+  w.write(`  level head: ${b.level.features} features describing the shoot (+${b.renderVocab.length} rendering)\n`);
+  w.write(`  frame head: ${b.frame.features} features for how this frame departs from it\n`);
+  w.write(`  λ per param${lambdaAuto ? ' (auto)' : ''}: level ${lambdaSpread(b.level.paramLambda)} | frame ${lambdaSpread(b.frame.paramLambda)}\n`);
   const gate = b.imageDependentSkill;
   const rand = b.imageDependentSkillRandom;
   w.write(`  image-dependent skill: ${gate === null ? 'n/a (too little data)' : gate.toFixed(4)}`);
@@ -66,6 +63,13 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
     w.write(`   (random folds: ${rand.toFixed(4)} — the gap is session leakage)`);
   }
   w.write('\n');
+  // The number that separates a prediction from a default. Everything above can
+  // look healthy on a model that only ever reproduces per-shoot averages.
+  const within = b.withinSessionSkill;
+  w.write(
+    `  within-shoot skill: ${within === null ? 'n/a' : within.toFixed(4)}` +
+      `   (does it tell two frames of the SAME shoot apart)\n`,
+  );
 
   // Image-dependent params always; the rest only on request. Degenerate targets
   // are listed too — a target that never moves is evidence about the *export*,
@@ -78,14 +82,20 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
   const shown = b.perParam.filter((p) => all || p.weight >= 1.5 || p.group === 'toneCurve');
   const rows = shown.slice().sort((x, y) => y.skill - x.skill);
   if (rows.length > 0) {
-    w.write('  param                 skill  ± fold   random    model MAE   baseline MAE        λ\n');
+    w.write('  param                end-end  ± fold   random    shoot  in-shoot  reach   model MAE\n');
     for (const p of rows) {
-      const note = p.degenerate ? '  [never moves]' : p.gated ? '  [gated → constant]' : '';
+      const note = p.degenerate
+        ? '  [never moves]'
+        : p.gated
+          ? '  [constant]'
+          : p.frame.gated
+            ? '  [flat within a shoot]'
+            : '';
       w.write(
         `  ${p.key.padEnd(20)} ${pct(p.skill).padStart(7)} ${pct(p.skillSd).padStart(7)} ` +
           `${pct(p.skillRandom).padStart(8)} ` +
-          `${p.modelMae.toFixed(3).padStart(12)} ${p.baselineMae.toFixed(3).padStart(14)} ` +
-          `${String(p.lambda).padStart(8)}${note}\n`,
+          `${pct(p.level.shippedSkill).padStart(8)} ${pct(p.frame.shippedSkill).padStart(9)} ` +
+          `${p.frame.response.toFixed(2).padStart(6)} ${p.modelMae.toFixed(3).padStart(11)}${note}\n`,
       );
     }
   }
@@ -97,7 +107,13 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
     }
   }
   if (b.gatedParams.length > 0) {
-    w.write(`  gated (predicted as your constant): ${b.gatedParams.length}/${b.perParam.length} params at skill ≤ ${b.gateThreshold}\n`);
+    w.write(`  constant (both heads gated): ${b.gatedParams.length}/${b.perParam.length} params\n`);
+  }
+  if (b.flatParams.length > 0) {
+    w.write(
+      `  flat within a shoot: ${b.flatParams.length}/${b.perParam.length} params — a per-shoot level is predicted, ` +
+        `but nothing tells one frame from another (in-shoot skill ≤ ${b.frameGateThreshold})\n`,
+    );
   }
 }
 
@@ -134,9 +150,14 @@ export async function runTrain(args: TrainArgs): Promise<void> {
     const branch = profile.branches[treatment];
     if (branch) writeBranch(w, branch, lambda === undefined, args.all ?? false);
   }
-  w.write('\n  skill > 0 means the model beats "apply my average edit" on photographs\n');
-  w.write('  from shoots it has never seen. That is the number that decides.\n');
-  w.write('  "± fold" is how far that skill moves between held-out folds: a change\n');
+  w.write('\n  end-end > 0 means the model beats "apply my average edit" on photographs\n');
+  w.write('  from shoots it has never seen. "shoot" is how much of that comes from\n');
+  w.write('  reading the shoot, "in-shoot" from reading THIS frame against its\n');
+  w.write('  neighbours — and in-shoot is the one that decides whether a backlit\n');
+  w.write('  frame and one in open shade come back with different numbers.\n');
+  w.write('  "reach" is how far the prediction is stretched back out after ridge\n');
+  w.write('  shrank it: 1.00 is untouched, above that the fit was too timid.\n');
+  w.write('  "± fold" is how far end-end moves between held-out folds: a change\n');
   w.write('  smaller than it is not a change. Single per-parameter figures on a few\n');
   w.write('  hundred images routinely swing several points on their own.\n');
 }

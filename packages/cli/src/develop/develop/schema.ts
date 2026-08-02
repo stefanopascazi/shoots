@@ -206,8 +206,17 @@ export const DEVELOP_PARAMS: DevelopParam[] = [...SHARED, ...COLOR, ...BW];
  * v8: the feature vector gained the session mean and the embedding block became
  * variable-width (dropped, projected, or raw). Both change the layout the
  * weights are indexed by, and a v7 profile has no projection to reproduce.
+ *
+ * v9: one model per branch became two — a *level* head over the shoot and a
+ * *frame* head over how far this photograph departs from it, added together, each
+ * with its own λ, its own gate and its own de-shrinking slope. A v8 profile has a
+ * single weight matrix over a layout that no longer exists, and more to the point
+ * it was a per-shoot constant generator: on the reference catalog it moved
+ * Highlights by a standard deviation of 2.3 points inside a shoot where the
+ * photographer moved it by 15.3. λ also changed units — it is now shrinkage per
+ * sample, so a stored v8 λ read as a v9 one would be off by the catalog size.
  */
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 /** Parameters predicted for a given treatment: shared + that treatment's branch. */
 export function paramsForTreatment(treatment: Treatment): DevelopParam[] {

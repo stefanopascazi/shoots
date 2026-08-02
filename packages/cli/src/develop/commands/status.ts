@@ -92,6 +92,17 @@ export async function runStatus(args: StatusArgs): Promise<void> {
         `                  ${treatment.padEnd(5)} skill ${skill === null ? 'n/a' : skill.toFixed(4)}, ` +
           `${gated}/${branch.perParam.length} params gated to your constant`,
       );
+      // Said out loud because it is what a photographer notices first: how many
+      // sliders come back identical for every frame of one shoot.
+      const flat = (branch.flatParams?.length ?? 0) + gated;
+      const within = branch.withinSessionSkill;
+      if (within !== undefined) {
+        printHuman(
+          io,
+          `                  ${' '.repeat(5)} within-shoot ${within === null ? 'n/a' : within.toFixed(4)}, ` +
+            `${flat}/${branch.perParam.length} params identical across a shoot`,
+        );
+      }
     }
     const calibration = profile.calibration;
     if (calibration) {

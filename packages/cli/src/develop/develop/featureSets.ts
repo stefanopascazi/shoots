@@ -21,20 +21,26 @@
  * still decides what to do with it. Anything not listed is zeroed before the fit
  * — after centering a constant column contributes nothing, so masking is exactly
  * equivalent to dropping the column while keeping every stored width unchanged.
+ *
+ * The two heads take the same sets but not the same narrowing: see
+ * {@link frameMask} and {@link levelMask} at the bottom of the file. The frame
+ * head is narrowed, because "is *this* one backlit" is a question four columns
+ * answer; the level head is not, because "what kind of shoot is this" is a broad
+ * description and the earlier measurement that the whole colour block pays for
+ * itself there was correct — it was charging the frame block for the gain that
+ * was wrong.
  */
 import { COLOR_FEATURE_NAMES } from '@shoots/imaging';
 
-/** Feature blocks in the order {@link assembleFeatures} lays them out. */
+/** Feature blocks in the order {@link baseFeatures} lays them out. */
 export interface FeatureLayout {
   /** Embedding columns kept (0 when dropped, the PCA rank when compressed). */
   embedding: number;
   /** Colour feature count — always the full {@link COLOR_FEATURE_NAMES} width. */
   colour: number;
-  /** Session-context width, 0 when the branch could not afford it. */
-  session: number;
-  /** As-shot scalars (log WB temperature, log ISO, exposure compensation). */
+  /** As-shot scalars (log WB temperature, log ISO, exposure comp, hour sin/cos). */
   asShot: number;
-  /** One-hot render vocabulary appended last. */
+  /** One-hot render vocabulary, appended to the level head only. */
   render: number;
 }
 
@@ -56,17 +62,6 @@ interface FeatureSet {
   colour: string[] | 'all';
   /** Semantic embedding: only groups whose choice plausibly follows the subject. */
   embedding: boolean;
-  /**
-   * Whether the session block — the same colour features averaged over the shoot
-   * — is narrowed by `colour` too, or passed whole.
-   *
-   * Measured, and the two halves disagree. Narrowing it costs the tonal
-   * parameters dearly (Exposure 10.2% -> -0.9%, Contrast 23.8% -> -2.5%): what
-   * the rest of the shoot looks like IS the exposure decision, more than the
-   * single frame is. It pays for the taste parameters, where the same columns
-   * are only noise (Clarity -34.6% -> -5.6%, Texture -6.2% -> +2.2%).
-   */
-  narrowSession?: boolean;
 }
 
 /**
@@ -85,7 +80,7 @@ interface FeatureSet {
 const SETS: Record<string, FeatureSet> = {
   tone: { colour: TONE_COLOUR, embedding: false },
   wb: { colour: CAST_COLOUR, embedding: false },
-  presence: { colour: TONE_COLOUR, embedding: true, narrowSession: true },
+  presence: { colour: TONE_COLOUR, embedding: true },
   // Curve knots and calibration have no measured story of their own yet; they
   // keep the full vector rather than inheriting a guess made for another group.
   paramCurve: { colour: 'all', embedding: true },
@@ -118,10 +113,10 @@ const PARAM_SETS: Record<string, FeatureSet> = {
   Highlights2012: { colour: ['clipHigh', 'lumaP99', 'lumaMean', 'lumaStd'], embedding: false },
   Shadows2012: { colour: ['clipShadow', 'shadowFloor', 'lumaMean', 'lumaStd'], embedding: false },
   // Detail energy is the whole question: is there sand, foliage, fabric — or skin.
-  Texture: { colour: ['detailFine', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true, narrowSession: true },
-  Clarity2012: { colour: ['detailCoarse', 'detailFine', 'lumaStd', 'lumaMedian'], embedding: true, narrowSession: true },
+  Texture: { colour: ['detailFine', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true },
+  Clarity2012: { colour: ['detailCoarse', 'detailFine', 'lumaStd', 'lumaMedian'], embedding: true },
   // Haze lifts the dark channel and flattens local contrast.
-  Dehaze: { colour: ['darkChannel', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true, narrowSession: true },
+  Dehaze: { colour: ['darkChannel', 'detailCoarse', 'lumaStd', 'satMean'], embedding: true },
 };
 
 /**
@@ -136,16 +131,26 @@ export function featureSetKey(key: string, group: string): string {
   return SETS[group] ? group : '*';
 }
 
+/** Width of the frame head's input: one photograph's own deviation vector. */
+export const frameWidth = (l: FeatureLayout): number => l.embedding + l.colour + l.asShot;
+
+/** Width of the level head's input: the session descriptor plus the rendering. */
+export const levelWidth = (l: FeatureLayout): number => frameWidth(l) + l.render;
+
 /**
- * Column mask for a parameter group, over the assembled feature vector.
+ * Column mask for the **frame** head — what this photograph does that the rest of
+ * its shoot does not.
  *
- * Session context and the render one-hot are always kept: they condition *what
- * the shoot looks like* and *what the base rendering was*, which every parameter
- * needs regardless of the evidence it reads from the frame itself.
+ * This is where the narrowing has to bite. The frame head answers "is *this* one
+ * backlit", and the four columns that describe clipping and where the histogram
+ * ends answer it; the 16 luma and 12 hue histogram bins are degrees of freedom
+ * spent on noise. There is no session block to mask any more — the deviation
+ * vector cannot leak the shoot average back in, because it is defined as the
+ * frame minus exactly that average.
  */
-export function featureMask(key: string, group: string, layout: FeatureLayout): boolean[] {
+export function frameMask(key: string, group: string, layout: FeatureLayout): boolean[] {
   const set = PARAM_SETS[key] ?? SETS[group];
-  const width = layout.embedding + layout.colour + layout.session + layout.asShot + layout.render;
+  const width = frameWidth(layout);
   // An unknown group keeps everything — new parameters behave as they did before
   // this file existed until someone measures them.
   if (!set) return new Array<boolean>(width).fill(true);
@@ -158,17 +163,32 @@ export function featureMask(key: string, group: string, layout: FeatureLayout): 
     mask[at + i] = set.colour === 'all' || set.colour.includes(COLOR_FEATURE_NAMES[i] ?? '');
   }
   at += layout.colour;
-  // The session block is the SAME colour features averaged over the shoot, so it
-  // has to take the same mask. Letting it through whole was the bug that made
-  // every earlier masking experiment measure exactly zero: four selected columns
-  // arrived alongside fifty session columns carrying the very features that had
-  // just been excluded, and the fit read them right back.
-  for (let i = 0; i < layout.session; i++) {
-    mask[at + i] =
-      !set.narrowSession || set.colour === 'all' || set.colour.includes(COLOR_FEATURE_NAMES[i] ?? '');
-  }
-  at += layout.session;
-  for (let i = 0; i < layout.asShot + layout.render; i++) mask[at + i] = true;
+  // As-shot deviation — this frame's own ISO, WB and exposure compensation
+  // against the shoot's — is capture evidence every parameter may read.
+  for (let i = 0; i < layout.asShot; i++) mask[at + i] = true;
+  return mask;
+}
+
+/**
+ * Column mask for the **level** head — where the whole shoot sits.
+ *
+ * Deliberately *not* narrowed. This head answers a different question: not "why
+ * this slider on this frame" but "what kind of shoot is this", and the broad
+ * description is what carries that. It is also where the earlier measurement of
+ * the session block belongs — Exposure 10.2% and Contrast 23.8% came from letting
+ * the shoot average through whole, and that gain was real; what was wrong was
+ * charging the *frame* block for it. Split apart, both can be true.
+ *
+ * The embedding still follows the group's set, and the render one-hot is always
+ * kept: it says what colour starting point the sliders were measured against.
+ */
+export function levelMask(key: string, group: string, layout: FeatureLayout): boolean[] {
+  const set = PARAM_SETS[key] ?? SETS[group];
+  const width = levelWidth(layout);
+  if (!set) return new Array<boolean>(width).fill(true);
+
+  const mask = new Array<boolean>(width).fill(true);
+  for (let i = 0; i < layout.embedding; i++) mask[i] = set.embedding;
   return mask;
 }
 

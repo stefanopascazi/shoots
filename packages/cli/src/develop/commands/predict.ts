@@ -11,6 +11,7 @@ import { assertCanEmit, DEFAULT_EDITOR, resolveAdapter } from '../adapters/regis
 import { loadDataset } from '../dataset/load.js';
 import { renderKey, type Treatment } from '../develop/schema.js';
 import { buildSessionContext, contextFor, soloSessionCount } from '../develop/session.js';
+import { baseFeatures } from '../develop/assemble.js';
 import type { DevelopProfile } from '../types.js';
 
 export interface PredictArgs {
@@ -52,13 +53,14 @@ export async function runPredict(args: PredictArgs): Promise<void> {
   // Session context is transductive by design: a frame's prediction depends on
   // what else is in its folder (see develop/session.ts). Built from every record
   // in the set, including any that carry no edit.
-  const context = buildSessionContext(dataset.results);
   const usable = dataset.results.filter((r) => r.embedding?.length && r.features?.length);
+  const base = new Map(usable.map((r) => [r.file, baseFeatures(r.embedding, r.features, r.asShot)]));
+  const context = buildSessionContext(usable.map((r) => ({ file: r.file, features: base.get(r.file)! })));
   const solo = soloSessionCount(context, usable.map((r) => r.file));
   if (solo > 0) {
     process.stderr.write(
-      `warn: ${solo}/${usable.length} images sit alone in their folder — the model was fitted with a whole shoot ` +
-        `to describe the session, and a lone frame can only describe itself\n`,
+      `warn: ${solo}/${usable.length} images sit alone in their folder — the model reads how far a frame departs ` +
+        `from its shoot, and a lone frame departs from itself by nothing: only the per-shoot level will be predicted\n`,
     );
   }
 
@@ -67,7 +69,7 @@ export async function runPredict(args: PredictArgs): Promise<void> {
       profile,
       r,
       resolveTreatment(profile, r, requested),
-      contextFor(context, r.file, r.features),
+      contextFor(context, r.file, base.get(r.file)!),
       args.cameraProfile,
     ),
   );

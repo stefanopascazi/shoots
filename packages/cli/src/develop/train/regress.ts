@@ -28,6 +28,18 @@ export interface NormalEquations {
   ybar: number[];
   d: number;
   p: number;
+  /**
+   * Σ of the sample weights — the effective sample size λ is scaled against.
+   *
+   * XᵀX grows with n, so a bare `+λI` means a fixed λ shrinks a 400-image catalog
+   * four times harder than a 1600-image one. That is not a knob anybody can reason
+   * about, and it is how the grid ended up topping out at values that annihilated
+   * every weight: at n=428 the old λ=30000 left 1.4% of the least-squares fit
+   * standing, so the model emitted the photographer's mean for every photograph.
+   * Scaling by Σw makes λ the shrinkage *per sample* — 1/(1+λ) of a standardized
+   * column's coefficient — which means the same thing on every catalog.
+   */
+  sw: number;
 }
 
 /**
@@ -86,15 +98,16 @@ export function buildNormalEquations(X: number[][], Y: number[][], weights?: rea
   // Mirror the upper triangle into the lower one.
   for (let a = 0; a < d; a++) for (let b = a + 1; b < d; b++) xtx[b]![a]! = xtx[a]![b]!;
 
-  return { xtx, rhs, xbar: Array.from(xbar), ybar: Array.from(ybar), d, p };
+  return { xtx, rhs, xbar: Array.from(xbar), ybar: Array.from(ybar), d, p, sw };
 }
 
 /** Solve the ridge head for a given λ, reusing prebuilt normal equations. */
 export function solveRidge(ne: NormalEquations, lambda: number): MultiRidgeResult {
-  const { xtx, rhs, xbar, ybar, d, p } = ne;
-  // A = XtX + λI (copy so ne stays reusable across λ).
+  const { xtx, rhs, xbar, ybar, d, p, sw } = ne;
+  // A = XtX + λ·Σw·I (copy so ne stays reusable across λ). See NormalEquations.sw
+  // for why the effective sample size belongs in there.
   const A: number[][] = xtx.map((row) => row.slice());
-  for (let a = 0; a < d; a++) A[a]![a]! += lambda;
+  for (let a = 0; a < d; a++) A[a]![a]! += lambda * sw;
   const L = choleskyFactor(A);
 
   const weights: number[][] = [];

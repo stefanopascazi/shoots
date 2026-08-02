@@ -29,8 +29,44 @@ import { decodeDelta, type AsShotMeta, type DevelopParam } from '../develop/sche
 import { buildNormalEquations, solveRidge, predictStd } from './regress.js';
 import { dot } from '../math/linalg.js';
 
-export const LAMBDA_GRID = [100, 300, 1000, 3000, 10000, 30000];
+/**
+ * Ridge strengths tried, in **per-sample** units (see `NormalEquations.sw`).
+ *
+ * λ here is the shrinkage a standardized column actually gets — roughly a factor
+ * 1/(1+λ) on its coefficient — so the grid means the same thing on a 40-image
+ * catalog and a 4000-image one. The old grid was in raw XᵀX units, which made it
+ * depend on the catalog size: at n=428 it spanned 0.23 to 70 in these units, and
+ * every parameter that landed at the top was emitting a constant while still
+ * being reported as a model.
+ *
+ * The bottom is 0.1 and not lower, which matters more than it looks. λ is
+ * re-selected inside every outer fold of the gate, on a couple of dozen shoots;
+ * a grid that reaches down to 0.01 offers that noisy inner search a value where
+ * the fit blows up (level Contrast scores −31% there against +21% at 0.3), and
+ * one fold picking it is enough to sink the honest score for the whole parameter.
+ * Nothing measured on the reference catalog wants less shrinkage than 0.1, so the
+ * range below it is all risk and no reach.
+ */
+export const LAMBDA_GRID = [0.1, 0.3, 1, 3, 10, 30, 100];
 export const EPS = 1e-6;
+
+/**
+ * How far the de-shrinking slope may go.
+ *
+ * Below 1 it is left alone — a slope under 1 means the model *over*-reached and
+ * shrinking further is correct. Above, it is capped: the slope is one scalar off
+ * held-out rows, and a parameter whose predictions barely move can produce an
+ * enormous ratio out of noise. Three times is already a large correction to admit
+ * to.
+ *
+ * The cap has to be applied in the λ search as well as at shipping time, or the
+ * two disagree about what is being chosen: an enormously shrunk fit looks fine to
+ * a search that may rescale it by twenty and is useless once the rescaling is
+ * limited to three. That mismatch gated Highlights outright the first time.
+ */
+export const MAX_RESPONSE = 3;
+export const clampResponse = (v: number): number =>
+  Number.isFinite(v) ? Math.min(MAX_RESPONSE, Math.max(0, v)) : 1;
 
 /** How held-out folds are drawn. */
 export type GroupBy = 'folder' | 'none';
@@ -55,6 +91,18 @@ export interface EvalRow {
    * Weights change the model; the gate keeps measuring it the way it always did.
    */
   weight?: number;
+  /**
+   * A known per-parameter delta this row's prediction is *added to*, in delta
+   * space. Absent for an ordinary fit.
+   *
+   * This is what lets the frame head be scored honestly. Its target is a
+   * deviation from the shoot's own level, so "did it help" is only answerable
+   * against that level: the baseline becomes `decode(offset)` — the right answer
+   * for the shoot with no per-frame modulation at all — and the model becomes
+   * `decode(offset + prediction)`. Both land in the absolute crs units the
+   * photographer sees, so the number is comparable with every other skill here.
+   */
+  offset?: number[];
 }
 
 /** Per-parameter held-out statistics under one fold policy. */
@@ -62,6 +110,30 @@ export interface ParamStats {
   modelMae: number;
   baselineMae: number;
   skill: number;
+  /**
+   * The same skill for the output as it actually ships — de-shrunk by
+   * {@link response}. Filled by the λ search, which *selects* on it; absent from
+   * the gate pass, which reports the raw number instead.
+   */
+  shippedSkill?: number;
+  /**
+   * Held-out slope of the truth on the prediction — the de-shrinking factor.
+   *
+   * Ridge returns a conditional mean, and a conditional mean estimated through
+   * heavy shrinkage is systematically *under-dispersed*: it lands on the right
+   * side of the average but nowhere near far enough. Measured on the reference
+   * catalog, Highlights moved by a standard deviation of 2.3 points inside a
+   * shoot where the photographer moved it by 15.3. That is the difference between
+   * a prediction and a default.
+   *
+   * The correction is the ordinary regression-dilution one: regress the true
+   * target on the model's own held-out output, and the slope is how much the
+   * output should have moved. Above 1 means over-shrunk. It is *not* a free
+   * ride — it scales the errors up too, and a model with no signal gets a slope
+   * near 0, so it cannot manufacture response where there is none. Zero when
+   * there is no held-out evidence.
+   */
+  response: number;
   /**
    * Spread of the same skill computed fold by fold — the error bar on the number
    * to its left.
@@ -181,6 +253,15 @@ export function degenerateTargets(rows: EvalRow[], paramCount: number): boolean[
  * over the training fold, decoded back to absolute units for each validation
  * image. Both sides of the ratio are therefore measured in the same absolute
  * crs units the photographer would see.
+ *
+ * Each λ is scored twice: as the ridge fit comes out, and after the de-shrinking
+ * slope that will be applied to it. The second number is the one λ is selected
+ * on, and the distinction matters more than it sounds. Scored on raw MAE this
+ * search has a systematic preference for the flattest model it is offered — a
+ * shrunk conditional mean has the lowest error *because* it barely moves — which
+ * is how a slider ends up at the same value on a backlit frame and one in open
+ * shade. Once the output is rescaled to the amplitude the evidence supports, MAE
+ * stops rewarding timidity and starts rewarding a prediction that tracks.
  */
 export function crossValidate(
   rows: EvalRow[],
@@ -190,42 +271,51 @@ export function crossValidate(
   const grid = options.grid ?? LAMBDA_GRID;
   const P = params.length;
   const fold = assignFolds(rows, options.folds, options.groupBy);
-  const modelErr = new Map<number, number[]>(grid.map((l) => [l, new Array<number>(P).fill(0)]));
   const baseErr = new Array<number>(P).fill(0);
+  // Held-out output per λ, centered on its own fold's constant, plus that
+  // constant — kept so the de-shrinking slope can be measured and applied
+  // without a second pass over the folds.
+  const centered = new Map<number, number[][]>(grid.map((l) => [l, rows.map(() => new Array<number>(P).fill(0))]));
+  const anchor = rows.map(() => new Array<number>(P).fill(0));
+  const scored = rows.map(() => false);
   let counted = 0;
 
   for (let f = 0; f < options.folds; f++) {
-    const train = rows.filter((_, i) => fold[i] !== f);
-    const val = rows.filter((_, i) => fold[i] === f);
-    if (train.length < 2 || val.length === 0) continue;
+    const trainIdx: number[] = [];
+    const valIdx: number[] = [];
+    rows.forEach((_, i) => (fold[i] === f ? valIdx : trainIdx).push(i));
+    if (trainIdx.length < 2 || valIdx.length === 0) continue;
+    const train = trainIdx.map((i) => rows[i]!);
 
     const apply = options.transform ? options.transform(train) : IDENTITY_TRANSFORM;
     const trainX = train.map((r) => apply(r.x));
-    const valX = val.map((r) => apply(r.x));
     const fs = columnStats(trainX);
     const ds = columnStats(train.map((r) => r.deltas));
     const ne = buildNormalEquations(trainX.map((x) => standardize(x, fs)), train.map((r) => standardize(r.deltas, ds)), train.map((r) => r.weight ?? 1));
 
-    // "Apply my average edit", in delta space.
+    // "Apply my average edit", in delta space — on top of whatever this row
+    // already knows (see EvalRow.offset; zero for an ordinary fit).
     const meanDelta = new Array<number>(P).fill(0);
     for (const r of train) for (let k = 0; k < P; k++) meanDelta[k]! += r.deltas[k]!;
     for (let k = 0; k < P; k++) meanDelta[k]! /= train.length;
-    for (const r of val) {
+    for (const i of valIdx) {
+      const r = rows[i]!;
+      scored[i] = true;
       for (let k = 0; k < P; k++) {
-        baseErr[k]! += Math.abs(decodeDelta(params[k]!, meanDelta[k]!, r.meta) - r.abs[k]!);
+        anchor[i]![k] = meanDelta[k]!;
+        baseErr[k]! += Math.abs(decodeDelta(params[k]!, (r.offset?.[k] ?? 0) + meanDelta[k]!, r.meta) - r.abs[k]!);
       }
     }
-    counted += val.length;
+    counted += valIdx.length;
 
-    const valStd = valX.map((x) => standardize(x, fs));
+    const valStd = valIdx.map((i) => standardize(apply(rows[i]!.x), fs));
     for (const lambda of grid) {
       const { weights, bias } = solveRidge(ne, lambda);
-      const err = modelErr.get(lambda)!;
-      val.forEach((r, i) => {
-        const predStd = predictStd(weights, bias, valStd[i]!);
+      const store = centered.get(lambda)!;
+      valIdx.forEach((i, j) => {
+        const predStd = predictStd(weights, bias, valStd[j]!);
         for (let k = 0; k < P; k++) {
-          const delta = predStd[k]! * ds.std[k]! + ds.mean[k]!;
-          err[k]! += Math.abs(decodeDelta(params[k]!, delta, r.meta) - r.abs[k]!);
+          store[i]![k] = predStd[k]! * ds.std[k]! + ds.mean[k]! - meanDelta[k]!;
         }
       });
     }
@@ -234,16 +324,42 @@ export function crossValidate(
   const n = Math.max(1, counted);
   const out = new Map<number, ParamStats[]>();
   for (const lambda of grid) {
-    const err = modelErr.get(lambda)!;
-    out.set(lambda, params.map((_, k) => {
-      const modelMae = err[k]! / n;
+    const store = centered.get(lambda)!;
+    out.set(lambda, params.map((param, k) => {
+      // Slope of the truth on the (centered) prediction: how far the output
+      // should have moved, given how far it did move.
+      let sp = 0, sy = 0, spp = 0, spy = 0;
+      for (let i = 0; i < rows.length; i++) {
+        if (!scored[i]) continue;
+        const c = store[i]![k]!;
+        const y = rows[i]!.deltas[k]! - anchor[i]![k]!;
+        sp += c; sy += y; spp += c * c; spy += c * y;
+      }
+      const varP = spp / n - (sp / n) ** 2;
+      const covPY = spy / n - (sp / n) * (sy / n);
+      const slope = clampResponse(varP > EPS ? covPY / varP : 0);
+
+      let modelErr = 0;
+      let shippedErr = 0;
+      for (let i = 0; i < rows.length; i++) {
+        if (!scored[i]) continue;
+        const r = rows[i]!;
+        const off = (r.offset?.[k] ?? 0) + anchor[i]![k]!;
+        const c = store[i]![k]!;
+        modelErr += Math.abs(decodeDelta(param, off + c, r.meta) - r.abs[k]!);
+        shippedErr += Math.abs(decodeDelta(param, off + slope * c, r.meta) - r.abs[k]!);
+      }
+      const modelMae = modelErr / n;
+      const shippedMae = shippedErr / n;
       const baselineMae = baseErr[k]! / n;
       return {
         modelMae,
         baselineMae,
-        // Only ever used to choose λ, never reported — no error bar needed.
+        // No error bar: this pass only ever chooses λ, it is never reported.
         skillSd: 0,
+        response: slope,
         skill: baselineMae > EPS ? 1 - modelMae / baselineMae : 0,
+        shippedSkill: baselineMae > EPS ? 1 - shippedMae / baselineMae : 0,
       };
     }));
   }
@@ -258,10 +374,33 @@ export function crossValidate(
  * measures a known model, while re-selecting inside the callback measures the
  * *procedure* that picks λ — and only the second one is honest about a search.
  */
+/**
+ * The two post-fit steps that turn a ridge output into what actually reaches the
+ * sidecar: the gate, and the de-shrinking slope.
+ *
+ * Passing them here is what makes "shipped skill" a real measurement rather than
+ * an estimate. Both are applied around the *training fold's* mean, which is the
+ * value a suppressed parameter emits, so the arithmetic matches inference
+ * exactly.
+ */
+export interface ShippedPolicy {
+  /** Per-parameter de-shrinking factor; 1 leaves the head's output alone. */
+  scale: number[];
+  /** Per-parameter: emit the constant instead of the model's output. */
+  suppress: boolean[];
+}
+
+/** The head's raw output put through its gate and its de-shrinking slope. */
+function ship(raw: number, mean: number, policy: ShippedPolicy | undefined, k: number): number {
+  if (!policy) return raw;
+  if (policy.suppress[k]) return mean;
+  return mean + (policy.scale[k] ?? 1) * (raw - mean);
+}
+
 function accumulateFolds(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; transform?: RowTransform },
+  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy },
   lambdasFor: (train: EvalRow[]) => number[],
 ): ParamStats[] {
   const P = params.length;
@@ -271,6 +410,9 @@ function accumulateFolds(
   // The same two errors kept fold by fold, so the reported skill can carry the
   // spread it was drawn from rather than pretending to be a point estimate.
   const perFold: { model: number[]; base: number[] }[] = [];
+  // Held-out (prediction, truth) pairs in delta space, pooled across folds, for
+  // the de-shrinking slope. Accumulated as sums so nothing is kept per row.
+  const pair = { sp: new Array<number>(P).fill(0), sy: new Array<number>(P).fill(0), spp: new Array<number>(P).fill(0), spy: new Array<number>(P).fill(0) };
   let counted = 0;
 
   for (let f = 0; f < options.folds; f++) {
@@ -288,13 +430,15 @@ function accumulateFolds(
     const ds = columnStats(train.map((r) => r.deltas));
     const ne = buildNormalEquations(trainX.map((x) => standardize(x, fs)), train.map((r) => standardize(r.deltas, ds)), train.map((r) => r.weight ?? 1));
 
-    // "Apply my average edit", in delta space (see the module header).
+    // "Apply my average edit", in delta space (see the module header), on top of
+    // whatever the row already knows (see EvalRow.offset).
     const meanDelta = new Array<number>(P).fill(0);
     for (const r of train) for (let k = 0; k < P; k++) meanDelta[k]! += r.deltas[k]!;
     for (let k = 0; k < P; k++) meanDelta[k]! /= train.length;
     for (const r of val) {
       for (let k = 0; k < P; k++) {
-        const e = Math.abs(decodeDelta(params[k]!, meanDelta[k]!, r.meta) - r.abs[k]!);
+        const base = (r.offset?.[k] ?? 0) + meanDelta[k]!;
+        const e = Math.abs(decodeDelta(params[k]!, base, r.meta) - r.abs[k]!);
         baseErr[k]! += e;
         foldErr.base[k]! += e;
       }
@@ -309,10 +453,19 @@ function accumulateFolds(
       for (let k = 0; k < P; k++) {
         if (lambdas[k] !== lambda) continue;
         for (let i = 0; i < val.length; i++) {
-          const delta = (dot(weights[k]!, valStd[i]!) + bias[k]!) * ds.std[k]! + ds.mean[k]!;
+          const fitted = (dot(weights[k]!, valStd[i]!) + bias[k]!) * ds.std[k]! + ds.mean[k]!;
+          const raw = ship(fitted, meanDelta[k]!, options.shipped, k);
+          const delta = (val[i]!.offset?.[k] ?? 0) + raw;
           const e = Math.abs(decodeDelta(params[k]!, delta, val[i]!.meta) - val[i]!.abs[k]!);
           modelErr[k]! += e;
           foldErr.model[k]! += e;
+          // Delta space, model output against target: the slope between them is
+          // what the shrinkage cost in reach.
+          const y = val[i]!.deltas[k]!;
+          pair.sp[k]! += raw;
+          pair.sy[k]! += y;
+          pair.spp[k]! += raw * raw;
+          pair.spy[k]! += raw * y;
         }
       }
     }
@@ -333,7 +486,14 @@ function accumulateFolds(
       const mean = perFoldSkill.reduce((s, v) => s + v, 0) / perFoldSkill.length;
       skillSd = Math.sqrt(perFoldSkill.reduce((s, v) => s + (v - mean) ** 2, 0) / perFoldSkill.length);
     }
-    return { modelMae, baselineMae, skill, skillSd };
+    // Centered slope of truth on prediction over the pooled held-out rows. One
+    // scalar per parameter from a few hundred points, so the reuse of the same
+    // rows that produced the skill is a negligible optimism — and the alternative,
+    // a second nested layer of folds, costs more than the number is worth.
+    const varP = pair.spp[k]! / n - (pair.sp[k]! / n) ** 2;
+    const covPY = pair.spy[k]! / n - (pair.sp[k]! / n) * (pair.sy[k]! / n);
+    const response = clampResponse(varP > EPS ? covPY / varP : 0);
+    return { modelMae, baselineMae, skill, skillSd, response };
   });
 }
 
@@ -346,6 +506,9 @@ function accumulateFolds(
  * catalog that pinned λ to the top of the grid and collapsed *every* parameter
  * onto the photographer's mean — which is exactly what a flat, "same settings
  * for every photo" prediction looks like from the outside.
+ *
+ * Selected on the *de-shrunk* skill — what the parameter will actually ship —
+ * rather than on the raw ridge output. See {@link crossValidate}.
  *
  * Ties go to the larger λ: same held-out evidence, less variance.
  */
@@ -360,7 +523,8 @@ export function selectLambdas(
     let best = grid[0]!;
     let bestSkill = -Infinity;
     for (const lambda of grid) {
-      const skill = cv.get(lambda)![k]!.skill;
+      const stats = cv.get(lambda)![k]!;
+      const skill = stats.shippedSkill ?? stats.skill;
       if (skill >= bestSkill - EPS) {
         bestSkill = Math.max(bestSkill, skill);
         best = lambda;
@@ -374,10 +538,63 @@ export function selectLambdas(
 export function evaluateWithLambda(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; transform?: RowTransform },
+  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy },
   lambdas: number[],
 ): ParamStats[] {
   return accumulateFolds(rows, params, options, () => lambdas);
+}
+
+/**
+ * The model's own held-out output per row, in delta space — no scoring.
+ *
+ * Exists so one head's prediction can become another's starting point. The frame
+ * head's honest end-to-end number is what it adds to the level the model would
+ * *really* have produced for a shoot it has never seen, and that level has to be
+ * held out under the same fold assignment or the two are not comparable.
+ */
+export function heldOutDeltas(
+  rows: EvalRow[],
+  paramCount: number,
+  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy },
+  lambdas: number[],
+): number[][] {
+  const P = paramCount;
+  const fold = assignFolds(rows, options.folds, options.groupBy);
+  const out = rows.map(() => new Array<number>(P).fill(0));
+
+  for (let f = 0; f < options.folds; f++) {
+    const trainIdx: number[] = [];
+    const valIdx: number[] = [];
+    rows.forEach((_, i) => (fold[i] === f ? valIdx : trainIdx).push(i));
+    if (trainIdx.length < 2 || valIdx.length === 0) continue;
+
+    const train = trainIdx.map((i) => rows[i]!);
+    const apply = options.transform ? options.transform(train) : IDENTITY_TRANSFORM;
+    const trainX = train.map((r) => apply(r.x));
+    const fs = columnStats(trainX);
+    const ds = columnStats(train.map((r) => r.deltas));
+    const ne = buildNormalEquations(
+      trainX.map((x) => standardize(x, fs)),
+      train.map((r) => standardize(r.deltas, ds)),
+      train.map((r) => r.weight ?? 1),
+    );
+    const meanDelta = new Array<number>(P).fill(0);
+    for (const r of train) for (let k = 0; k < P; k++) meanDelta[k]! += r.deltas[k]!;
+    for (let k = 0; k < P; k++) meanDelta[k]! /= train.length;
+
+    const valStd = valIdx.map((i) => standardize(apply(rows[i]!.x), fs));
+    for (const lambda of new Set(lambdas)) {
+      const { weights, bias } = solveRidge(ne, lambda);
+      for (let k = 0; k < P; k++) {
+        if (lambdas[k] !== lambda) continue;
+        valIdx.forEach((i, j) => {
+          const fitted = (dot(weights[k]!, valStd[j]!) + bias[k]!) * ds.std[k]! + ds.mean[k]!;
+          out[i]![k] = ship(fitted, meanDelta[k]!, options.shipped, k);
+        });
+      }
+    }
+  }
+  return out;
 }
 
 /**

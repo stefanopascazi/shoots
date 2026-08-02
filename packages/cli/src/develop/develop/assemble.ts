@@ -47,6 +47,37 @@ export function assembleFeatures(
 }
 
 /**
+ * One photograph as the two-head model reads it: `[ embedding | colour | as-shot ]`.
+ *
+ * Everything the frame itself states, and nothing about its shoot. The session
+ * description is no longer a block bolted onto the end — it is the *mean of this
+ * very vector* over the folder, which is what makes the split below exact.
+ *
+ * The embedding stays raw here; each head projects it with its own fold-local
+ * PCA, so the layout a mask indexes into is `[ keep | colour | AS_SHOT_DIM ]`.
+ */
+export function baseFeatures(embedding: number[], color: number[], meta: AsShotMeta): number[] {
+  return [...embedding, ...color, ...asShotFeatures(meta)];
+}
+
+/**
+ * What is different about this frame, relative to the rest of its shoot.
+ *
+ * The whole point of the decomposition. Regressing on the raw frame vector let
+ * ridge answer every question with the session average — the session block was a
+ * near-noiseless predictor of the session's own offset, so it absorbed the budget
+ * and the per-frame columns came out at a tenth of their honest size. Subtracting
+ * the session mean makes the two blocks orthogonal: the level head can only see
+ * what the shoot looks like, and this one can only see what *this* photograph does
+ * that its neighbours do not. A backlit frame in a shoot of open shade now differs
+ * from its neighbours by exactly the amount its highlights are blown, and that is
+ * the only thing the frame head is shown.
+ */
+export function deviationFrom(base: number[], sessionMean: number[]): number[] {
+  return base.map((v, i) => v - (sessionMean[i] ?? 0));
+}
+
+/**
  * One-hot encode the base rendering (camera profile + Look) against a per-branch
  * vocabulary, appended to the feature vector as a conditioning signal. The render
  * sets the colour starting point before any slider touches it.

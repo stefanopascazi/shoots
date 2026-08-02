@@ -76,13 +76,49 @@ export interface DevelopDataset {
   summary?: unknown;
 }
 
+/** Held-out evidence for one head's contribution to one parameter. */
+export interface HeadEval {
+  /** Ridge strength chosen for this parameter on this head. */
+  lambda: number;
+  /** Held-out skill of the raw ridge output — what the gate is decided on. */
+  skill: number;
+  skillSd: number;
+  /**
+   * The same skill for the head as it actually ships: gate applied, output
+   * de-shrunk. Usually a little *below* {@link skill}, and that is the trade
+   * being made on purpose — the shrunk output is the MAE-optimal one, so buying
+   * back the reach costs error. A prediction that never leaves the average has no
+   * error to speak of and no use either.
+   */
+  shippedSkill: number;
+  /** De-shrinking slope actually applied at prediction time. */
+  response: number;
+  gated: boolean;
+  gateReason?: 'low-skill' | 'degenerate';
+}
+
 /** Per-parameter held-out evaluation — the go/no-go evidence. */
 export interface ParamEval {
   key: string;
   group: string;
   branch: string;
   weight: number;
-  /** Ridge strength this parameter is fitted with (chosen by held-out skill). */
+  /**
+   * The level head: where this parameter sits for the shoot as a whole, read off
+   * the session descriptor. Gated ⇒ the photographer's catalog-wide constant.
+   */
+  level: HeadEval;
+  /**
+   * The frame head: how far this photograph departs from its shoot's own level,
+   * read off the frame's deviation vector. Gated ⇒ no per-frame modulation, which
+   * is the honest way to say "every frame in this shoot gets the same value".
+   *
+   * This is the number to read when a prediction feels like a default. Its
+   * baseline is the shoot's true level, so a positive skill here means the model
+   * really does tell a backlit frame from one in open shade.
+   */
+  frame: HeadEval;
+  /** Ridge strength of the level head — kept flat for the report's λ spread. */
   lambda: number;
   /** Held-out MAE with whole capture sessions kept out of training — the gate. */
   modelMae: number;
@@ -108,9 +144,50 @@ export interface ParamEval {
   /** The target never moves across the catalog: nothing to predict, and a
    *  perfect score on it would be an artefact. Excluded from the headline. */
   degenerate: boolean;
-  /** Prediction suppressed in favour of the photographer's constant. */
+  /** Both heads gated: the parameter emits the photographer's constant, full stop. */
   gated: boolean;
   gateReason?: 'low-skill' | 'degenerate';
+}
+
+/**
+ * One linear head over one view of the evidence.
+ *
+ * A branch has two of them and adds their outputs: the *level* head reads the
+ * session descriptor and says where the shoot sits, the *frame* head reads this
+ * photograph's deviation from its shoot and says how far it departs. Fitted
+ * separately, gated separately, de-shrunk separately — which is the whole point.
+ * Entangled in one regression the level view always won, because a shoot average
+ * is a near-noiseless predictor of that shoot's own offset, and the per-frame
+ * columns were left with a tenth of their honest coefficients.
+ */
+export interface HeadModel {
+  /** Input width this head consumes; inference must assemble exactly this many. */
+  features: number;
+  /** Embedding columns kept: 0 dropped, the PCA rank when projected, else raw. */
+  embeddingFeatures: number;
+  /** The fitted projection, present only when the embedding is compressed. */
+  embeddingPca?: { mean: number[]; components: number[][] };
+  /** Per-feature standardization of this head's input. */
+  featureMean: number[];
+  featureStd: number[];
+  /** Per-parameter standardization of this head's target, index-aligned with `params`. */
+  targetMean: number[];
+  targetStd: number[];
+  /** Head weights: P rows × `features` cols, over the standardized input. */
+  weights: number[][];
+  bias: number[];
+  /** Ridge strength per parameter (per-sample units — see LAMBDA_GRID). */
+  paramLambda: number[];
+  /**
+   * De-shrinking factor per parameter, applied to this head's centered output.
+   *
+   * Ridge hands back an under-dispersed conditional mean; this is the held-out
+   * slope that puts the reach back. 1 leaves the output alone. See
+   * {@link ParamStats.response}.
+   */
+  response: number[];
+  /** Per-parameter: this head contributes nothing (its constant, or zero). */
+  gated: boolean[];
 }
 
 /** A trained model for one treatment (colour or B&W), over shared+branch params. */
@@ -118,20 +195,12 @@ export interface BranchModel {
   treatment: Treatment;
   /** Ordered crs param keys this branch predicts (shared + branch). */
   params: string[];
-  /** Base-rendering vocabulary (camera profile + Look) one-hot-appended to the features. */
+  /** Base-rendering vocabulary (camera profile + Look) one-hot-appended to the level head. */
   renderVocab: string[];
-  /**
-   * How many embedding features this branch consumes: 0 when the embedding is
-   * dropped, the PCA rank when it is projected, the full dim when it is raw.
-   */
-  embeddingFeatures: number;
-  /**
-   * Width of the session-context block, 0 when this branch had too few images to
-   * afford describing the whole shoot. Inference must match it exactly.
-   */
-  sessionFeatures: number;
-  /** The fitted projection, present only when the embedding is compressed. */
-  embeddingPca?: { mean: number[]; components: number[][] };
+  /** Where the shoot sits, from the session descriptor. */
+  level: HeadModel;
+  /** How far this frame departs from its shoot, from its deviation vector. */
+  frame: HeadModel;
   /**
    * The rendering to assume, and to write out, when the image being predicted
    * does not state one — which is every unedited file, i.e. the whole point of
@@ -147,32 +216,35 @@ export interface BranchModel {
    */
   looks: Record<string, string>;
   /**
-   * Ridge strength per parameter, index-aligned with {@link params}.
-   *
-   * Not one λ for the whole vector: exposure and the HSL sliders need different
-   * amounts of shrinkage, and forcing them to share one lets the unpredictable
-   * majority pick it for everybody.
+   * The photographer's catalog-wide mean delta per parameter — what a fully gated
+   * parameter emits, and the fallback the level head is scored against.
    */
-  paramLambda: number[];
-  /** Per-feature standardization of the input X (length embeddingDim+colorDim+3). */
-  featureMean: number[];
-  featureStd: number[];
-  /** Per-parameter standardization of the target DELTA (length = params.length). */
   deltaMean: number[];
   deltaStd: number[];
-  /** Head weights: P rows × D cols, over the standardized feature space. */
-  weights: number[][];
-  bias: number[];
   samples: number;
+  /** Distinct capture sessions behind the fit — the level head's real sample size. */
+  sessions: number;
   heldOut: number;
-  /** Weighted skill over the image-dependent params, sessions held out. */
+  /** Weighted end-to-end skill over the image-dependent params, sessions held out. */
   imageDependentSkill: number | null;
   /** The same number under random folds — reported for contrast, never the gate. */
   imageDependentSkillRandom: number | null;
-  /** Params whose prediction is replaced by the photographer's mean delta. */
+  /**
+   * Weighted skill of the frame head alone, against the shoot's own true level.
+   *
+   * The number that says whether this profile is a prediction or a default. It is
+   * deliberately separate from {@link imageDependentSkill}, which a model that
+   * only ever reproduces per-shoot averages can score well on.
+   */
+  withinSessionSkill: number | null;
+  /** Params emitting the photographer's constant — both heads gated. */
   gatedParams: string[];
-  /** Skill at or below which a param is gated (0 disables gating). */
+  /** Params with no per-frame modulation: the frame head is gated. */
+  flatParams: string[];
+  /** Skill at or below which the level head is gated (0 disables gating). */
   gateThreshold: number;
+  /** Skill at or below which the frame head is gated. */
+  frameGateThreshold: number;
   perParam: ParamEval[];
 }
 
