@@ -132,6 +132,33 @@ internal batch; below that you get elapsed time only.
 Once the file list is known, the interactive Ink progress view takes over, showing
 completed/total and the current filename.
 
+### Stage 3 — the fit
+
+`develop train` — and therefore `develop init`, `develop learn` and
+`develop refine`, which all end in a refit — is neither of the above. It is one
+long synchronous computation: no files to count, and nothing else can run while
+it works, so a spinner would sit frozen on its first frame.
+
+It reports a **determinate bar** instead, pushed out from inside the fit:
+
+```
+████████░░░░░░░░░░░░░░░░  33%  Fitting the profile · color frame · tone · gate — 2m05s, ~4m10s left
+✓ Fitting the profile — 553 edited images (7m02s)
+```
+
+The estimate comes from the rate measured so far. It is honest about the
+denominator from the first tick: every pass is one parameter group of one head,
+and how many there are is known before a single fold is fitted.
+
+**This is the slow part of the tool.** Five hundred photographs is minutes, and
+the cost is in the held-out evaluation — each parameter's λ is re-chosen inside
+every fold, for both heads — not in the fitting itself.
+
+Unlike the phase spinners, the bar still reports off a TTY (one line per tenth,
+no `--verbose` needed): a refit inside the interactive shell runs as a child with
+a piped stdout, and a fit that printed nothing for minutes there is exactly the
+thing this exists to prevent. `--json` is silent, as always.
+
 ### Why this matters on a NAS
 
 Scanning costs one round-trip per directory entry, and the metadata pass opens

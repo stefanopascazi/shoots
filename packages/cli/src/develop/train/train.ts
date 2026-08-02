@@ -99,6 +99,48 @@ export interface TrainOptions {
    * it raw. See {@link DEFAULT_EMBEDDING_DIM}.
    */
   embeddingDim?: number;
+  /**
+   * Called as the fit advances, in the arbitrary work units of {@link COST}.
+   *
+   * This whole function is synchronous, so nothing outside it gets to run until
+   * it returns: a caller that wants to say anything while a catalog is being
+   * fitted has to be told from in here. The units are weighted by measured cost
+   * rather than counted, so the fraction moves at a roughly steady rate instead
+   * of stalling on the one pass that dominates the time.
+   */
+  onProgress?: (done: number, total: number, label: string) => void;
+}
+
+/** One weighted unit of held-out work finished. */
+type Tick = (cost: number, detail: string) => void;
+
+/**
+ * What each held-out pass costs, relative to one λ search over the grid.
+ *
+ * The nested gate re-runs that search inside every outer fold, so it is `folds`
+ * times the price — which is why a bar counting passes rather than weighting
+ * them sits at 8% for two minutes and then finishes in one jump.
+ */
+const COST = {
+  /** The λ grid search: one pass over the folds, |grid| solves in each. */
+  search: (auto: boolean): number => (auto ? 1 : 0),
+  /** The nested gate: that whole search repeated inside every outer fold. */
+  gate: (folds: number, auto: boolean): number => (auto ? folds : COST.score),
+  /**
+   * Re-scoring or replaying a λ already chosen: one pass, a couple of solves.
+   *
+   * 1.2 rather than the ~0.2 the solve count suggests, because these passes pay
+   * the same fold setup — projection, standardization, normal equations — as the
+   * search does, and on a real catalog that is most of the time. Measured on the
+   * colour branch of a 553-image catalog: 2m50s in the two head searches against
+   * 2m30s in the eight re-scores that follow them.
+   */
+  score: 1.2,
+};
+
+/** Passes per bucket: two heads fitted and gated, then four re-scores and four replays. */
+function branchUnits(buckets: number, folds: number, auto: boolean): number {
+  return buckets * (2 * (COST.search(auto) + COST.gate(folds, auto)) + 8 * COST.score);
 }
 
 /** Per-sample units now — see LAMBDA_GRID. Roughly the old 1000 at n≈400. */
@@ -293,7 +335,7 @@ function fitHead(
   maskOf: (param: DevelopParam) => boolean[],
   rawEmbedding: number,
   keep: number,
-  opts: { folds: number; groupBy: GroupBy; lambda?: number; evaluate: boolean },
+  opts: { folds: number; groupBy: GroupBy; lambda?: number; evaluate: boolean; tick?: Tick },
 ): HeadFit {
   const buckets = bucketize(params);
   const transform = embeddingTransform(rawEmbedding, keep);
@@ -320,12 +362,15 @@ function fitHead(
       }));
       const tf = maskedTransform(maskFor.get(key)!);
       const cv = { folds: opts.folds, groupBy: opts.groupBy, grid: LAMBDA_GRID, transform: tf };
-      const subLambdas = opts.lambda === undefined ? selectLambdas(subRows, sub, cv) : sub.map(() => opts.lambda!);
+      const auto = opts.lambda === undefined;
+      const subLambdas = auto ? selectLambdas(subRows, sub, cv) : sub.map(() => opts.lambda!);
+      opts.tick?.(COST.search(auto), `${key} · λ`);
       // The gate has to pay for that search: λ is re-chosen inside each outer
       // fold, so no parameter is scored on the split that picked its λ.
-      const subGate = opts.lambda === undefined
+      const subGate = auto
         ? nestedEvaluate(subRows, sub, cv)
         : evaluateWithLambda(subRows, sub, cv, subLambdas);
+      opts.tick?.(COST.gate(opts.folds, auto), `${key} · gate`);
       at.forEach((k, i) => {
         lambdas[k] = subLambdas[i]!;
         gate[k] = subGate[i]!;
@@ -398,7 +443,7 @@ function shippedStats(
   fit: HeadFit,
   rows: EvalRow[],
   params: DevelopParam[],
-  opts: { folds: number; groupBy: GroupBy },
+  opts: { folds: number; groupBy: GroupBy; tick?: Tick },
 ): ParamStats[] {
   const out = new Array<ParamStats>(params.length);
   for (const [key, at] of fit.buckets) {
@@ -429,6 +474,7 @@ function shippedStats(
       at.map((k) => fit.lambdas[k]!),
     );
     at.forEach((k, i) => { out[k] = stats[i]!; });
+    opts.tick?.(COST.score, `${key} · shipped`);
   }
   return out;
 }
@@ -506,7 +552,7 @@ function shippedHeldOut(
   fit: HeadFit,
   rows: EvalRow[],
   params: DevelopParam[],
-  opts: { folds: number; groupBy: GroupBy },
+  opts: { folds: number; groupBy: GroupBy; tick?: Tick },
 ): number[][] {
   const out = rows.map(() => new Array<number>(params.length).fill(0));
   for (const [key, at] of fit.buckets) {
@@ -530,6 +576,7 @@ function shippedHeldOut(
       at.map((k) => fit.lambdas[k]!),
     );
     rows.forEach((_, i) => { at.forEach((k, j) => { out[i]![k] = sub[i]![j]!; }); });
+    opts.tick?.(COST.score, `${key} · end to end`);
   }
   return out;
 }
@@ -544,6 +591,7 @@ function trainBranch(
   dims: { embedding: number; colour: number },
   options: TrainOptions,
   looks: Record<string, string>,
+  report?: (cost: number, label: string) => void,
 ): BranchModel {
   const params = paramsForTreatment(treatment);
   const folds = options.folds ?? 5;
@@ -611,10 +659,13 @@ function trainBranch(
   }));
 
   const evaluate = raw.length >= folds * 4;
+  const tickFor = (head: string): Tick | undefined =>
+    report && ((cost, detail) => report(cost, `${treatment} ${head} · ${detail}`));
+
   const levelFit = fitHead(levelRows, params, (p) => levelMask(p.key, p.group, layout), dims.embedding, keep,
-    { folds, groupBy, lambda: options.lambda, evaluate });
+    { folds, groupBy, lambda: options.lambda, evaluate, tick: tickFor('level') });
   const frameFit = fitHead(frameRows, params, (p) => frameMask(p.key, p.group, layout), dims.embedding, keep,
-    { folds, groupBy, lambda: options.lambda, evaluate });
+    { folds, groupBy, lambda: options.lambda, evaluate, tick: tickFor('frame') });
 
   // ── de-shrink, then gate ───────────────────────────────────────────────────
   // The slope first, because the gate has to judge the output that will actually
@@ -634,14 +685,14 @@ function trainBranch(
   let endToEnd: ParamStats[] = [];
   let endToEndRandom: ParamStats[] = [];
   if (evaluate) {
-    const levelPlain = shippedStats(levelFit, levelRows, params, { folds, groupBy });
-    const framePlain = shippedStats(frameFit, frameRows, params, { folds, groupBy });
+    const levelPlain = shippedStats(levelFit, levelRows, params, { folds, groupBy, tick: tickFor('level') });
+    const framePlain = shippedStats(frameFit, frameRows, params, { folds, groupBy, tick: tickFor('frame') });
     for (let k = 0; k < params.length; k++) {
       levelFit.head.response[k] = clampResponse(levelPlain[k]?.response ?? 1);
       frameFit.head.response[k] = clampResponse(framePlain[k]?.response ?? 1);
     }
-    levelShipped = shippedStats(levelFit, levelRows, params, { folds, groupBy });
-    frameShipped = shippedStats(frameFit, frameRows, params, { folds, groupBy });
+    levelShipped = shippedStats(levelFit, levelRows, params, { folds, groupBy, tick: tickFor('level') });
+    frameShipped = shippedStats(frameFit, frameRows, params, { folds, groupBy, tick: tickFor('frame') });
   }
 
   for (let k = 0; k < params.length; k++) {
@@ -671,8 +722,8 @@ function trainBranch(
       x: [], deltas: deltas[i]!, abs: abs[i]!, meta: r.meta, group: groups[i]!, weight: r.weight,
     }));
     for (const policy of [groupBy, 'none' as const]) {
-      const lp = shippedHeldOut(levelFit, levelRows, params, { folds, groupBy: policy });
-      const fp = shippedHeldOut(frameFit, frameRows, params, { folds, groupBy: policy });
+      const lp = shippedHeldOut(levelFit, levelRows, params, { folds, groupBy: policy, tick: tickFor('level') });
+      const fp = shippedHeldOut(frameFit, frameRows, params, { folds, groupBy: policy, tick: tickFor('frame') });
       const summed = lp.map((row, i) => row.map((v, k) => v + fp[i]![k]!));
       const stats = endToEndStats(fullRows, params, summed, { folds, groupBy: policy });
       if (policy === groupBy) endToEnd = stats;
@@ -755,11 +806,42 @@ export function train(dataset: DevelopDataset, options: TrainOptions): DevelopPr
   const colorDim = dataset.colorDim || (dataset.results[0]?.features.length ?? 0);
   const dims = { embedding: embeddingDim, colour: colorDim };
 
+  // The whole plan is known before a single fold is fitted — every pass is one
+  // bucket of one head, and how many of each there are follows from the schema.
+  // So the bar can be honest about the denominator from the first tick rather
+  // than discovering it as it goes.
+  const folds = options.folds ?? 5;
+  const auto = options.lambda === undefined;
+  // Every pass is one bucket of one head, and how many of each there are follows
+  // from the schema — so the denominator is knowable before a single fold is
+  // fitted, and the bar never has to discover it as it goes. Each branch's share
+  // is scaled by its own sample count: a fold costs what it costs to build the
+  // normal equations, which is linear in the photographs going into them. The
+  // B&W branch is routinely a third the size of the colour one, and weighting
+  // them equally is what makes a bar sit at 60% and then sprint.
+  const units = new Map<Treatment, number>();
+  for (const treatment of ['color', 'bw'] as const) {
+    const branchRows = byTreatment[treatment];
+    if (branchRows.length < 5 || branchRows.length < folds * 4) continue;
+    units.set(treatment, branchUnits(bucketize(paramsForTreatment(treatment)).size, folds, auto) * branchRows.length);
+  }
+  const total = [...units.values()].reduce((a, b) => a + b, 0);
+  let done = 0;
+  const reporter = options.onProgress && total > 0
+    ? (scale: number) => (cost: number, label: string): void => {
+        done = Math.min(total, done + cost * scale);
+        options.onProgress!(done, total, label);
+      }
+    : undefined;
+
   const branches: DevelopProfile['branches'] = {};
   const looks = dataset.looks ?? {};
   for (const treatment of ['color', 'bw'] as const) {
     if (byTreatment[treatment].length >= 5) {
-      branches[treatment] = trainBranch(byTreatment[treatment], treatment, dims, options, looks);
+      branches[treatment] = trainBranch(
+        byTreatment[treatment], treatment, dims, options, looks,
+        units.has(treatment) ? reporter?.(byTreatment[treatment].length) : undefined,
+      );
     }
   }
   if (Object.keys(branches).length === 0) {

@@ -10,6 +10,8 @@ import { writeFile } from 'node:fs/promises';
 import { train } from '../train/train.js';
 import { GROUP_BY_MODES, type GroupBy } from '../train/evaluate.js';
 import { loadDataset } from '../dataset/load.js';
+import { startSteps } from '../../progress.js';
+import { makeIo } from '../../io.js';
 import type { BranchModel } from '../types.js';
 
 export interface TrainArgs {
@@ -25,6 +27,9 @@ export interface TrainArgs {
   embeddingDim?: number;
   /** Report every parameter, not just the image-dependent ones. */
   all?: boolean;
+  /** Passed down by `init` / `learn`: keep the fit silent when they are. */
+  json?: boolean;
+  verbose?: boolean;
 }
 
 const pct = (v: number): string => `${(v * 100).toFixed(1)}%`;
@@ -127,6 +132,11 @@ export async function runTrain(args: TrainArgs): Promise<void> {
     throw new Error(`invalid --group-by '${args.groupBy}' (use ${GROUP_BY_MODES.join(' | ')})`);
   }
 
+  // The fit blocks the event loop from here until it returns, minutes at a time
+  // on a real catalog. It reports its own progress from the inside; see
+  // startSteps for why nothing timer-driven would ever get to paint.
+  const io = makeIo(args);
+  const steps = startSteps(io, 'Fitting the profile');
   const profile = train(dataset, {
     name: args.name,
     lambda,
@@ -134,7 +144,9 @@ export async function runTrain(args: TrainArgs): Promise<void> {
     groupBy,
     gateThreshold: args.gateThreshold,
     embeddingDim: args.embeddingDim,
+    onProgress: (done, total, label) => steps.update(done, total, label),
   });
+  steps.done(`${profile.stats.edited} edited images`);
   await writeFile(args.out, JSON.stringify(profile, null, 2) + '\n', 'utf8');
 
   const w = process.stderr;

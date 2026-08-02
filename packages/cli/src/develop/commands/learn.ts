@@ -140,7 +140,10 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
 
   // The shoot was exported *before* it was developed, so its targets are the
   // blank page the photographer has since written on. Features stay as they are.
-  printHuman(io, `[1/3] Re-reading ${shoot.results.length} files as they are now`);
+  // Named steps, not bare numbers: `develop refine` prints its own [2/3] around
+  // this whole command, and two unqualified counters nested inside each other
+  // read as one that went backwards.
+  printHuman(io, `learn [1/3] Re-reading ${shoot.results.length} files as they are now`);
   const refreshed = await refreshTargets(shoot.results, io, { editor: editorId, carryLooks: shoot.looks });
   const nowEdited = refreshed.records.filter((r) => r.edited !== false);
   if (nowEdited.length === 0) {
@@ -155,7 +158,7 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
   // Scale corrections against how much each parameter varies across the
   // photographer's own catalog, not against the shoot: a shoot is too small to
   // say what "a lot of Contrast" means, and the catalog already knows.
-  printHuman(io, `[2/3] Weighting by how much of the prediction you changed`);
+  printHuman(io, `learn [2/3] Weighting by how much of the prediction you changed`);
   const weighting = weighByCorrection(nowEdited, predictions, paramSpread(base.results), {
     minWeight: args.minWeight,
     maxWeight: args.maxWeight,
@@ -199,7 +202,7 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
     return;
   }
 
-  printHuman(io, `[3/3] Folding ${refreshed.records.length} records into ${dataPath}`);
+  printHuman(io, `learn [3/3] Folding ${refreshed.records.length} records into ${dataPath}`);
   const looks = new Map<string, string>(Object.entries(base.looks ?? {}));
   for (const [name, xml] of refreshed.looks) looks.set(name, xml);
   await writeDataset(dataPath, [...merged.values()], base, looks, summary);
@@ -231,7 +234,10 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
       }
     })();
 
-  printHuman(io, `\nRefitting the profile → ${profilePath}`);
+  // The slow step, by a wide margin: every parameter's λ is re-chosen against
+  // held-out shoots over the whole catalog, not just the frames just folded in.
+  // Saying so before it starts is the difference between a wait and a hang.
+  printHuman(io, `\nRefitting the profile on all ${merged.size} images → ${profilePath}`);
   await runTrain({
     data: dataPath,
     name: args.name,
@@ -242,6 +248,8 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
     gateThreshold: args.gateThreshold,
     embeddingDim: args.embeddingDim,
     all: args.all,
+    json: args.json,
+    verbose: args.verbose,
   });
   if ((process.exitCode ?? 0) !== 0) return;
 

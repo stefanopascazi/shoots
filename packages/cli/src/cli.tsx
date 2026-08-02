@@ -99,14 +99,43 @@ async function launchShell(): Promise<void> {
   process.stdout.write('◉ shoots — session closed. See you at the next shoot.\n');
 }
 
-/** Resolve once stdout/stderr have flushed their buffers (safe before exit). */
-function flushStdio(): Promise<void> {
+/**
+ * Resolve once stdout/stderr have flushed their buffers — or after `ms`,
+ * whichever comes first.
+ *
+ * The deadline is not a nicety. By the time this runs the command has printed
+ * everything it had to say, so a write callback that never fires (a pipe nobody
+ * is draining, a runtime whose zero-length write takes a fast path) would hold
+ * a finished CLI open forever, showing complete output and no prompt back.
+ * Losing a few trailing bytes in that case is strictly better than not exiting.
+ */
+function flushStdio(ms = 2000): Promise<void> {
   return new Promise((resolve) => {
     let pending = 2;
-    const done = (): void => { if (--pending <= 0) resolve(); };
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+    const done = (): void => {
+      if (--pending <= 0) {
+        clearTimeout(timer);
+        resolve();
+      }
+    };
     process.stdout.write('', done);
     process.stderr.write('', done);
   });
+}
+
+/**
+ * What is still alive at exit, on request (`SHOOTS_DEBUG_EXIT=1`).
+ *
+ * `process.exit` below hides a leaked handle by design, which is right for a
+ * one-shot CLI and useless when the report is "it never came back". This is how
+ * that report gets evidence attached to it without a rebuild.
+ */
+function reportLiveHandles(): void {
+  if (!process.env.SHOOTS_DEBUG_EXIT) return;
+  const live = typeof process.getActiveResourcesInfo === 'function' ? process.getActiveResourcesInfo() : ['unavailable'];
+  process.stderr.write(`· exiting ${process.exitCode ?? 0}; still alive: ${live.join(', ')}\n`);
 }
 
 async function main(): Promise<void> {
@@ -130,6 +159,7 @@ async function main(): Promise<void> {
   // alive after the work is finished. For a one-shot CLI the correct behavior is
   // to exit promptly once output is flushed — preserving the command's exit code.
   await flushStdio();
+  reportLiveHandles();
   process.exit(process.exitCode ?? 0);
 }
 

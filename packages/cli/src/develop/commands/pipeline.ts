@@ -141,6 +141,8 @@ export async function runInit(targetPath: string, args: InitArgs): Promise<void>
     gateThreshold: args.gateThreshold,
     embeddingDim: args.embeddingDim,
     all: args.all,
+    json: args.json,
+    verbose: args.verbose,
   });
   if (failed()) return;
 

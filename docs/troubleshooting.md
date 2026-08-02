@@ -33,6 +33,29 @@ traffic with no other symptom.
 
 See [Progress and the startup phases](./concepts.md#6-progress-and-the-startup-phases).
 
+### `develop refine` or `develop train` sits there with the CPU pinned
+
+Also normal, and the longest wait the tool has. Every refit re-chooses each
+parameter's λ against held-out shoots over the **whole** catalog — not just the
+frames you have just folded in — for both the level and the frame head. Several
+hundred photographs is several minutes.
+
+`refine` reaches it in its second step, and says so:
+
+```
+═══ [2/3] Learning from it ═══
+…
+Refitting the profile on all 556 images → ~/.shoots/develop/profile/export.json
+████████░░░░░░░░░░░░░░░░  33%  Fitting the profile · color frame · tone · gate — 2m05s, ~4m10s left
+```
+
+If the bar is advancing, wait for it. If you want the dataset updated without
+paying for the refit, `develop learn --no-train` stops before it.
+
+Should the CLI ever finish its output and still not return, run it again with
+`SHOOTS_DEBUG_EXIT=1`: it prints what was still alive at exit, which is the one
+thing needed to diagnose it.
+
 ### No phase lines at all
 
 Phases render on stderr, and only when appropriate:
