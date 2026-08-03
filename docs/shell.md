@@ -70,7 +70,8 @@ the input as you type:
 
 ```
 ❯ /cull
-  /cull <path> [--review] [--dest <dir>] [--copy] [--threshold 100]
+  /cull <path> [--review] [--mark] [--mark-label reject] [--mark-keepers select]
+        [--dest <dir>] [--copy] [--threshold 100]
         [--focus-threshold 250] [--no-focus-rescue] [--format csv] [--out <report>] [--dry-run]
 ```
 
@@ -160,13 +161,15 @@ The interactive triage UI requires the shell. In batch mode it exits `2` and tel
 you so.
 
 ```
-❯ /cull ./catalog --review --dest ./rejects
+❯ /cull ./catalog --review --mark            # record the verdicts, move nothing
+❯ /cull ./catalog --review --dest ./rejects  # relocate the rejects
 ```
 
 The flow respects your time:
 
 1. Focus-aware analysis runs over the whole folder.
-2. **Confident rejects are relocated immediately.** Keepers stay put.
+2. **Confident rejects are disposed of immediately** — marked or relocated,
+   depending on which of the two you passed. Keepers stay put either way.
 3. You are handed *only* the uncertain shallow-DoF rescues, one card at a time.
 
 Each card shows the global score, the focus peak, the aperture, and a **focus
@@ -175,13 +178,15 @@ heatmap** with a legend (soft → sharp) marking where focus actually landed.
 | Key | Action |
 | --- | --- |
 | `K` | **Keep** — the file stays where it is |
-| `D` | **Discard** — relocate it to `--dest` |
+| `D` | **Discard** — mark it, or relocate it to `--dest` |
 | `P` | **Preview** — open the frame in your system image viewer |
 | `S` | **Skip** — decide later |
 | `Esc` | Finish the review |
 
-- `--dest` is **required** — that is where discards go.
-- `--copy` copies instead of moving.
+- **`--mark` or `--dest` is required** — the discards have to go somewhere, or be
+  recorded somewhere. With `--mark` nothing moves and `/triage apply` (or
+  `/develop edit`) writes the labels out later.
+- `--copy` copies instead of moving. Only meaningful with `--dest`.
 - `--dry-run` walks the entire flow without touching a file. Use it to learn the
   interface.
 
@@ -212,14 +217,18 @@ copy  E:\DCIM\100CANON\IMG_0001.CR3  →  D:\Shoots\2026\smith-wedding\raw\2026\
 Wrote 3 tags to 482 files (482 image files updated)
 Originals preserved as *_original backups (exiftool default).
 
-❯ /cull @raw/ --review --dest @rejects/
-  … 38 confident rejects relocated; 13 uncertain frames to review …
+❯ /cull @raw/ --review --mark
+  … 38 confident rejects marked 'reject'; 13 uncertain frames to review …
   [K] keep  [D] discard  [P] preview  [S] skip  [Esc] finish
 
-❯ /rate @raw/ --profile wedding --write-xmp
+❯ /rate @raw/ --profile wedding --mark
 ★★★★☆  IMG_0001.CR3  focus=0.812 aesthetic=0.591  [wedding, ceremony]
 ...
 431/431 rated with clip-vit-b32-int8 (profile: wedding)
+marked 431 files — `shoots develop edit` or `shoots triage apply` writes them into sidecars
+
+❯ /triage apply @raw/
+  431 sidecar(s) written in acr vocabulary; the marks are now applied
 
 ❯ /exit
 ◉ shoots — session closed. See you at the next shoot.

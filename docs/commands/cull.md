@@ -253,30 +253,37 @@ Available **only inside the interactive shell** — it drives a live UI. In batc
 mode it exits `2` with a pointer to the shell.
 
 ```
+❯ /cull ./catalog --review --mark
 ❯ /cull ./catalog --review --dest ./rejects
 ```
 
 The flow is designed to not waste your time:
 
 1. The focus-aware analysis runs over the whole folder.
-2. **Confident rejects are relocated immediately.** Keepers stay in place.
+2. **Confident rejects are disposed of immediately** — marked, or relocated.
+   Keepers stay in place either way.
 3. You are handed *only* the uncertain shallow-DoF rescues — one card at a time.
 
 Each review card shows the global score, the focus peak, the aperture, and a
 **focus heatmap** with a legend (soft → sharp) marking where focus actually landed.
 
-| Key | Action |
-| --- | --- |
-| `K` | Keep — the file stays where it is |
-| `D` | Discard — relocate it to `--dest` |
-| `P` | Preview — open the frame in your system image viewer |
-| `S` | Skip — decide later |
-| `Esc` | Finish the review |
+| Key | Action | With `--mark` | With `--dest` |
+| --- | --- | --- | --- |
+| `K` | Keep | Records `--mark-keepers`, if you set one | The file stays where it is |
+| `D` | Discard | Records the reject label | Relocates it to `--dest` |
+| `P` | Preview — open the frame in your system image viewer | | |
+| `S` | Skip — decide later | | |
+| `Esc` | Finish the review | | |
+
+Marks made here carry `reviewed: true`, so a decision you actually looked at is
+distinguishable from one a threshold produced.
 
 Requirements and flags:
 
-- `--dest` is **required** (that is where discards go).
-- `--copy` copies discards instead of moving them.
+- **`--mark` or `--dest` is required** — the review has to do *something* with
+  the discards. `--mark` records them and moves nothing; `--dest` relocates them.
+  `--mark-label` and `--mark-keepers` work here exactly as in batch.
+- `--copy` copies discards instead of moving them. Only meaningful with `--dest`.
 - `--dry-run` walks the entire flow without touching a single file — ideal for
   learning the interface.
 

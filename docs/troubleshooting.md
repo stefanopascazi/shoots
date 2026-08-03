@@ -293,8 +293,11 @@ Frames rescued this way show as `sharp*` with `rescued: true`.
 shoots                                   # opens the shell
 ```
 ```
-❯ /cull ./raw --review --dest ./rejects
+❯ /cull ./raw --review --mark
 ```
+
+It needs `--mark` (record the verdicts, move nothing) or `--dest <dir>`
+(relocate the rejects) — a review has to know what a discard means.
 
 Every other flag works identically in batch.
 

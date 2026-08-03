@@ -161,13 +161,17 @@ shoots            # opens the shell
 
 ```
 ❯ /cd D:/Shoots/2026/smith-wedding
-❯ /cull @raw/ --review --dest @rejects/ --dry-run    # learn the UI, touch nothing
-❯ /cull @raw/ --review --dest @rejects/              # for real
+❯ /cull @raw/ --review --mark --dry-run    # learn the UI, touch nothing
+❯ /cull @raw/ --review --mark              # for real — nothing moves
 ```
 
-Confident rejects are relocated immediately; you review only the uncertain
+Confident rejects are disposed of immediately; you review only the uncertain
 shallow-DoF rescues, with a focus heatmap showing where focus landed.
 `K` keep · `D` discard · `P` preview · `S` skip · `Esc` finish.
+
+`--mark` records the verdicts and leaves the catalog alone; swap it for
+`--dest @rejects/` if you would rather the rejects move. Either satisfies the
+review — it just needs to know what to do with a discard.
 
 ---
 

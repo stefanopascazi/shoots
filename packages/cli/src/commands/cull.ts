@@ -86,7 +86,14 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   // --review is an interactive mode that only the shell can host (it owns the
   // Ink terminal). Reaching runCull with it set means a plain batch invocation.
   if (options.review) {
-    logError('--review needs the interactive shell: run `shoots`, then `/cull <path> --review`');
+    logError('--review needs the interactive shell: run `shoots`, then `/cull <path> --review --mark`');
+    process.exitCode = 2;
+    return;
+  }
+  // --mark and --dest answer the same question two ways (record the verdict vs
+  // act on it) and do compose, but `--copy` only means something to a relocation.
+  if (options.copy && !options.dest) {
+    logError('--copy has no meaning without --dest (it chooses copy over move for the relocated rejects)');
     process.exitCode = 2;
     return;
   }

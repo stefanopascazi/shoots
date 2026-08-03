@@ -27,6 +27,7 @@ import { expandMentions, tokenize } from './tokenize.js';
 import { openInSystemViewer } from './triage/open.js';
 import { ReviewOverlay } from './triage/ReviewOverlay.js';
 import { commitDecision, runTriage, type ReviewDecision, type ReviewItem } from './triage/triageService.js';
+import { isSemanticLabel, SEMANTIC_LABELS, type SemanticLabel } from '../triage/schema.js';
 import { AUTHOR, VERSION } from '../version.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -143,7 +144,10 @@ export interface ShellProps {
 
 /** Live state of an interactive triage review. */
 interface TriageSession {
-  dest: string;
+  /** Where rejects go, or null when the session marks instead of moving. */
+  dest: string | null;
+  /** The labels in force, or null when the session relocates. */
+  mark: { label: SemanticLabel; keepers?: SemanticLabel } | null;
   root: string;
   move: boolean;
   dryRun: boolean;
@@ -389,20 +393,39 @@ export function Shell({ mouse }: ShellProps = {}) {
       const i = args.indexOf(name);
       return i >= 0 ? args[i + 1] : undefined;
     };
+    // A review has to do *something* with the rejects: relocate them, or mark
+    // them. Either is enough — insisting on --dest when the run is marking would
+    // demand a folder nothing is ever written to.
     const dest = flag('--dest');
-    if (!dest) {
+    const marking = args.includes('--mark');
+    if (!dest && !marking) {
       pushLines([
-        [span('  ✗ --review needs --dest for the rejects (keepers stay put): ', { color: 'red' }), span('/cull <path> --review --dest <dir>', { color: 'cyan' })],
+        [span('  ✗ --review needs --mark or --dest for the rejects (keepers stay put):', { color: 'red' })],
+        [span('      /cull <path> --review --mark', { color: 'cyan' }), span('            record the verdict, move nothing', { dim: true })],
+        [span('      /cull <path> --review --dest <dir>', { color: 'cyan' }), span('   relocate the rejects', { dim: true })],
         BLANK,
       ]);
       return;
+    }
+    const label = flag('--mark-label') ?? 'reject';
+    const keepers = flag('--mark-keepers');
+    for (const [name, value] of [['--mark-label', label], ['--mark-keepers', keepers]] as const) {
+      if (value !== undefined && !isSemanticLabel(value)) {
+        pushLines([
+          [span(`  ✗ invalid ${name} '${value}' — expected one of: ${SEMANTIC_LABELS.join(', ')}`, { color: 'red' })],
+          BLANK,
+        ]);
+        return;
+      }
     }
     const dryRun = args.includes('--dry-run');
     const copy = args.includes('--copy');
     const abs = path.resolve(cwd, positional[0] ?? '.');
     setTriageBusy({ done: 0, total: 0 });
     runTriage(abs, {
-      dest: path.resolve(cwd, dest),
+      ...(marking
+        ? { mark: { label: label as SemanticLabel, keepers: keepers as SemanticLabel | undefined } }
+        : { dest: path.resolve(cwd, dest!) }),
       copy,
       threshold: numOrUndef(flag('--threshold')),
       focusThreshold: numOrUndef(flag('--focus-threshold')),
@@ -411,13 +434,16 @@ export function Shell({ mouse }: ShellProps = {}) {
     })
       .then((res) => {
         setTriageBusy(null);
-        const verb = res.dryRun ? (res.move ? 'would move' : 'would copy') : res.move ? 'moved' : 'copied';
+        const verb = res.mark
+          ? res.dryRun ? 'would mark' : 'marked'
+          : res.dryRun ? (res.move ? 'would move' : 'would copy') : res.move ? 'moved' : 'copied';
+        const where = res.mark ? ` '${res.mark.label}' — nothing moved` : ` → ${res.dest}`;
         const lines: Line[] = [
           [
             span(`  ${res.autoSharp} kept in place`, { color: 'green' }),
             span(' · ', { dim: true }),
             span(`${verb} ${res.autoBlurry} rejects`, { color: 'yellow' }),
-            span(` → ${res.dest}`, { dim: true }),
+            span(where, { dim: true }),
             res.dryRun ? span('  (dry run)', { color: 'cyan' }) : span(''),
           ],
         ];
@@ -435,6 +461,7 @@ export function Shell({ mouse }: ShellProps = {}) {
         setScrollOffset(0);
         setTriage({
           dest: res.dest,
+          mark: res.mark,
           root: res.root,
           move: res.move,
           dryRun: res.dryRun,
@@ -457,16 +484,23 @@ export function Shell({ mouse }: ShellProps = {}) {
     const kept = session.kept + deltaKept;
     const discarded = session.discarded + deltaDiscarded;
     const nextIndex = session.index + 1;
-    const relocVerb = session.move ? 'moved' : 'copied';
-    const suffix = session.dryRun ? span(`  (dry run — nothing ${session.move ? 'moved' : 'copied'})`, { color: 'cyan' }) : span('');
+    const outcome = session.mark
+      ? `${discarded} marked '${session.mark.label}'`
+      : `${discarded} ${session.move ? 'moved' : 'copied'} → ${session.dest}`;
+    const nothing = session.mark ? 'marked' : session.move ? 'moved' : 'copied';
+    const suffix = session.dryRun ? span(`  (dry run — nothing ${nothing})`, { color: 'cyan' }) : span('');
     if (nextIndex >= session.items.length) {
       setTriage(null);
+      const trailer: Line[] = session.mark && !session.dryRun
+        ? [[span('  `/triage apply <path>` writes them into sidecars, or `/develop edit <path>` does it for you', { dim: true })]]
+        : [];
       pushLines([
         [
           span('  review complete', { color: 'magenta', bold: true }),
-          span(` — ${kept} kept in place, ${discarded} ${relocVerb} → ${session.dest}`, { dim: true }),
+          span(` — ${kept} kept in place, ${outcome}`, { dim: true }),
           suffix,
         ],
+        ...trailer,
         BLANK,
       ]);
     } else {
@@ -478,9 +512,16 @@ export function Shell({ mouse }: ShellProps = {}) {
     if (!triage) return;
     const item = triage.items[triage.index];
     if (!triage.dryRun) {
-      commitDecision(triage.root, triage.dest, item.file, decision, { move: triage.move }).catch((err: unknown) => {
+      const verb = triage.mark ? 'mark' : triage.move ? 'move' : 'copy';
+      commitDecision(
+        triage.root,
+        { dest: triage.dest ?? undefined, mark: triage.mark ?? undefined },
+        item.file,
+        decision,
+        { move: triage.move, score: item.score, focusPeak: item.focusPeak },
+      ).catch((err: unknown) => {
         pushLines([
-          [span(`  ✗ ${triage.move ? 'move' : 'copy'} failed: ${item.name}: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
+          [span(`  ✗ ${verb} failed: ${item.name}: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
         ]);
       });
     }
