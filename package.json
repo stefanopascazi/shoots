@@ -15,13 +15,14 @@
   "scripts": {
     "build": "npm run build -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/match -w @shoots/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w @shoots/cli && bun test packages/cli/test --timeout 120000",
     "clean": "node -e \"for (const p of ['core','imaging','inference','match','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
     "shoots": "node packages/cli/dist/cli.js",
     "build:binary": "bun scripts/build-binary.ts",
     "build:icon": "bun scripts/generate-icon.ts",
     "build:screens": "bun scripts/capture-screens.tsx",
     "docs:migrations": "bun scripts/generate-migrations-doc.ts",
-    "preversion": "npm run typecheck && npm run build && npm run docs:migrations -- --check",
+    "preversion": "npm run typecheck && npm run build && npm test && npm run docs:migrations -- --check",
     "postversion": "git push origin main && git push origin --tags"
   },
   "devDependencies": {
