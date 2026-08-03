@@ -7,6 +7,10 @@ dist-models/
 *.log
 .DS_Store
 test/
+# …but a package's own test suite is source, not scratch. The bare rule above
+# guards the root `test/` sandbox (datasets, preview dumps) and matches at every
+# level, which silently swallowed packages/cli/test.
+!packages/*/test/
 
 # local develop-predictor experiment artifacts (datasets / profiles)
 /train_*.json
