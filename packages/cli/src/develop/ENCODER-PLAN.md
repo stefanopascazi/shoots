@@ -30,19 +30,39 @@ needs first-party catalogs (below), not a better encoder.
 
 ---
 
-## Phase 0 — the as-shot WB prior · NOT STARTED · ~1 day
+## Phase 0 — the as-shot WB prior · CLOSED 2026-08-03 · **already shipped**
 
-**Do this before anything else.** Measured 2026-08-01: `Temperature` anchored on
-the camera's as-shot Kelvin plus one learned offset scores **0.42–0.47 skill at
-n=40**, roughly double the full ridge (0.17–0.25) at every training size. It is
-still not in the model, and today `Temperature` ships gated at −2.1%.
+**The premise was wrong, and the win is already banked.** `Temperature` is
+declared `{ transform: 'logK', ref: 'asShotTemp' }` in `develop/schema.ts`, so
+its delta is `log(chosen) − log(asShot)` and a gated parameter already emits
+`asShotKelvin × exp(mean log ratio)` — which *is* "as-shot plus one learned
+offset".
 
-It needs no encoder, no new data and no licence review. It is the only item on
-this list with a payoff that has already been measured rather than hoped for, and
-it gives a visible win in Lightroom while the long work runs.
+The 0.42–0.47 in the earlier experiment note measures that anchor against a
+**global constant Kelvin**, a baseline the shipped model never uses. Re-measured
+on `train_v2.jsonl`, 553 edited frames, whole sessions held out over 48 shoots:
 
-**Gate:** `Temperature` un-gates in `BASELINE.md`. If it does not, the anchoring
-is wrong and the rest of this plan's premise about white balance needs re-reading.
+| anchor | held-out MAE |
+|---|---|
+| A — global constant Kelvin | 860 K |
+| B — as-shot × learned offset **(ships today)** | 471 K |
+| C — `tempMeasured` × learned offset | 449 K |
+
+`skill(B vs A) = 0.452` — that is the number in the note, and it was never an
+available lever. `Temperature`'s −2.1% in `BASELINE.md` is the *ridge* failing to
+beat this prior, which is why it gates; the prior itself is doing its job.
+
+**The one remaining lever**, and it is small: switching the anchor from
+`tempAsShot` (the WB dial) to `tempMeasured` (what the body metered from the
+light) is worth **+3.7% ± 2.3%**, winning 11 of 12 fold reshuffles — 22 K of MAE.
+It is a one-line change in `refValue`, but it redefines the Temperature delta
+space and so needs a `SCHEMA_VERSION` bump that invalidates every trained
+profile. **Not worth forcing a retrain on its own; bundle it with the next schema
+change.**
+
+*Lesson for this file: the note said "the as-shot prior beats ridge 2x" and that
+was read as an unimplemented lever for three rounds. A recorded skill number
+without its baseline stated is not actionable.*
 
 ## Phase 1 — the dataset · BUILT 2026-08-03 · `test/datapairs`
 
@@ -71,10 +91,16 @@ exposure sample against the reference's own headroom; 29% are already blown in
 the reference, where no sampling scheme helps — the worst is a white sheet
 against a white sky at 62.6%, which is the photograph, not a bug.
 
-**Decision: do not regenerate yet.** Dropping `clip > 5%` leaves **32,800 clean
-samples**, which is ample for Phase 2 — and Phase 2 decides whether an encoder is
-worth building at all. If it says yes, regenerate with the headroom cap *while*
-the encoder is built, as parallel work rather than a blocking re-run.
+**Decision: regenerate before Phase 3, not before Phase 2.** Dropping
+`clip > 5%` left 25,213 usable samples, ample for Phase 2 — which has now run and
+said the encoder is worth building. The regeneration should therefore happen
+alongside Phase 3, carrying two fixes:
+
+1. **cap the positive EV against the reference's headroom** — recovers the 70% of
+   badly clipped variants that the push caused;
+2. **widen `--tint`** — at ±20 the tint perturbation is 15.9x smaller in channel
+   gain than `--mired` at ±60, which is why Phase 2 could not measure it. Roughly
+   ±60 tint would put the two on comparable footing.
 
 **Known limitation:** the set is **99.8% Canon** (12 NEF). Irrelevant for a
 personal model, and largely self-cancelling even for a shared one since every
@@ -102,24 +128,37 @@ saturation boost says nothing about the saturation a photograph *wants* — ther
 is no anchor, and `BASELINE.md` already has every one of them gated with
 negative skill.
 
-## Phase 2 — the kill-switch experiment · ~1 day · DO BEFORE BUILDING ANYTHING
+## Phase 2 — the kill-switch experiment · RUN 2026-08-03 · **encoder not falsified**
 
-**Fit a ridge from the existing 50 photometric features to the synthetic labels.**
+`tools/label-recovery`. Ridge from the existing 50 photometric features to the
+synthetic labels; 25,213 samples over 7503 scenes (`clip ≤ 0.05`, variant 0
+excluded); folds hold out whole source scenes; λ re-selected inside every outer
+fold over a grid extended down to 1e-4.
 
-The task is well posed and non-trivial: from the degraded image alone, say how
-far it is from as-shot. Mean luminance cannot do it — a genuinely dark scene at
-0 EV and a bright scene at −2 EV have the same mean — so success requires a prior
-over what correct photographs look like.
+| label | skill | ±shuffle | baseline MAE |
+|---|---|---|---|
+| `ev` | **0.369** | 0.0001 | 0.915 stops |
+| `mired` | **0.361** | 0.0005 | 29.7 mired |
+| `tint` | 0.060 | 0.0002 | 10.0 |
 
-- **If the 50 features already recover ΔEV and Δmired held-out across scenes:**
-  the representation is *not* the bottleneck for these quantities, and the
-  encoder is falsified for a day's work instead of a month's. Stop; the ceiling
-  is elsewhere.
-- **If they cannot:** the gap is measured, in the same units the encoder will be
-  scored in, and Phase 3 has a number to beat.
+**The middle answer, which is the informative one.** The features carry about a
+third of the exposure and white-balance error and miss the other two-thirds. So:
 
-This is the cheapest decisive experiment available and it must not be skipped
-because the encoder is the more interesting thing to build.
+- the encoder is **not** falsified — there is 63% of `ev` and 64% of `mired` it
+  could still take, and that is now the number Phase 3 has to beat;
+- neither are the hand features useless, which rules out throwing them away.
+
+λ selects the bottom of the grid on every label: with n=25k against 50 columns
+the ridge is not overfitting at all, so the shortfall is missing information, not
+shrinkage. Including variant 0 drops every score (0.277 / 0.241 / 0.009) because
+a fifth of the set then sits on the label (0,0,0), where the mean baseline is
+already exact — the table above is the cleaner read.
+
+**Do not read the `tint` row as "tint is unrecoverable".** At full range the
+`mired` perturbation spans a 1.837 channel-gain spread against `tint`'s 1.053 —
+**15.9x larger**. The tint range was sampled far too narrow relative to natural
+scene variation, so 0.060 measures the generator, not the features. Widen
+`--tint` on the regeneration below and re-run before drawing any conclusion.
 
 ## Phase 3 — train the encoder · weeks · gated on Phase 2
 
