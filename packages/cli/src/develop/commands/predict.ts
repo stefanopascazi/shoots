@@ -12,6 +12,9 @@ import { loadDataset } from '../dataset/load.js';
 import { renderKey, type Treatment } from '../develop/schema.js';
 import { buildSessionContext, contextFor, soloSessionCount } from '../develop/session.js';
 import { baseFeatures } from '../develop/assemble.js';
+import { applyMarks, countPending } from '../../triage/apply.js';
+import { makeIo } from '../../io.js';
+import { ensureExiftoolReady } from '../../tools.js';
 import type { DevelopProfile } from '../types.js';
 
 export interface PredictArgs {
@@ -24,6 +27,12 @@ export interface PredictArgs {
   cameraProfile?: string;
   out?: string;
   xmp?: string;
+  /**
+   * Merge pending `cull` / `rate` marks into the sidecars just written
+   * (default). This is the last stop in the shoot: cull → rate → develop, and
+   * the marks have no other way out.
+   */
+  applyMarks?: boolean;
 }
 
 export async function runPredict(args: PredictArgs): Promise<void> {
@@ -96,11 +105,20 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     const adapter = resolveAdapter(args.editor ?? DEFAULT_EDITOR);
     assertCanEmit(adapter);
     await mkdir(args.xmp, { recursive: true });
+    const sidecarFor = (file: string): string => adapter.sidecarPathFor!(file, args.xmp!);
+    const files = predictions.map((p) => p.file);
     let replaced = 0;
+    for (const p of predictions) if (existsSync(sidecarFor(p.file))) replaced++;
+
+    // Both the preserve-and-remerge write and the mark application go through
+    // exiftool. Neither runs on a clean directory with no marks, so only pay the
+    // provisioning when one of them is actually about to happen — but pay it
+    // before the first write, not 300 sidecars in.
+    const pending = args.applyMarks === false ? 0 : await countPending(files);
+    if ((replaced > 0 || pending > 0) && !(await ensureExiftoolReady(makeIo({})))) return;
+
     for (const p of predictions) {
-      const target = adapter.sidecarPathFor!(p.file, args.xmp);
-      if (existsSync(target)) replaced++;
-      await adapter.writeEdit!({ develop: p.develop, treatment: p.treatment, render: p.render }, target);
+      await adapter.writeEdit!({ develop: p.develop, treatment: p.treatment, render: p.render }, sidecarFor(p.file));
     }
     process.stderr.write(`Wrote ${predictions.length} ${adapter.id} sidecars to ${args.xmp}\n`);
     // The sidecar is named after the image, so a second run with a different
@@ -108,6 +126,17 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     // becoming the B&W set is a surprising way to lose work.
     if (replaced > 0) {
       process.stderr.write(`  (${replaced} replaced sidecars already in that directory — use a separate --xmp dir per treatment)\n`);
+    }
+
+    // The sidecars now exist and carry crs. Anything `cull` or `rate` decided
+    // about these frames has been waiting for exactly this moment: merge it in,
+    // in the editor's own label vocabulary, and consume the marks.
+    if (args.applyMarks !== false) {
+      const result = await applyMarks(adapter, files, sidecarFor);
+      if (result.applied.length > 0) {
+        process.stderr.write(`Applied ${result.applied.length} triage mark(s) from cull/rate into those sidecars\n`);
+      }
+      for (const e of result.errors) process.stderr.write(`warn: ${e.file}: could not apply marks: ${e.error}\n`);
     }
   }
 

@@ -4,6 +4,9 @@
  * End-to-end wiring of the @shoots/inference QualityModel seam: score each
  * image (focus + aesthetic + keyword suggestions via the deterministic stub
  * model for now), derive a 1–5 star rating, and persist as either:
+ *   - a triage mark under ~/.shoots (--mark), the composable option: nothing is
+ *     written next to the photographs until a sidecar writer picks it up, so
+ *     cull → rate → develop stack instead of overwriting one another;
  *   - a JSON sidecar `<file>.shoots.json` (default), or
  *   - an XMP sidecar `<file-minus-ext>.xmp` written via exiftool (--write-xmp)
  * Original files are never modified.
@@ -36,11 +39,14 @@ import {
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
 import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
+import { TriageStore } from '../triage/store.js';
+import { VERSION } from '../version.js';
 
 interface RateOptions {
   model: string;
   profile: string;
   writeXmp?: boolean;
+  mark?: boolean;
   concurrency: string;
   dryRun?: boolean;
   json?: boolean;
@@ -66,6 +72,7 @@ export function registerRateCommand(program: Command): void {
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
     .option('--profile <name>', `rating profile: ${PROFILE_NAMES.join(' | ')} | a learned profile in ~/.shoots/profiles`, DEFAULT_PROFILE_NAME)
     .option('--write-xmp', 'write XMP sidecars via exiftool instead of JSON sidecars')
+    .option('--mark', 'record stars and keywords as a triage mark instead of a sidecar; `develop edit` or `triage apply` writes them out later')
     .option('--concurrency <n>', 'max parallel scoring jobs', '4')
     .option('--dry-run', 'score and report, but write no sidecars')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -128,7 +135,8 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
       const stars = toStarRating(assessment, profile);
 
       let sidecar: string | null = null;
-      if (!options.dryRun) {
+      // --mark writes nothing here: the marking pass runs once, after the queue.
+      if (!options.dryRun && !options.mark) {
         if (options.writeXmp) {
           const parsed = path.parse(file.path);
           const xmpPath = path.join(parsed.dir, `${parsed.name}.xmp`);
@@ -187,6 +195,26 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     .filter((o) => !o.ok)
     .map((o) => ({ file: o.item.path, error: o.error?.message ?? 'unknown error' }));
 
+  // ---- record the scores as triage marks (--mark) ----
+  // One store write for the whole batch, after the queue: the marks are a single
+  // file, and a save per image would be both slower and a torn-file hazard.
+  let marked = 0;
+  if (options.mark && !options.dryRun && rated.length > 0) {
+    const store = await TriageStore.open(targetPath);
+    const tool = `rate@${VERSION}`;
+    for (const r of rated) {
+      await store.mark(
+        r.file,
+        { stars: r.stars, keywords: r.keywords },
+        'rate',
+        { tool, profile: profile.name, model: model.name, focus: r.focus, aesthetic: r.aesthetic, aspects: r.aspects },
+      );
+      marked++;
+    }
+    await store.save();
+    logVerbose(io, `Marked ${marked} files in ${store.storePath}`);
+  }
+
   if (io.json) {
     printJson({
       command: 'rate',
@@ -195,6 +223,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
       dryRun: !!options.dryRun,
       results: rated,
       errors,
+      ...(options.mark ? { marked: { count: options.dryRun ? rated.length : marked, planned: !!options.dryRun } } : {}),
       summary: { total: files.length, rated: rated.length, failed: errors.length },
     });
   } else {
@@ -203,6 +232,14 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
       printHuman(io, `${starsBar}  ${path.basename(r.file)}  focus=${r.focus} aesthetic=${r.aesthetic}  [${r.keywords.join(', ')}]`);
     }
     printHuman(io, `\n${rated.length}/${files.length} rated with ${model.name} (profile: ${profile.name})${options.dryRun ? ' (dry run, no sidecars written)' : ''}`);
+    if (options.mark) {
+      printHuman(
+        io,
+        options.dryRun
+          ? '(dry run) would mark the ratings; nothing is written next to the photographs'
+          : `marked ${marked} files — \`shoots develop edit\` or \`shoots triage apply\` writes them into sidecars`,
+      );
+    }
   }
   for (const e of errors) logError(`${e.file}: ${oneLine(e.error)}`);
   if (errors.length > 0) markFailure();

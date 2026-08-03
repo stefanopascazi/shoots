@@ -87,6 +87,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--concurrency <n>', 'max parallel jobs', '4')
     .option('--editor <id>', `which editor's format to read/write: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--force', 'overwrite sidecars that already carry a real edit')
+    .option('--no-apply-marks', 'leave pending cull/rate marks in the store instead of writing them into the sidecars')
     .option('--dry-run', 'print the steps and the paths, write nothing')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')

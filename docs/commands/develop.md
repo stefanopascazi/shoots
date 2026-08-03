@@ -116,11 +116,35 @@ shoots develop edit <path> [options]
 | `--camera-profile <name>` | catalog's own | Base rendering to assume and write out |
 | `--baseline <mode>` | `external` | Must match the profile's, or `predict` refuses |
 | `--force` | off | Overwrite sidecars that already carry a real edit |
+| `--no-apply-marks` | apply on | Leave pending `cull`/`rate` marks in the store instead of writing them out |
 | `--dry-run` | off | Print the steps and the paths, write nothing |
 
 > **It refuses to overwrite your work.** Writing into the photo folder means an
 > existing edit would be replaced, so it counts the sidecars that carry one and
 > stops. `--force` proceeds; `--dry-run` shows the plan first.
+
+### It is the last stop for triage marks
+
+`edit` is the end of `cull` → `rate` → `develop`, so it is where the marks those
+commands recorded become part of the sidecar it writes:
+
+```sh
+shoots cull ./shoot --mark
+shoots rate ./shoot --mark
+shoots develop edit ./shoot
+```
+
+One sidecar per photograph, carrying the `crs:` prediction, the colour label and
+the star rating. `--dry-run` counts what is pending; `--no-apply-marks` leaves
+them for [`shoots triage apply`](./triage.md). Applied marks are kept (not
+deleted) so a discarded sidecar can be rebuilt — `shoots triage clean` purges them.
+
+### What survives a rewrite
+
+Emitting `crs:` means templating the whole sidecar, so `edit` reads what is
+already there and merges it back afterwards: **`xmp:Label`, `xmp:Rating`,
+`dc:subject`, titles, captions and authorship are preserved.** Only the develop
+settings are replaced — which is what the `--force` guard is about.
 
 ---
 

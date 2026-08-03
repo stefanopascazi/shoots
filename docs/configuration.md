@@ -30,6 +30,9 @@ so no environment variables need to be set on end-user machines.
 │   └── export/                     the training dataset, and one dir per shoot
 │       └── shooting/<shoot>/         export.jsonl · prediction.json
 │                                     refine-state.json (what `schedule` last saw)
+├── triage/                       Marks from `cull --mark` / `rate --mark`
+│   └── <shoot>-<digest>.jsonl      pending decisions, until a sidecar writer takes them
+├── labels/                       Your label vocabulary per editor (*.json)
 ├── cache/                        Regenerable: thumbnails, RAW previews
 ├── logs/
 │   └── schedule.log                the daily `schedule run` transcript
@@ -42,6 +45,9 @@ On Windows the same tree lives at `%USERPROFILE%\.shoots`.
 `linear-embedding` profile JSON there (as emitted by `shoots match train`) and it becomes
 selectable as `shoots rate --profile <filename-without-.json>`. See
 [Rating profiles](./profiles.md).
+
+**`labels/` is the other directory you write to yourself** — see
+[Label sets](#label-sets) below.
 
 **`develop/feedback.jsonl` is the one file that cannot be rebuilt at any price.**
 It records what photographs looked like the day they were developed, and re-reading
@@ -126,6 +132,42 @@ shell has no effect on an installed binary.
 | Variable | Effect |
 | --- | --- |
 | `GITHUB_TOKEN` / `GH_TOKEN` | Sent as a bearer token by `shoots update`. Raises the anonymous GitHub API rate limit — worth setting in CI. |
+
+---
+
+## Label sets
+
+`cull --mark` and `rate --mark` record what a photograph *is* — `reject`,
+`select` — never a colour. The colour is chosen when the mark is written into a
+sidecar, from a per-editor label set.
+
+The defaults match a stock English Lightroom / Bridge install:
+
+| Semantic label | Default |
+| --- | --- |
+| `reject` | `Red` |
+| `select` | `Green` |
+| `review` | `Yellow` |
+| `second-pass` | `Purple` |
+
+They are defaults rather than a standard on purpose. `xmp:Label` is a standard
+*field* holding free text: Lightroom and Bridge colour it only when the string
+matches an entry in **your** label set, which is localized. Override it in
+`~/.shoots/labels/<editor>.json`:
+
+```json
+{
+  "reject": "Rosso",
+  "select": "Verde"
+}
+```
+
+Partial overrides merge over the defaults, so remapping one label leaves the rest
+alone. Unknown keys and empty values are rejected outright, before anything is
+written — a shoot half-labelled in the wrong vocabulary is worse than an error.
+
+`<editor>` is the `--editor` id (`acr` today). Switching editors later means
+editing one file, not re-culling.
 
 ---
 

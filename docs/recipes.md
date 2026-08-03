@@ -4,6 +4,30 @@ Complete, copy-pasteable workflows for real shoots.
 
 ---
 
+## 0. Cull and rate without reorganizing anything
+
+The variant to reach for when the shoot will be developed, or when moving files
+around is not how you want a decision recorded. Every step marks; one step writes.
+
+```sh
+SHOOT=D:/Shoots/2026/smith-wedding
+
+shoots cull "$SHOOT/raw" --mark --mark-keepers select
+shoots rate "$SHOOT/raw" --mark --profile wedding
+
+shoots triage list "$SHOOT/raw"      # what is waiting
+
+# Either end here…
+shoots triage apply "$SHOOT/raw"     # labels + stars into the sidecars
+# …or let the develop pass write them alongside its prediction
+shoots develop edit "$SHOOT/raw"
+```
+
+Not a single file moves, and the two marking steps compose instead of fighting
+over the same `.xmp` — see [`triage`](./commands/triage.md).
+
+---
+
 ## 1. Wedding ingest — card to rated catalog
 
 The full standard flow.

@@ -21,6 +21,7 @@ so scripts are unaffected.
 | [`exif`](./exif.md) | Batch read/write EXIF·IPTC·XMP metadata |
 | [`cull`](./cull.md) | Focus-aware blur detection; report, relocate rejects, or review interactively |
 | [`rate`](./rate.md) | 0–5 star ratings + keyword suggestions via the ONNX CLIP model |
+| [`triage`](./triage.md) | The marks `cull`/`rate` record before they reach a sidecar: `list`, `apply`, `clean` |
 
 ### Machine learning
 
@@ -86,11 +87,16 @@ shoots exif <path> [--set-artist <t>] [--set-copyright <t>]
 
 # ── Selection ─────────────────────────────────────────────────────────────────
 shoots cull <path> [--threshold 100] [--focus-threshold 250] [--no-focus-rescue]
+                   [--mark] [--mark-label reject] [--mark-keepers select]
                    [--dest <dir>] [--copy] [--format json|csv] [--out <file>]
                    [--concurrency 4] [--dry-run] [--json] [--review]
 
-shoots rate <path> [--model onnx] [--profile <name>] [--write-xmp]
+shoots rate <path> [--model onnx] [--profile <name>] [--mark] [--write-xmp]
                    [--concurrency 4] [--dry-run] [--json]
+
+shoots triage list  [<path>] [--json]
+shoots triage apply <path> [--editor acr] [--redo] [--dry-run] [--json]
+shoots triage clean [--orphans] [--dry-run] [--json]
 
 # ── ML tooling ────────────────────────────────────────────────────────────────
 shoots embeddings <path> [--out <dir>] [--previews auto|always|never]
@@ -103,7 +109,8 @@ shoots match train  [--name my-eye] [--out <f>] [--db <f>] [--lambda 1]
                                     [--holdout 0.2] [--json]
 
 shoots develop init <path> [--out-export <f>] [--out-train <f>] [--name <n>] [--dry-run]
-shoots develop edit <path> [--profile <f>] [--treatment auto|color|bw] [--force] [--dry-run]
+shoots develop edit <path> [--profile <f>] [--treatment auto|color|bw] [--force]
+                           [--no-apply-marks] [--dry-run]
 shoots develop status [--json]
 shoots develop clean  [--all] [--dry-run] [--json]
 shoots develop export <path> --out <file> [--baseline embedded-preview|external]

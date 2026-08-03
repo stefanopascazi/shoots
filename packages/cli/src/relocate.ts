@@ -6,6 +6,7 @@
  */
 import { copyFile, mkdir, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { moveMarks } from './triage/store.js';
 
 export interface RelocateOptions {
   /** Move the file (default). Set false to copy and leave the original in place. */
@@ -49,5 +50,9 @@ export async function relocate(
   } else {
     await copyFile(file, target);
   }
+  // Triage marks are keyed by path, so a move that nobody reports leaves them
+  // pointing at a file that is no longer there. A copy leaves the original in
+  // place, and with it the marks — only a move needs following.
+  if (options.move ?? true) await moveMarks(file, target);
   return target;
 }

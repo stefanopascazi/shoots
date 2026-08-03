@@ -25,6 +25,9 @@ focus map. It is fast, deterministic and needs no model.
 | `--threshold <n>` | `100` | Global Laplacian variance below this = blurry |
 | `--focus-threshold <n>` | `250` | Keep a globally-soft frame if its sharpest region scores above this |
 | `--no-focus-rescue` | rescue on | Disable the shallow-DoF rescue; classify purely on the global score |
+| `--mark` | off | Record the verdict as a triage mark instead of moving anything |
+| `--mark-label <name>` | `reject` | Semantic label for rejects: `reject`/`select`/`review`/`second-pass` |
+| `--mark-keepers <name>` | — | Also label the keepers |
 | `--dest <dir>` | — | Relocate blurry rejects here, mirroring the source structure |
 | `--copy` | move | Copy rejects to `--dest` instead of moving them |
 | `--format <fmt>` | `json` | Report format: `json` or `csv` |
@@ -83,12 +86,38 @@ unavailable the column is simply omitted rather than failing the cull.
 
 | You pass | What happens |
 | --- | --- |
-| *(no `--dest`)* | **Report only.** Nothing is moved or copied. |
+| *(nothing)* | **Report only.** Nothing is moved or copied. |
+| `--mark` | The verdict is **recorded**, not acted on. No file moves. |
 | `--dest <dir>` | Blurry rejects are **moved** into `<dir>`; keepers stay put. |
 | `--dest <dir> --copy` | Rejects are **copied**; originals stay in place too. |
 
 Keepers — including `sharp*` rescues — are **never** touched. Nothing is ever
 deleted.
+
+### Marking instead of moving
+
+Relocating rejects reorganizes your catalog to record a decision. `--mark` records
+the decision and leaves the catalog alone:
+
+```sh
+shoots cull ./shoot --mark --mark-keepers select
+```
+
+```
+482 analyzed @ threshold 100: 431 sharp (18 rescued), 51 blurry, 0 failed
+marked 482 files (rejects 'reject', keepers 'select') — `shoots develop edit` or `shoots triage apply` writes them into sidecars
+```
+
+Nothing is written next to the photographs. The verdict waits under
+`~/.shoots/triage` until a sidecar writer picks it up and renders it as a colour
+label in your editor's own vocabulary — see [`triage`](./triage.md).
+
+This is what composes: `rate --mark` afterwards adds stars to the same records
+instead of fighting over the same sidecar, and `develop edit` writes all of it
+out at once.
+
+The two are not exclusive. `--mark --dest <dir>` both records the verdict and
+moves the rejects; the marks follow the files to their new location.
 
 ### Structure is mirrored, not flattened
 
@@ -164,6 +193,14 @@ file,score,focus_peak,verdict,rescued,aperture,pixel_source
 D:/raw/IMG_0001.CR3,412.83,891.2,sharp,false,2.8,embedded-preview
 D:/raw/IMG_0002.CR3,78.14,623.55,sharp,true,1.4,embedded-preview
 D:/raw/IMG_0003.CR3,31.02,44.18,blurry,false,2.8,embedded-preview
+```
+
+### Mark instead of moving (composes with `rate` and `develop`)
+
+```sh
+shoots cull ./shoot --mark
+shoots rate ./shoot --mark
+shoots develop edit ./shoot        # writes crs + label + stars in one sidecar
 ```
 
 ### Clean the catalog: move rejects out
@@ -288,6 +325,7 @@ scriptable. Only the review UI is interactive.
 | `aperture` | EXIF `FNumber`, or `null` when unavailable |
 | `pixelSource` | Which pixels were scored — e.g. `embedded-preview` for RAW |
 | `relocated` | Present only with `--dest`. `planned: true` under `--dry-run`. |
+| `marked` | Present only with `--mark`: the labels used and how many records were written. |
 
 ### Useful queries
 
@@ -316,6 +354,7 @@ rate=$(shoots cull ./raw --json | jq '.summary.blurry / .summary.total')
 
 ## See also
 
+- [`triage`](./triage.md) — where `--mark` puts the verdict, and how it gets out
 - [`rate`](./rate.md) — aesthetic and star ratings (ML), complementary to blur culling
 - [Interactive shell](../shell.md) — where `--review` lives
 - [Recipes](../recipes.md) — culling inside a full workflow

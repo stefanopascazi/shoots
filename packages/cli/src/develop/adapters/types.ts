@@ -19,10 +19,19 @@
  * than everyone translating into a neutral third language that no editor reads.
  */
 import type { AsShotMeta, Treatment } from '../develop/schema.js';
+import type { LabelSet } from '../../triage/labelSets.js';
+import type { TriageMarks } from '../../triage/schema.js';
 import type { CliIo } from '../../io.js';
 
 /** Progress callback shared by the batch reads (done, total). */
 export type ProgressFn = (done: number, total: number) => void;
+
+/**
+ * exiftool tag → value, as {@link EditAdapter.annotate} emits them. Array values
+ * feed list-type tags (Subject/Keywords) one element at a time rather than as a
+ * single joined string.
+ */
+export type AnnotationTags = Record<string, string | number | readonly (string | number)[]>;
 
 /** One image's develop edit, in the canonical (ACR) vocabulary. */
 export interface EditRecord {
@@ -113,6 +122,21 @@ export interface EditAdapter {
 
   /** Where {@link writeEdit} should put the sidecar for a given source image. */
   sidecarPathFor?(sourceFile: string, outputDir: string): string;
+
+  /**
+   * Translate canonical triage marks (`cull` / `rate` decisions) into this
+   * editor's own annotation tags, as exiftool tag→value pairs.
+   *
+   * Separate from {@link writeEdit} because annotations and develop settings
+   * live in different namespaces and have different owners: `crs:` is templated
+   * wholesale, whereas a label or a rating is merged into whatever the sidecar
+   * already holds. Keeping them apart is what lets a develop prediction land on
+   * a file without erasing the star rating somebody gave it yesterday.
+   *
+   * `labels` arrives resolved (built-in set plus the user's override) so the
+   * adapter never reads configuration itself.
+   */
+  annotate?(marks: TriageMarks, labels: LabelSet): AnnotationTags;
 
   /** True when this source can only be read — no emit path exists or is safe. */
   readonly ingestOnly?: boolean;

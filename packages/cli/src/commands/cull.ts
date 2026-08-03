@@ -31,6 +31,9 @@ import {
 import { startPhase, startProgress } from '../progress.js';
 import { relocate } from '../relocate.js';
 import { ensureExiftoolReady } from '../tools.js';
+import { TriageStore } from '../triage/store.js';
+import { isSemanticLabel, SEMANTIC_LABELS, type SemanticLabel } from '../triage/schema.js';
+import { VERSION } from '../version.js';
 
 interface CullOptions {
   threshold: string;
@@ -38,6 +41,9 @@ interface CullOptions {
   focusRescue?: boolean;
   dest?: string;
   copy?: boolean;
+  mark?: boolean;
+  markLabel: string;
+  markKeepers?: string;
   format: string;
   out?: string;
   concurrency: string;
@@ -57,6 +63,9 @@ export function registerCullCommand(program: Command): void {
     .option('--no-focus-rescue', 'disable the shallow-DoF rescue and classify purely on the global score')
     .option('--dest <dir>', 'move blurry rejects here, mirroring the source folder structure (keepers are never touched)')
     .option('--copy', 'copy rejects to --dest instead of moving them (leaves the originals in place)')
+    .option('--mark', 'record the verdict as a triage mark instead of moving anything; `develop edit` or `triage apply` writes it into a sidecar later')
+    .option('--mark-label <name>', `semantic label for rejects: ${SEMANTIC_LABELS.join(' | ')}`, 'reject')
+    .option('--mark-keepers <name>', `also label the keepers: ${SEMANTIC_LABELS.join(' | ')}`)
     .option('--format <fmt>', 'report format: json | csv', 'json')
     .option('--out <file>', 'write the report to a file instead of stdout')
     .option('--concurrency <n>', 'max parallel analyses', '4')
@@ -99,6 +108,18 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     process.exitCode = 2;
     return;
   }
+  if (!isSemanticLabel(options.markLabel)) {
+    logError(`Invalid --mark-label: ${options.markLabel} (expected one of: ${SEMANTIC_LABELS.join(', ')})`);
+    process.exitCode = 2;
+    return;
+  }
+  if (options.markKeepers !== undefined && !isSemanticLabel(options.markKeepers)) {
+    logError(`Invalid --mark-keepers: ${options.markKeepers} (expected one of: ${SEMANTIC_LABELS.join(', ')})`);
+    process.exitCode = 2;
+    return;
+  }
+  const rejectLabel = options.markLabel as SemanticLabel;
+  const keeperLabel = options.markKeepers as SemanticLabel | undefined;
   if (options.out) {
     // --out must name a file. A common slip is pointing it at an existing
     // directory, which would surface as a raw EISDIR from writeFile.
@@ -172,6 +193,43 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   // available we simply omit the column rather than failing the cull.
   const apertureByFile = await readApertures(io, files.map((f) => f.path));
 
+  const round2 = (n: number): number => Math.round(n * 100) / 100;
+
+  // ---- record the verdict as a triage mark (--mark) ----
+  // Nothing is written next to the photographs: the verdict lands in the store
+  // under ~/.shoots/triage and waits for a writer (`develop edit` or `triage
+  // apply`) to render it in the target editor's own label vocabulary. Marking
+  // runs before the relocation below so a reject that then moves has marks to
+  // carry with it.
+  let marked = 0;
+  if (options.mark && !options.dryRun) {
+    const store = await TriageStore.open(scanRoot);
+    const tool = `cull@${VERSION}`;
+    for (const result of results) {
+      const isReject = result.verdict === 'blurry';
+      if (!isReject && !keeperLabel) continue;
+      await store.mark(
+        result.file,
+        isReject
+          ? { reject: true, label: rejectLabel }
+          : { reject: false, label: keeperLabel },
+        'cull',
+        {
+          tool,
+          verdict: result.verdict,
+          score: round2(result.score),
+          focusPeak: round2(result.focusPeak),
+          rescued: result.rescued,
+          threshold,
+          focusThreshold: focusRescue ? focusThreshold : null,
+        },
+      );
+      marked++;
+    }
+    await store.save();
+    logVerbose(io, `Marked ${marked} files in ${store.storePath}`);
+  }
+
   // ---- relocate rejects (blurry) to --dest, mirroring the source structure ----
   // Keepers (sharp, incl. shallow-DoF rescues) are never touched. Move by
   // default; --copy leaves the originals in place. Requires --dest.
@@ -190,7 +248,6 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   }
 
   // ---- report ----
-  const round2 = (n: number): number => Math.round(n * 100) / 100;
   const report = {
     command: 'cull',
     threshold,
@@ -213,6 +270,14 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
           mode: move ? 'move' : 'copy',
           count: options.dryRun ? blurry.length : relocated.length,
           planned: options.dryRun,
+        }
+      : undefined,
+    marked: options.mark
+      ? {
+          label: rejectLabel,
+          keepersLabel: keeperLabel ?? null,
+          count: options.dryRun ? (keeperLabel ? results.length : blurry.length) : marked,
+          planned: !!options.dryRun,
         }
       : undefined,
     summary: { total: files.length, sharp: sharp.length, blurry: blurry.length, rescued: rescued.length, failed: errors.length },
@@ -262,6 +327,15 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
         options.dryRun
           ? `(dry run) ${blurry.length} rejects would be ${verb} into ${destRoot} (mirroring structure); keepers stay put`
           : `${verb} ${relocated.length} rejects into ${destRoot} (mirroring structure); keepers left in place`,
+      );
+    }
+    if (options.mark) {
+      const scope = keeperLabel ? `rejects '${rejectLabel}', keepers '${keeperLabel}'` : `rejects '${rejectLabel}'`;
+      printHuman(
+        io,
+        options.dryRun
+          ? `(dry run) would mark ${scope}; nothing is written next to the photographs`
+          : `marked ${marked} files (${scope}) — \`shoots develop edit\` or \`shoots triage apply\` writes them into sidecars`,
       );
     }
   }

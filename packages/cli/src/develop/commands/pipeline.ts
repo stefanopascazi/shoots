@@ -25,6 +25,7 @@ import { runPredict } from './predict.js';
 import { DEFAULT_EDITOR, EDITOR_IDS, resolveAdapter } from '../adapters/registry.js';
 import { logError, logWarn, makeIo, printHuman, printJson } from '../../io.js';
 import { ensureExiftoolReady } from '../../tools.js';
+import { countPending } from '../../triage/apply.js';
 import type { DevelopProfile } from '../types.js';
 
 /** Flags common to both pipelines, mirroring the underlying commands. */
@@ -61,6 +62,8 @@ export interface EditArgs extends CommonArgs {
   cameraProfile?: string;
   /** Overwrite sidecars that already carry a real edit. */
   force?: boolean;
+  /** Merge pending `cull` / `rate` marks into the sidecars written (default on). */
+  applyMarks?: boolean;
 }
 
 function validate(args: CommonArgs): boolean {
@@ -188,6 +191,10 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
   }
 
   if (args.dryRun) {
+    // Marks are the one part of the plan the photographer cannot see from the
+    // folder, so count them rather than just naming the step.
+    const { scanFiles } = await import('@shoots/core');
+    const pending = args.applyMarks === false ? 0 : await countPending((await scanFiles(targetPath)).map((f) => f.path));
     const plan = {
       command: 'develop-edit' as const,
       dryRun: true,
@@ -195,6 +202,7 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
       steps: [
         { step: 'export', path: targetPath, out: datasetPath, baseline: args.baseline },
         { step: 'predict', profile: profilePath, xmp: path.resolve(targetPath), out: predictionPath },
+        { step: 'apply-marks', pending },
       ],
     };
     if (io.json) printJson(plan);
@@ -205,19 +213,28 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
       printHuman(io, `  2. predict with ${profilePath}`);
       printHuman(io, `       sidecars → ${path.resolve(targetPath)}  (next to the photographs)`);
       printHuman(io, `       record   → ${predictionPath}  (for \`develop feedback\`)`);
+      printHuman(
+        io,
+        pending > 0
+          ? `  3. apply ${pending} pending triage mark(s) from cull/rate into those sidecars`
+          : '  3. apply triage marks — none pending for this shoot',
+      );
     }
     return;
   }
 
   // Guard before anything is written: an existing edit in the target folder is
-  // about to be replaced by a prediction.
+  // about to be replaced by a prediction. Only the crs settings are at risk —
+  // ratings, labels and keywords survive the rewrite (see adapters/acr/
+  // preserve.ts) — so the warning is about the develop work specifically.
   if (!args.force) {
     if (!(await ensureExiftoolReady(io))) return;
     const alreadyEdited = await editedSidecars(targetPath, args.editor ?? DEFAULT_EDITOR, io);
     if (alreadyEdited > 0) {
       logError(
         `${alreadyEdited} file(s) in ${targetPath} already carry a real edit, and writing sidecars here would ` +
-          `replace them. Re-run with --force if that is what you want, or --dry-run to see the plan.`,
+          `replace those develop settings (ratings, labels and keywords are preserved). Re-run with --force if ` +
+          `that is what you want, or --dry-run to see the plan.`,
       );
       process.exitCode = 2;
       return;
@@ -242,6 +259,7 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
     cameraProfile: args.cameraProfile,
     xmp: path.resolve(targetPath),
     out: predictionPath,
+    applyMarks: args.applyMarks,
   });
   if (failed()) return;
 

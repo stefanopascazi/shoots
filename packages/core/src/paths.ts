@@ -92,6 +92,27 @@ export function developShootDir(folderName: string): string {
 }
 
 /**
+ * Root for the triage marks `cull` / `rate` leave behind.
+ *
+ * Deliberately not next to the photographs: a mark is an intermediate fragment,
+ * and only the write path (`develop edit` / `triage apply`) is allowed to put
+ * anything in the photographer's folder. Everything before that stays here.
+ */
+export function triageHome(): string {
+  return path.join(shootsHome(), 'triage');
+}
+
+/** The marks file for one shoot, named after the folder it came from. */
+export function triageShootPath(folderName: string): string {
+  return path.join(triageHome(), `${folderName}.jsonl`);
+}
+
+/** Directory holding user overrides of an editor's label vocabulary. */
+export function labelSetsDir(): string {
+  return path.join(shootsHome(), 'labels');
+}
+
+/**
  * Root for the preference-learning duel databases.
  *
  * One database per profile, named after it: a profile is trained on one genre

@@ -24,6 +24,7 @@ Backed by a local ONNX **CLIP** model (`vit-b32-int8`) running on
 | --- | --- | --- |
 | `--model <kind>` | `onnx` | Inference backend. Currently only `onnx`. |
 | `--profile <name>` | `street` | Rating profile: `street`, `generic`, `portrait`, `wildlife`, `wedding`, or a learned profile in `~/.shoots/profiles` |
+| `--mark` | off | Record stars and keywords as a triage mark instead of writing a sidecar |
 | `--write-xmp` | off | Write `.xmp` sidecars via exiftool instead of JSON sidecars |
 | `--concurrency <n>` | `4` | Max parallel scoring jobs |
 | `--dry-run` | off | Score and report, but write no sidecars |
@@ -110,6 +111,22 @@ The full per-aspect breakdown is recorded regardless of the profile's weights �
 provenance, so you can re-derive a rating under a different profile without
 re-running inference.
 
+### Triage marks (`--mark`) — the composable option
+
+Nothing is written next to the photographs. The stars and keywords are recorded
+under `~/.shoots/triage` and merged into a sidecar later, by `develop edit` or
+`shoots triage apply`.
+
+```sh
+shoots cull ./shoot --mark
+shoots rate ./shoot --mark      # adds stars to the same records
+shoots develop edit ./shoot     # one sidecar carrying crs + label + stars
+```
+
+Prefer this whenever the shoot has more than one step. `--write-xmp` writes the
+sidecar immediately, which means whichever command runs last owns the file;
+marks merge field by field instead. See [`triage`](./triage.md).
+
 ### XMP sidecars (`--write-xmp`)
 
 `<file>.xmp`, written via exiftool, carrying `XMP:Rating` and `XMP:Subject`.
@@ -117,7 +134,8 @@ re-running inference.
 
 > `rate --write-xmp` **refuses to overwrite an existing `.xmp`** and reports that
 > file as an error. Your own edits are never clobbered. Move or delete the
-> existing sidecars if you truly want to re-rate.
+> existing sidecars if you truly want to re-rate — or use `--mark`, which merges
+> rather than refusing.
 
 ---
 
@@ -254,4 +272,5 @@ ONNX inference holds real memory per parallel job.
 - [Rating profiles](../profiles.md) — what each profile weights, and how to pick
 - [Preference learning](../preference-learning.md) — train a profile on your own eye
 - [`cull`](./cull.md) — non-ML blur detection; run it *before* rating
+- [`triage`](./triage.md) — where `--mark` puts the ratings, and how they get out
 - [`embeddings`](./embeddings.md) — the profile-neutral export

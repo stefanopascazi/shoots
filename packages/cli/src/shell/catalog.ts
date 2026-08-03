@@ -31,12 +31,17 @@ export const COMMANDS: CommandSpec[] = [
   {
     name: 'cull',
     summary: 'Blur detection (Laplacian, focus-aware): report, relocate rejects, or review interactively',
-    usage: '/cull <path> [--review] [--dest <dir>] [--copy] [--threshold 100] [--focus-threshold 250] [--no-focus-rescue] [--format csv] [--out <report>] [--dry-run]',
+    usage: '/cull <path> [--review] [--mark] [--mark-label reject] [--mark-keepers select] [--dest <dir>] [--copy] [--threshold 100] [--focus-threshold 250] [--no-focus-rescue] [--format csv] [--out <report>] [--dry-run]',
   },
   {
     name: 'rate',
     summary: 'Strict 0–5 star ratings + keyword suggestions via the ONNX model',
-    usage: '/rate <path> [--profile street|generic|portrait|wildlife|wedding] [--write-xmp] [--dry-run] [--json]',
+    usage: '/rate <path> [--profile street|generic|portrait|wildlife|wedding] [--mark] [--write-xmp] [--dry-run] [--json]',
+  },
+  {
+    name: 'triage',
+    summary: 'The marks cull/rate recorded, before they reach a sidecar: list, apply, clean',
+    usage: '/triage list [<path>] · apply <path> [--editor acr] [--redo] [--dry-run] · clean [--orphans] [--dry-run]',
   },
   {
     name: 'embeddings',

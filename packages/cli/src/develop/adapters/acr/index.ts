@@ -11,8 +11,11 @@ import { writeFile } from 'node:fs/promises';
 import { readMetadata, type ExifRecord } from '@shoots/imaging';
 import type { AsShotMeta } from '../../develop/schema.js';
 import type { CliIo } from '../../../io.js';
-import type { EditAdapter, EditRecord, ProgressFn } from '../types.js';
+import type { LabelSet } from '../../../triage/labelSets.js';
+import type { TriageMarks } from '../../../triage/schema.js';
+import type { AnnotationTags, EditAdapter, EditRecord, ProgressFn } from '../types.js';
 import { buildXmpSidecar } from './emit.js';
+import { mergeIntoSidecar, readPreserved } from './preserve.js';
 import {
   CRS_TAG_ARGS,
   META_TAGS,
@@ -101,9 +104,24 @@ export const acrAdapter: EditAdapter = {
   readEdits,
   readCapture,
   async writeEdit(edit, targetPath) {
+    // Read before templating: the sidecar may already carry a rating, a label or
+    // keywords, and the template speaks only crs. See preserve.ts.
+    const preserved = await readPreserved(targetPath);
     await writeFile(targetPath, buildXmpSidecar(edit.develop, edit.treatment, edit.render), 'utf8');
+    await mergeIntoSidecar(targetPath, preserved);
   },
   sidecarPathFor(sourceFile, outputDir) {
     return path.join(outputDir, `${path.parse(sourceFile).name}.xmp`);
+  },
+  annotate(marks: TriageMarks, labels: LabelSet): AnnotationTags {
+    const tags: AnnotationTags = {};
+    // Rejection with no label of its own still has to show up somewhere the
+    // photographer can filter on: Lightroom's own reject flag is catalog-only
+    // and never reaches XMP, so the colour label is the whole vehicle.
+    const label = marks.label ?? (marks.reject ? 'reject' : undefined);
+    if (label) tags['XMP:Label'] = labels[label];
+    if (typeof marks.stars === 'number') tags['XMP:Rating'] = marks.stars;
+    if (marks.keywords?.length) tags['XMP:Subject'] = marks.keywords;
+    return tags;
   },
 };

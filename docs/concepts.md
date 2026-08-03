@@ -16,10 +16,44 @@ Originals are never mutated or deleted. Concretely:
 | `exif` | Writes tags but keeps exiftool's `*_original` backups (unless `--overwrite-original`). |
 | `cull` | Keepers are never touched. Rejects are relocated to `--dest`. Nothing is deleted. |
 | `rate` | Writes sidecars next to the file; refuses to overwrite an existing `.xmp`. |
+| `triage` | `apply` merges into sidecars, never replaces them. `clean` only touches `~/.shoots`. |
 | `embeddings` | Read-only on your photos; writes only into `--out`. |
 | `develop` | Read-only on your photos; writes datasets, profiles and `.xmp` sidecars. |
 
 There is no `shoots delete`, and no command removes an original file.
+
+---
+
+## 1b. Only the write path creates a sidecar
+
+A shoot runs `cull` → `rate` → `develop`. If each step wrote its own `.xmp`, the
+last would win — `develop` templates the file to emit `crs:`, and every editor
+rewrites sidecars on its own terms. Three commands writing one file in sequence
+loses data by construction.
+
+So the steps before the last one record **marks** under `~/.shoots/triage`
+instead:
+
+| Stage | Writes |
+| --- | --- |
+| `cull --mark`, `rate --mark` | A fragment in the store. Nothing next to your photographs. |
+| `develop edit`, `triage apply` | The sidecar — `crs:` plus every pending mark, merged. |
+
+Two properties follow, and both are the point:
+
+- **Marks compose.** Rating a shoot you already culled adds stars to the same
+  record instead of overwriting the rejection.
+- **Marks are meanings, not colours.** A mark says `reject`; which colour that
+  becomes is decided at write time, from a label set you can remap per editor
+  (see [Configuration](./configuration.md#label-sets)). `xmp:Label` is a standard
+  field holding a non-standard, localized value — so the vocabulary belongs at
+  the edge, not in the store.
+
+Marks are keyed by absolute path, and `rename` / `cull --dest` follow the files
+they move. Something else moving them orphans the mark;
+`shoots triage clean --orphans` collects those.
+
+See [`triage`](./commands/triage.md).
 
 ---
 
