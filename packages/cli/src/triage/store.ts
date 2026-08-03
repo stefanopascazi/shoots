@@ -155,6 +155,28 @@ export async function readMarks(files: readonly string[]): Promise<Map<string, T
   return found;
 }
 
+/**
+ * Pending marks for photographs living under `targetPath`.
+ *
+ * Answers "is anything waiting for this shoot?" by reading the store alone —
+ * a handful of small files — instead of walking the catalog to ask each
+ * photograph whether it has a mark. The difference does not show on a shoot
+ * folder and is the whole answer on a drive root, where the walk is minutes of
+ * silence and the store is milliseconds.
+ */
+export async function countPendingUnder(targetPath: string): Promise<number> {
+  const root = path.resolve(targetPath);
+  const prefix = root.endsWith(path.sep) ? root : root + path.sep;
+  let pending = 0;
+  for (const storePath of await storeFiles()) {
+    for (const [key, record] of await loadFile(storePath)) {
+      if (record.applied) continue;
+      if (key === root || key.startsWith(prefix)) pending++;
+    }
+  }
+  return pending;
+}
+
 /** Every record on this machine, grouped by the store file holding it. */
 export async function readAllMarks(): Promise<Map<string, Map<string, TriageRecord>>> {
   const all = new Map<string, Map<string, TriageRecord>>();

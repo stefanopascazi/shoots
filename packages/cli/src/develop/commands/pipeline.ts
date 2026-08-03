@@ -25,7 +25,8 @@ import { runPredict } from './predict.js';
 import { DEFAULT_EDITOR, EDITOR_IDS, resolveAdapter } from '../adapters/registry.js';
 import { logError, logWarn, makeIo, printHuman, printJson } from '../../io.js';
 import { ensureExiftoolReady } from '../../tools.js';
-import { countPending } from '../../triage/apply.js';
+import { startPhase } from '../../progress.js';
+import { countPendingUnder } from '../../triage/store.js';
 import type { DevelopProfile } from '../types.js';
 
 /** Flags common to both pipelines, mirroring the underlying commands. */
@@ -166,9 +167,24 @@ export async function runInit(targetPath: string, args: InitArgs): Promise<void>
 async function editedSidecars(targetPath: string, editorId: string, io: ReturnType<typeof makeIo>): Promise<number> {
   const adapter = resolveAdapter(editorId);
   const { scanFiles } = await import('@shoots/core');
-  const files = await scanFiles(targetPath);
-  if (files.length === 0) return 0;
-  const edits = await adapter.readEdits(files.map((f) => f.path), io);
+  // This guard runs before anything is created, so until it finishes there is no
+  // workdir, no dataset and no output — and on a catalog root the scan alone is
+  // minutes. Announce both halves, or an `edit` that is working looks like an
+  // `edit` that hung.
+  const scanPhase = startPhase(io, 'Checking for existing edits');
+  const files = await scanFiles(targetPath, {
+    onProgress: (found) => scanPhase.update(`${found} files`),
+  });
+  if (files.length === 0) {
+    scanPhase.done('no image files');
+    return 0;
+  }
+  const edits = await adapter.readEdits(
+    files.map((f) => f.path),
+    io,
+    (done, total) => scanPhase.update(`${done}/${total} sidecars`),
+  );
+  scanPhase.done(`${files.length} files`);
   let n = 0;
   for (const [, edit] of edits) if (edit.edited) n++;
   return n;
@@ -192,9 +208,10 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
 
   if (args.dryRun) {
     // Marks are the one part of the plan the photographer cannot see from the
-    // folder, so count them rather than just naming the step.
-    const { scanFiles } = await import('@shoots/core');
-    const pending = args.applyMarks === false ? 0 : await countPending((await scanFiles(targetPath)).map((f) => f.path));
+    // folder, so count them rather than just naming the step. Counted off the
+    // store, never by scanning the catalog: a dry run prints its plan and stops,
+    // and pointing one at a drive root must not turn into a silent full walk.
+    const pending = args.applyMarks === false ? 0 : await countPendingUnder(targetPath);
     const plan = {
       command: 'develop-edit' as const,
       dryRun: true,
