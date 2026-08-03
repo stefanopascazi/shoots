@@ -53,7 +53,7 @@ import { applyMask, frameMask, levelMask, featureSetKey, type FeatureLayout } fr
 import { buildSessionContext, contextFor, sessionKey } from '../develop/session.js';
 import { buildNormalEquations, solveRidge } from './regress.js';
 import { VERSION } from '../../version.js';
-import { fitPca, applyPca } from './pca.js';
+import { fitPca, applyPca, type PcaModel } from './pca.js';
 import {
   EPS,
   LAMBDA_GRID,
@@ -288,13 +288,31 @@ const round4 = (v: number): number => Math.round(v * 1e4) / 1e4;
  * Refitted inside every fold by the evaluation machinery. The projection never
  * sees a target, but one chosen with the held-out fold in hand still flatters the
  * score it produces.
+ *
+ * **Memoised, and it matters more than anything else in this file.** The
+ * projection depends only on which rows are training — never on which parameter
+ * bucket is being fitted — yet a branch fits a dozen buckets over the same folds,
+ * re-selects λ on inner folds inside each of them, and then re-scores everything
+ * twice more. Fitting it afresh each time was 99% of `develop train`: 6m38 on 553
+ * images against 4.7s with the embedding dropped altogether. Power iteration over
+ * 512 dimensions is 16 components × 40 passes × n rows, and it was being paid
+ * some fifteen hundred times per branch for maybe forty distinct training sets.
  */
 function embeddingTransform(rawDim: number, keep: number): RowTransform | undefined {
   if (rawDim === 0 || keep === rawDim) return undefined;
   if (keep === 0) return () => (x) => x.slice(rawDim);
+  const cache = new Map<string, PcaModel>();
   return (train) => {
-    const model = fitPca(train.map((r) => r.x.slice(0, rawDim)), keep);
-    return (x) => [...applyPca(x.slice(0, rawDim), model), ...x.slice(rawDim)];
+    // Row ids identify the training set exactly. Without them the safe answer is
+    // to refit: two different folds of equal size must never share a projection.
+    const key = train.every((r) => r.id !== undefined) ? train.map((r) => r.id).join(',') : null;
+    let model = key === null ? undefined : cache.get(key);
+    if (!model) {
+      model = fitPca(train.map((r) => r.x.slice(0, rawDim)), keep);
+      if (key !== null) cache.set(key, model);
+    }
+    const fitted = model;
+    return (x) => [...applyPca(x.slice(0, rawDim), fitted), ...x.slice(rawDim)];
   };
 }
 
@@ -342,9 +360,20 @@ function fitHead(
   const maskFor = new Map(
     [...buckets.entries()].map(([bucket, at]) => [bucket, maskOf(params[at[0]!]!)]),
   );
-  const maskedTransform = (mask: boolean[]): RowTransform => (train) => {
-    const base = transform ? transform(train) : (x: number[]) => x;
-    return (x) => applyMask(base(x), mask);
+  const maskedTransform = (mask: boolean[]): RowTransform => {
+    // Half the buckets — every tonal and white-balance parameter — zero the whole
+    // embedding block anyway (see featureSets.ts). Projecting 512 dimensions onto
+    // 16 components and then discarding all 16 is the most expensive no-op in the
+    // tool, so those buckets get zeros of the right width instead: after masking
+    // the two are the same vector.
+    if (!mask.slice(0, keep).some(Boolean)) {
+      const blank = new Array<number>(keep).fill(0);
+      return () => (x) => applyMask([...blank, ...x.slice(rawEmbedding)], mask);
+    }
+    return (train) => {
+      const base = transform ? transform(train) : (x: number[]) => x;
+      return (x) => applyMask(base(x), mask);
+    };
   };
 
   const degenerate = degenerateTargets(rows, params.length);
@@ -638,6 +667,7 @@ function trainBranch(
   }
 
   const levelRows: EvalRow[] = raw.map((r, i) => ({
+    id: i,
     x: level[i]!,
     deltas: levelOf.get(groups[i]!)!,
     abs: abs[i]!,
@@ -646,6 +676,7 @@ function trainBranch(
     weight: r.weight,
   }));
   const frameRows: EvalRow[] = raw.map((r, i) => ({
+    id: i,
     x: frame[i]!,
     deltas: deltas[i]!.map((d, k) => d - levelOf.get(groups[i]!)![k]!),
     abs: abs[i]!,

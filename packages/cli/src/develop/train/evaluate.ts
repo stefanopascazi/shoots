@@ -92,6 +92,14 @@ export interface EvalRow {
    */
   weight?: number;
   /**
+   * Stable identity of the photograph this row came from.
+   *
+   * Only used to recognise that two calls are describing the *same* training set,
+   * so a fold-local projection can be fitted once instead of once per parameter
+   * bucket per scoring pass. Absent ⇒ no caching, which is correct but slow.
+   */
+  id?: number;
+  /**
    * A known per-parameter delta this row's prediction is *added to*, in delta
    * space. Absent for an ordinary fit.
    *
