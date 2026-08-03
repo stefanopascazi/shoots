@@ -17,7 +17,7 @@
  * relative to as-shot too), so an encoder trained here produces a feature the
  * existing ridge can consume without a change of units.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { cpus } from 'node:os';
@@ -27,6 +27,8 @@ import { findRaws, isDir, renderReference, resolveDcraw, writeVariant, type Degr
 
 interface Options {
   in: string;
+  /** Exactly what the shell handed over, kept so a mangled path can be shown back. */
+  rawIn: string;
   out: string;
   variants: number;
   size: number;
@@ -74,6 +76,7 @@ function parseArgs(argv: string[]): Options {
   }
   return {
     in: path.resolve(input),
+    rawIn: input,
     out: path.resolve(out),
     variants: num('variants', DEFAULTS.variants),
     size: num('size', DEFAULTS.size),
@@ -128,13 +131,36 @@ function degradations(id: string, opts: Options): Degradation[] {
 
 const round = (v: number, d: number): number => Math.round(v * 10 ** d) / 10 ** d;
 
+/**
+ * Say why `--in` did not resolve to a directory, in terms of what went wrong.
+ *
+ * The case worth naming is a UNC share typed with backslashes: a POSIX shell eats
+ * them before argv is built, so `\\nas\share` arrives as `\\nasshare` and resolves
+ * against the current drive. The path in a bare "not a directory" message then
+ * looks close enough to the one that was typed that the mangling goes unnoticed.
+ */
+async function explainBadInput(raw: string, resolved: string): Promise<string> {
+  const head = `--in is not a directory\n  given     ${raw}\n  resolved  ${resolved}`;
+  if (existsSync(resolved)) return `${head}\n  It exists, but it is a file.`;
+  const looksMangled = /^\\\\?[^\\/]*\d+\.\d+\.\d+\.\d+/.test(raw) || (raw.startsWith('\\\\') && !raw.slice(2).includes('\\'));
+  if (looksMangled || raw.includes('\\')) {
+    return (
+      `${head}\n  Backslashes are consumed by POSIX shells before the argument is built. ` +
+      `Use forward slashes — //192.168.1.14/CasaOS/RAW — which resolve to the same UNC share.`
+    );
+  }
+  return `${head}\n  No such path.`;
+}
+
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
-  if (!(await isDir(opts.in))) throw new Error(`--in is not a directory: ${opts.in}`);
+  if (!(await isDir(opts.in))) throw new Error(await explainBadInput(opts.rawIn, opts.in));
 
   const bin = resolveDcraw();
   const imagesDir = path.join(opts.out, 'images');
+  const clipDir = path.join(opts.out, 'clip');
   await mkdir(imagesDir, { recursive: true });
+  await mkdir(clipDir, { recursive: true });
 
   let raws = await findRaws(opts.in);
   if (opts.limit > 0) raws = raws.slice(0, opts.limit);
@@ -162,6 +188,29 @@ async function main(): Promise<void> {
     const id = idFor(rel);
     const plan = degradations(id, opts);
     const targets = plan.map((d, v) => ({ d, v, file: path.join(imagesDir, `${id}_${v}.jpg`) }));
+    const clipPath = path.join(clipDir, `${id}.json`);
+
+    // Clipping is only knowable by rendering, so it is cached beside the images:
+    // a resumed run that skips the decode still has it for the manifest.
+    let clip: number[] | undefined;
+    const missing = targets.filter((t) => opts.force || !existsSync(t.file));
+    if (missing.length === 0 && existsSync(clipPath)) {
+      clip = JSON.parse(await readFile(clipPath, 'utf8')) as number[];
+      skipped++;
+    } else {
+      try {
+        const ref = await renderReference(bin, raw, opts.size);
+        const measured = new Array<number>(targets.length);
+        for (const { d, v, file } of targets) measured[v] = await writeVariant(ref, d, file, opts.quality);
+        clip = measured;
+        await writeFile(clipPath, JSON.stringify(measured.map((c) => round(c, 5))), 'utf8');
+        rendered++;
+      } catch (e) {
+        failed++;
+        console.error(`  ! ${rel}: ${(e as Error).message}`);
+        return;
+      }
+    }
 
     for (const { d, v, file } of targets) {
       manifest.push(
@@ -176,23 +225,10 @@ async function main(): Promise<void> {
           // consumer that wants ACR's units does not have to re-derive the anchor.
           kelvinFrom: ANCHOR_KELVIN,
           kelvinTo: round(miredToKelvin(kelvinToMired(ANCHOR_KELVIN) + d.mired), 1),
+          clip: round(clip?.[v] ?? 0, 5),
           image: path.relative(opts.out, file).replaceAll('\\', '/'),
         }),
       );
-    }
-
-    const missing = targets.filter((t) => opts.force || !existsSync(t.file));
-    if (missing.length === 0) {
-      skipped++;
-      return;
-    }
-    try {
-      const ref = await renderReference(bin, raw, opts.size);
-      for (const { d, file } of missing) await writeVariant(ref, d, file, opts.quality);
-      rendered++;
-    } catch (e) {
-      failed++;
-      console.error(`  ! ${rel}: ${(e as Error).message}`);
     }
   };
 

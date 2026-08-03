@@ -56,13 +56,21 @@ already there.
 ```json
 {"id":"1f4c…_3","source":"2024/wedding/IMG_0421.CR2","variant":3,
  "ev":-1.2841,"mired":37.412,"tint":-8.03,
- "kelvinFrom":5500,"kelvinTo":4680.2,"image":"images/1f4c…_3.jpg"}
+ "kelvinFrom":5500,"kelvinTo":4680.2,"clip":0.00412,"image":"images/1f4c…_3.jpg"}
 ```
 
 `ev`, `mired` and `tint` are the **labels** — the error the encoder must recover.
 They are relative to the as-shot render, which is the same anchor the develop
 predictor encodes its targets against, so the encoder's output drops into the
 existing feature vector without a change of units.
+
+`clip` is the fraction of pixels with a channel at full scale, and it bounds what
+the label is worth: where a channel saturates its response to the gain is gone,
+so the degradation is no longer fully recoverable from the pixels. Measured on
+ten frames, the white-balance ratio comes back within **0.2%** of its label below
+0.5% clipping and drifts to 2.6% above it. The label is still correct — the
+sample is just harder — so it is recorded rather than filtered, and a consumer
+that wants to weight or drop those can.
 
 ## Design notes
 
@@ -73,9 +81,16 @@ existing feature vector without a change of units.
 - **`-4`, not the CLI's `-o 1 -q 0`.** 16-bit linear with auto-brighten off. An
   auto-brightened reference would silently undo the exposure error being
   introduced.
-- **Resize before degrading.** Averaging pixels is only physically meaningful in
-  linear light, and it also moves the transfer-function work off the full-size
-  image.
+- **The PPM is parsed by hand, not by sharp.** sharp cannot return this raster
+  unaltered: its raw pipeline silently reduces the 16-bit linear render to 8 bits
+  (samples top out at 255 inside 16-bit containers), and `toColourspace('rgb16')`
+  keeps the depth but applies a transfer function — 0.238 measured against
+  dcraw's true 0.0704 on the same file. The first cost a factor of ~90 in
+  brightness and would have quantised the shadows *before* a −2 EV label was
+  applied to them. sharp is used only to encode the finished 8-bit JPEG.
+- **Resize before degrading, with a box average.** Averaging pixels is only
+  physically meaningful in linear light, and a box filter has no ringing to push
+  a highlight over the clip point.
 - **Mired, not Kelvin.** 200K at 3000K is a colour cast; at 9000K it is
   invisible. Mired is the unit a shift is roughly uniform in.
 - **The anchor is nominal (5500K).** The render already carries the camera's
