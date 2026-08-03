@@ -15,7 +15,7 @@ import path from 'node:path';
 import { mergeIntoSidecar } from '../develop/adapters/acr/preserve.js';
 import type { EditAdapter } from '../develop/adapters/types.js';
 import { resolveLabelSet, type LabelSet } from './labelSets.js';
-import { isPending, type TriageRecord } from './schema.js';
+import { needsApplying, type TriageRecord } from './schema.js';
 import { consumeMarks, readMarks } from './store.js';
 
 /** An empty sidecar for annotations to be merged into, when none exists yet. */
@@ -72,7 +72,9 @@ export async function applyMarks(
   for (const file of files) {
     const record = marks.get(path.resolve(file));
     if (!record) continue;
-    if (!options.includeApplied && !isPending(record)) continue;
+
+    const sidecar = sidecarFor(file);
+    if (!options.includeApplied && !needsApplying(record, sidecar)) continue;
 
     const tags = adapter.annotate(record.marks, labels);
     if (Object.keys(tags).length === 0) {
@@ -80,7 +82,6 @@ export async function applyMarks(
       continue;
     }
 
-    const sidecar = sidecarFor(file);
     if (!options.dryRun) {
       try {
         await ensureSidecar(sidecar);
@@ -105,11 +106,23 @@ async function ensureSidecar(sidecarPath: string): Promise<void> {
   await writeFile(sidecarPath, EMPTY_XMP, 'utf8');
 }
 
-/** How many of `files` are waiting for a sidecar. Used for summaries and status. */
-export async function countPending(files: readonly string[]): Promise<number> {
+/**
+ * How many of `files` still owe their sidecar a mark.
+ *
+ * Takes the same `sidecarFor` as {@link applyMarks} and must answer identically:
+ * this is what decides whether exiftool gets provisioned, and a count that said
+ * "none" while the write then had work to do would fail mid-catalog.
+ */
+export async function countPending(
+  files: readonly string[],
+  sidecarFor: (file: string) => string,
+): Promise<number> {
   const marks = await readMarks(files);
   let n = 0;
-  for (const record of marks.values()) if (isPending(record)) n++;
+  for (const file of files) {
+    const record = marks.get(path.resolve(file));
+    if (record && needsApplying(record, sidecarFor(file))) n++;
+  }
   return n;
 }
 

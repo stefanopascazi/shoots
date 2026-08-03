@@ -12,6 +12,7 @@
  * The store is therefore editor-agnostic by construction, and a photographer who
  * moves to darktable next year remaps one JSON file instead of re-culling.
  */
+import path from 'node:path';
 
 /** Semantic labels a producer may attach. Mapped to a colour by the adapter. */
 export const SEMANTIC_LABELS = ['reject', 'select', 'review', 'second-pass'] as const;
@@ -77,9 +78,39 @@ export function mergeMarks(base: TriageMarks, incoming: TriageMarks): TriageMark
   };
 }
 
-/** A record still waiting to be written into a sidecar. */
+/** A record that has never been written into any sidecar. */
 export function isPending(record: TriageRecord): boolean {
   return !record.applied;
+}
+
+/**
+ * Compare two sidecar paths. Case-insensitively on Windows, where the same UNC
+ * share reached twice can differ only in case, and exactly elsewhere.
+ */
+export function sameSidecar(a: string, b: string): boolean {
+  const left = path.resolve(a);
+  const right = path.resolve(b);
+  return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+
+/**
+ * Does this record still need writing into `sidecar`?
+ *
+ * "Applied" is only ever true of the sidecar it was applied *to*. A mark
+ * consumed against some other path — which is what a run with a wrong sidecar
+ * location leaves behind — never reached this photograph, so it is still owed
+ * one. Checking the recorded destination rather than a bare flag is what lets a
+ * catalog heal itself on the next pass instead of needing a manual --redo.
+ */
+export function needsApplying(record: TriageRecord, sidecar: string): boolean {
+  if (!record.applied) return true;
+  return !sameSidecar(record.applied.sidecar, sidecar);
+}
+
+/** The sidecar that belongs beside a photograph, by the ACR/Lightroom convention. */
+export function besideSidecar(file: string): string {
+  const parsed = path.parse(path.resolve(file));
+  return path.join(parsed.dir, `${parsed.name}.xmp`);
 }
 
 /**

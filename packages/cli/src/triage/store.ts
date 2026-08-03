@@ -27,7 +27,9 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { triageHome, triageShootPath } from '@shoots/core';
 import {
+  besideSidecar,
   mergeMarks,
+  needsApplying,
   parseRecord,
   type MarkProvenance,
   type MarkSource,
@@ -170,8 +172,11 @@ export async function countPendingUnder(targetPath: string): Promise<number> {
   let pending = 0;
   for (const storePath of await storeFiles()) {
     for (const [key, record] of await loadFile(storePath)) {
-      if (record.applied) continue;
-      if (key === root || key.startsWith(prefix)) pending++;
+      if (key !== root && !key.startsWith(prefix)) continue;
+      // Assumes the beside-the-photograph convention, which is what both callers
+      // of this count (`develop edit`, `triage apply`) use. A mark applied
+      // somewhere else still counts as owed — see needsApplying.
+      if (needsApplying(record, besideSidecar(key))) pending++;
     }
   }
   return pending;

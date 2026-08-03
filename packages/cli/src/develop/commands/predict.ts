@@ -129,7 +129,7 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     // exiftool. Neither runs on a clean directory with no marks, so only pay the
     // provisioning when one of them is actually about to happen — but pay it
     // before the first write, not 300 sidecars in.
-    const pending = args.applyMarks === false ? 0 : await countPending(files);
+    const pending = args.applyMarks === false ? 0 : await countPending(files, sidecarFor);
     if ((replaced > 0 || pending > 0) && !(await ensureExiftoolReady(makeIo({})))) return;
 
     for (const p of predictions) {

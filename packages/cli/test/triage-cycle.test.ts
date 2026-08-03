@@ -12,7 +12,7 @@
  */
 import { describe, expect, test, beforeAll } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { EXIFTOOL, makeSandbox, sidecar, type Sandbox } from './fixtures.js';
 
@@ -136,6 +136,47 @@ describe('triage apply', () => {
       await cli(sandbox, 'triage', 'apply', sandbox.catalog);
       const xmp = await readFile(sidecar(sandbox, '2026-08-02'), 'utf8');
       expect(xmp).toContain('<xmp:Label>Rosso</xmp:Label>');
+    } finally {
+      await sandbox.dispose();
+    }
+  });
+
+  xmpTest('a mark consumed against the wrong sidecar is re-applied to the right one', async () => {
+    const sandbox = await makeSandbox();
+    try {
+      await cli(sandbox, 'cull', sandbox.catalog, ...ALL_BLURRY, '--mark');
+      await cli(sandbox, 'triage', 'apply', sandbox.catalog);
+
+      // Rewrite history the way a run with a broken sidecar location left it:
+      // consumed, but pointing at a file in the catalog root rather than beside
+      // the photograph. Every mark then reads as delivered and nothing would
+      // ever write them again.
+      const storeDir = path.join(sandbox.home, 'triage');
+      const [name] = await readdir(storeDir);
+      const storeFile = path.join(storeDir, name!);
+      const rewritten = (await readFile(storeFile, 'utf8'))
+        .trim()
+        .split('\n')
+        .map((line) => {
+          const rec = JSON.parse(line) as { file: string; applied?: { at: string; sidecar: string } };
+          rec.applied = {
+            at: new Date().toISOString(),
+            sidecar: path.join(sandbox.catalog, `${path.parse(rec.file).name}.xmp`),
+          };
+          return JSON.stringify(rec);
+        })
+        .join('\n');
+      await Bun.write(storeFile, rewritten + '\n');
+
+      // Delete the correctly-placed sidecars so only a re-application can bring
+      // the labels back.
+      for (const day of ['2026-08-02', '2026-08-03']) await rm(sidecar(sandbox, day));
+
+      const { out } = await cli(sandbox, 'triage', 'apply', sandbox.catalog);
+      expect(out).toContain('2 sidecar(s) written');
+      for (const day of ['2026-08-02', '2026-08-03']) {
+        expect(await readFile(sidecar(sandbox, day), 'utf8')).toContain('<xmp:Label>Red</xmp:Label>');
+      }
     } finally {
       await sandbox.dispose();
     }
