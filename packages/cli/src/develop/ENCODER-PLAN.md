@@ -44,14 +44,43 @@ it gives a visible win in Lightroom while the long work runs.
 **Gate:** `Temperature` un-gates in `BASELINE.md`. If it does not, the anchoring
 is wrong and the rest of this plan's premise about white balance needs re-reading.
 
-## Phase 1 — the dataset · RUNNING
+## Phase 1 — the dataset · BUILT 2026-08-03 · `test/datapairs`
 
-`tools/photometric-pairs`. ~7000 RAW over 5 bodies (Canon + Nikon), edited or
-not, since no XMP is ever read.
+`tools/photometric-pairs` over the NAS archive. **7591 sources of 7594** (3
+failed), **37,955 samples**, 1.8 GB at 512px, no degenerate frames. 4682 CR3 +
+2897 CR2 + 12 NEF across ~10 bodies. Edited or not — no XMP is ever read.
 
-Validated on 10 CR2/CR3: worst EV label error 0.087, white-balance ratio within
-0.2% of label below 0.5% clipping, between-scene exposure spread 4.10x (i.e. the
-scene's own exposure survives the render).
+Labels are uniform, symmetric and exact wherever the scene has headroom: median
+EV error 0.039 and white-balance ratio error 0.2%, which is the *measurement's*
+own floor (JPEG quantisation), not label error.
+
+### Clipping is the one real defect, and it is quantified
+
+| clip | share | median EV err | median R/B err |
+|---|---|---|---|
+| <0.5% | 68.8% | 0.039 | 0.2% |
+| 0.5–2% | 8.5% | 0.031 | 0.9% |
+| 2–5% | 7.3% | 0.061 | 4.4% |
+| 5–20% | 11.1% | 0.131 | 8.9% |
+| >20% | 4.3% | **0.514** | **22.3%** |
+
+Above 20% the EV label is half a stop out: the image no longer contains what the
+label claims. Of the 5151 variants above 5% clipping, **70% are caused by the
+positive EV push** (median +1.51 EV) and would be recovered by capping the
+exposure sample against the reference's own headroom; 29% are already blown in
+the reference, where no sampling scheme helps — the worst is a white sheet
+against a white sky at 62.6%, which is the photograph, not a bug.
+
+**Decision: do not regenerate yet.** Dropping `clip > 5%` leaves **32,800 clean
+samples**, which is ample for Phase 2 — and Phase 2 decides whether an encoder is
+worth building at all. If it says yes, regenerate with the headroom cap *while*
+the encoder is built, as parallel work rather than a blocking re-run.
+
+**Known limitation:** the set is **99.8% Canon** (12 NEF). Irrelevant for a
+personal model, and largely self-cancelling even for a shared one since every
+label is a delta against that file's own as-shot render. If sensor bias does
+surface, the fix is raw.pixls.us (CC0, ~one file per camera model — sensor
+diversity, which is exactly what this archive lacks).
 
 **Still to add**, both free because they stay per-channel LUTs:
 
