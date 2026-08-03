@@ -6,6 +6,7 @@
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import path from 'node:path';
 import { assertApplicable, predictOne, resolveTreatment } from '../predict.js';
 import { assertCanEmit, DEFAULT_EDITOR, resolveAdapter } from '../adapters/registry.js';
 import { loadDataset } from '../dataset/load.js';
@@ -27,6 +28,19 @@ export interface PredictArgs {
   cameraProfile?: string;
   out?: string;
   xmp?: string;
+  /**
+   * Write each sidecar next to its own photograph instead of flat into {@link
+   * xmp}.
+   *
+   * A catalog is a tree — `<shoot>/2026-08-02/`, `<shoot>/2026-08-03/` — and a
+   * sidecar only works where its RAW is, so `develop edit` needs this. Flattening
+   * also collides: two days both holding `IMG_0001.CR3` produce one
+   * `IMG_0001.xmp`, and the second silently wins.
+   *
+   * `develop predict --xmp <dir>` keeps the flat behaviour on purpose: there the
+   * directory is a scratch space you compare treatments in, not a catalog.
+   */
+  xmpBeside?: boolean;
   /**
    * Merge pending `cull` / `rate` marks into the sidecars just written
    * (default). This is the last stop in the shoot: cull → rate → develop, and
@@ -104,8 +118,9 @@ export async function runPredict(args: PredictArgs): Promise<void> {
   if (args.xmp) {
     const adapter = resolveAdapter(args.editor ?? DEFAULT_EDITOR);
     assertCanEmit(adapter);
-    await mkdir(args.xmp, { recursive: true });
-    const sidecarFor = (file: string): string => adapter.sidecarPathFor!(file, args.xmp!);
+    if (!args.xmpBeside) await mkdir(args.xmp, { recursive: true });
+    const sidecarFor = (file: string): string =>
+      adapter.sidecarPathFor!(file, args.xmpBeside ? path.dirname(path.resolve(file)) : args.xmp!);
     const files = predictions.map((p) => p.file);
     let replaced = 0;
     for (const p of predictions) if (existsSync(sidecarFor(p.file))) replaced++;
@@ -120,12 +135,20 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     for (const p of predictions) {
       await adapter.writeEdit!({ develop: p.develop, treatment: p.treatment, render: p.render }, sidecarFor(p.file));
     }
-    process.stderr.write(`Wrote ${predictions.length} ${adapter.id} sidecars to ${args.xmp}\n`);
+    process.stderr.write(
+      args.xmpBeside
+        ? `Wrote ${predictions.length} ${adapter.id} sidecars next to the photographs, under ${args.xmp}\n`
+        : `Wrote ${predictions.length} ${adapter.id} sidecars to ${args.xmp}\n`,
+    );
     // The sidecar is named after the image, so a second run with a different
     // --treatment lands on the same files. Say so: the colour set silently
     // becoming the B&W set is a surprising way to lose work.
     if (replaced > 0) {
-      process.stderr.write(`  (${replaced} replaced sidecars already in that directory — use a separate --xmp dir per treatment)\n`);
+      process.stderr.write(
+        args.xmpBeside
+          ? `  (${replaced} sidecars already existed and were rewritten — their ratings, labels and keywords were preserved)\n`
+          : `  (${replaced} replaced sidecars already in that directory — use a separate --xmp dir per treatment)\n`,
+      );
     }
 
     // The sidecars now exist and carry crs. Anything `cull` or `rate` decided

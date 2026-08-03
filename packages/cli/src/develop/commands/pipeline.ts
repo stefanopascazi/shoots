@@ -275,6 +275,10 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
     editor: args.editor,
     cameraProfile: args.cameraProfile,
     xmp: path.resolve(targetPath),
+    // A shoot is a tree of dated folders, and a sidecar only works where its RAW
+    // is. Without this every subfolder's sidecars pile up flat in the root, and
+    // same-named frames from two days overwrite each other.
+    xmpBeside: true,
     out: predictionPath,
     applyMarks: args.applyMarks,
   });
