@@ -158,6 +158,14 @@ export async function runPredict(args: PredictArgs): Promise<void> {
       const result = await applyMarks(adapter, files, sidecarFor);
       if (result.applied.length > 0) {
         process.stderr.write(`Applied ${result.applied.length} triage mark(s) from cull/rate into those sidecars\n`);
+      } else {
+        // Saying nothing here is how a sidecar with no label reads as a bug: the
+        // photographer cannot tell "nothing was recorded" from "the labels were
+        // dropped". Marks are opt-in, so the usual answer is the first one.
+        process.stderr.write(
+          'No triage marks pending for these files — labels and ratings come from ' +
+            '`cull --mark` / `rate --mark` (`shoots triage list` shows what is waiting)\n',
+        );
       }
       for (const e of result.errors) process.stderr.write(`warn: ${e.file}: could not apply marks: ${e.error}\n`);
     }
