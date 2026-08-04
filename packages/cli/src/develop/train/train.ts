@@ -864,18 +864,23 @@ function trainBranch(
   // vector, because the whole point is an unshrunk correction against one measured
   // scene property. Kept only where the tail measurement earns it; see anchor.ts.
   const anchors: Record<string, AnchorModel> = {};
-  for (const [key, spec] of Object.entries(ANCHORS)) {
+  for (const [key, specs] of Object.entries(ANCHORS)) {
     const k = params.findIndex((p) => p.key === key);
-    const index = colourNames.indexOf(spec.feature);
-    if (k < 0 || index < 0) continue;
-    const samples = [];
-    for (let i = 0; i < raw.length; i++) {
-      const x = anchorValue({ ...spec, index }, raw[i]!.colour);
-      if (x === null) continue;
-      samples.push({ x, y: abs[i]![k]!, group: groups[i]! });
+    if (k < 0) continue;
+    let best: AnchorModel | undefined;
+    for (const spec of specs) {
+      const index = colourNames.indexOf(spec.feature);
+      if (index < 0) continue;
+      const samples = [];
+      for (let i = 0; i < raw.length; i++) {
+        const x = anchorValue({ ...spec, index }, raw[i]!.colour);
+        if (x === null) continue;
+        samples.push({ x, y: abs[i]![k]!, group: groups[i]! });
+      }
+      const fit = fitAnchor(params[k]!, spec, index, samples, { folds, shuffles: 20, maeAllowance: brakes.frameMaeAllowance });
+      if (fit?.keep && (best === undefined || fit.model.tailSkill > best.tailSkill)) best = fit.model;
     }
-    const fit = fitAnchor(params[k]!, spec, index, samples, { folds, shuffles: 20 });
-    if (fit?.keep) anchors[key] = fit.model;
+    if (best) anchors[key] = best;
   }
 
   const deltaStats = columnStats(deltas);

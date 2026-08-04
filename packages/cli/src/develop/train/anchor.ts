@@ -41,21 +41,47 @@ export interface AnchorSpec {
 }
 
 /**
- * Sliders worth anchoring, and against what.
+ * Candidate anchors per slider: the scene properties each might be correcting.
  *
- * Deliberately short. Measured over 553 edits with whole shoots held out, only
- * these two beat the shrunk fit on the frames that carry the largest corrections
- * — `Highlights2012` on both the average and the tail (0.172/0.177 against
- * 0.049/0.036), `Exposure2012` on the tail alone (0.121 against 0.012, while
- * losing on the average). Everything else measured at or below zero: `Whites`,
- * `Shadows`, `Blacks`, `Contrast`, `Vibrance`, `Saturation`, `Clarity` and
- * `Texture` are not corrections toward a scene-derived target in this catalog,
- * and asserting otherwise is how hand-rolled photometric priors scored negative
- * the first time they were tried.
+ * A list rather than one choice, because for most of these the plausible
+ * property is not obvious — `Blacks2012` could be answering how much is already
+ * crushed or how dark the bottom of the histogram sits, and only the measurement
+ * separates them. The best candidate is picked on held-out tail skill and then
+ * has to pass the stability test in {@link fitAnchor} regardless, so a slider
+ * with no anchor at all is a perfectly ordinary outcome — most were, the first
+ * time this was measured with a straight line.
+ *
+ * That first pass rejected everything but `Exposure2012` and `Highlights2012`,
+ * and the rejection was partly an artefact of the shape: a single line has to
+ * average "leave the acceptable frames alone" together with "go after the bad
+ * one", and lands somewhere useless for both. `Exposure2012` scored −0.218 on
+ * the average that way and +0.124 once it was allowed a dead zone. The others
+ * are re-offered here on the same terms.
+ *
+ * Picking among two candidates on the same held-out folds that then report the
+ * score is mildly optimistic. It is bounded by the stability test — the mean
+ * across fold reshuffles has to clear its own spread — and two candidates is a
+ * far smaller freedom than the seven dead-zone widths already selected nested.
  */
-export const ANCHORS: Record<string, AnchorSpec> = {
-  Exposure2012: { feature: 'lumaMean', log2: true },
-  Highlights2012: { feature: 'lumaP99' },
+export const ANCHORS: Record<string, AnchorSpec[]> = {
+  // Where the bulk of the histogram sits.
+  Exposure2012: [{ feature: 'lumaMean', log2: true }, { feature: 'lumaMedian', log2: true }],
+  // What is at risk at the top, and what is already gone.
+  Highlights2012: [{ feature: 'lumaP99' }, { feature: 'clipHigh' }],
+  Whites2012: [{ feature: 'clipHigh' }, { feature: 'lumaP99' }],
+  // The same question at the bottom of the histogram.
+  Shadows2012: [{ feature: 'lumaP01' }, { feature: 'shadowFloor' }],
+  Blacks2012: [{ feature: 'clipShadow' }, { feature: 'lumaP01' }],
+  // How much separation the frame already has.
+  Contrast2012: [{ feature: 'lumaStd' }],
+  // How much colour is already there — the relationship the feature masks were
+  // hiding from the heads entirely until satMean was added to the presence set.
+  Vibrance: [{ feature: 'satMean' }, { feature: 'satStd' }],
+  Saturation: [{ feature: 'satMean' }, { feature: 'satStd' }],
+  // How much local structure there is to push.
+  Clarity2012: [{ feature: 'detailCoarse' }, { feature: 'detailFine' }],
+  Texture: [{ feature: 'detailFine' }, { feature: 'detailCoarse' }],
+  Dehaze: [{ feature: 'darkChannel' }, { feature: 'detailCoarse' }],
 };
 
 /**
@@ -244,7 +270,7 @@ export function fitAnchor(
   spec: AnchorSpec,
   index: number,
   rows: readonly AnchorSample[],
-  opts: { folds: number; shuffles: number },
+  opts: { folds: number; shuffles: number; maeAllowance: number },
 ): AnchorFit | null {
   if (rows.length < 60) return null;
   const ys = rows.map((r) => r.y);
@@ -321,10 +347,23 @@ export function fitAnchor(
     tailSkill: Math.round(meanOf(tail) * 1e4) / 1e4,
     skill: Math.round(meanOf(all) * 1e4) / 1e4,
   };
-  // A positive tail skill by more than its own spread across reshuffles. The
-  // spread is the same discipline BASELINE.md applies everywhere else: on a few
-  // hundred frames a single per-parameter figure swings several points on its own.
-  return { model, keep: meanOf(tail) > sdOf(tail) };
+  // Two conditions, and both are needed.
+  //
+  // The tail has to be positive by more than its own spread across reshuffles —
+  // the same discipline BASELINE.md applies everywhere else, since a single
+  // per-parameter figure on a few hundred frames swings several points on its own.
+  //
+  // And the average is allowed to get worse, but not without limit. An anchor
+  // buying reach always costs average MAE, which is why the tail is what selects
+  // it; but `Whites2012` on the black-and-white branch measured +0.187 on the
+  // tail against **−0.381** on the average, which is a slider being wrecked
+  // everywhere in exchange for the few frames it helps. The budget is the same
+  // one the frame head already spends for the same reason — see
+  // FRAME_MAE_ALLOWANCE — so the two mechanisms cannot disagree about how much
+  // error reach is worth.
+  const tailOk = meanOf(tail) > sdOf(tail);
+  const averageOk = meanOf(all) > -opts.maeAllowance;
+  return { model, keep: tailOk && averageOk };
 }
 
 /** Replay a fitted anchor for one photograph. Null when it cannot be read. */
