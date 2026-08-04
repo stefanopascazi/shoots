@@ -43,6 +43,7 @@ export interface RefineArgs {
   folds: number;
   groupBy?: string;
   gateThreshold?: number;
+  boldness?: number;
   embeddingDim?: number;
   minWeight?: number;
   maxWeight?: number;
@@ -144,6 +145,7 @@ export async function runRefine(targetPath: string, args: RefineArgs): Promise<v
     folds: args.folds,
     groupBy: args.groupBy,
     gateThreshold: args.gateThreshold,
+    boldness: args.boldness,
     embeddingDim: args.embeddingDim,
     minWeight: args.minWeight,
     maxWeight: args.maxWeight,

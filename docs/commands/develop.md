@@ -94,7 +94,7 @@ shoots develop init <path> [options]
 | `--dry-run` | off | Print the steps and the paths, write nothing |
 
 It also takes every `train` flag — `--lambda`, `--folds`, `--group-by`,
-`--gate-threshold`, `--embedding-dim`, `--all` — plus `--model`,
+`--boldness`, `--gate-threshold`, `--embedding-dim`, `--all` — plus `--model`,
 `--concurrency` and `--editor`. If the export fails it stops rather than
 training on a half-written dataset.
 
@@ -381,7 +381,31 @@ shoots develop train --data <file> --name <name> --out <file> [options]
 | `--out <file>` | **required** | Output profile JSON path |
 | `--lambda <n>` | `auto` | Ridge strength for every parameter, or `auto` to choose one **per parameter** by cross-validation |
 | `--folds <k>` | `5` | Cross-validation folds |
+| `--boldness <n>` | `0` | How far predictions may travel, `0`..`1`. See [below](#--boldness-how-far-a-prediction-may-travel) |
+| `--gate-threshold <n>` | — | Floor under the adaptive gate, overriding what `--boldness` sets |
 | `--embedding-dim <k>` | `16` | CLIP components to keep; `0` drops the embedding, a high value keeps it raw |
+
+### `--boldness`: how far a prediction may travel
+
+Four separate mechanisms decide whether a slider is allowed to move: the gate
+that falls back to your constant, the de-shrinking that restores the reach ridge
+took off, and the error budget the per-frame head may spend buying it back. Each
+default was chosen on its own to avoid claiming more than the evidence supports.
+Their *product* is a model that emits a constant for most parameters.
+
+`--boldness` moves all of them together. `0` is the safe default and reproduces
+the previous behaviour exactly. `1` opens the gate completely and lets the fit
+reach as far as it asks to.
+
+**The skill scores fall as this rises, by construction.** Average error is
+minimised by the flat answer, so any model that moves more pays for it. A
+`Highlights` sitting at your average on every frame of a shoot is *useless* at
+any error score, and one that recovers a blown sky is worth a couple of points.
+Judge this one in your editor, not in a report.
+
+The gate it moves is not a fixed number either: a parameter has to clear its own
+measurement noise — the spread of its skill across held-out folds — so a tightly
+measured 3% passes where a noisy 15% does not.
 
 One model is trained **per treatment** over `shared + <branch>`, so a
 high-contrast B&W edit and a light colour edit never average into a mush.
@@ -766,7 +790,8 @@ shoots develop refine <shoot> [options]
 
 It also takes the flags of the steps it wraps: `--min-weight` / `--max-weight`
 (from `learn`), `--shrink` / `--min-shoots` (from `calibrate`), and the `train`
-flags `--lambda`, `--folds`, `--group-by`, `--gate-threshold`, `--embedding-dim`.
+flags `--lambda`, `--folds`, `--group-by`, `--boldness`, `--gate-threshold`,
+`--embedding-dim`.
 
 ### Why the order is fixed
 
@@ -841,7 +866,7 @@ the model moves it, and this is the refit.
 | `--max-weight <n>` | `3` | Ceiling for a frame you overhauled |
 | `--no-train` | off | Update the dataset but stop before refitting |
 | `--dry-run` | off | Show the weighting and the plan, write nothing |
-| `--name`, `--lambda`, `--folds`, `--group-by`, `--gate-threshold`, `--embedding-dim`, `--all` | — | As [`train`](#shoots-develop-train) |
+| `--name`, `--lambda`, `--folds`, `--group-by`, `--boldness`, `--gate-threshold`, `--embedding-dim`, `--all` | — | As [`train`](#shoots-develop-train) |
 
 Nothing is recomputed: `develop edit` already left the shoot's embeddings and
 colour features on disk, and only the *targets* changed when you developed the
