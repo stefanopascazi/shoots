@@ -160,7 +160,53 @@ already exact — the table above is the cleaner read.
 scene variation, so 0.060 measures the generator, not the features. Widen
 `--tint` on the regeneration below and re-run before drawing any conclusion.
 
-## Phase 3 — train the encoder · weeks · gated on Phase 2
+## Phase 2.5 — the missing link · RUN 2026-08-04 · **scope collapsed to one slider**
+
+`tools/missing-link`. Phase 2 tested link 1 of three; this tests link 3 — does the
+estimate an encoder would produce actually predict what the photographer did?
+
+Every edited catalog frame is also in the pairs dataset, so its variant 0 has
+features from the identical pipeline (no domain gap). The synthetic estimator is
+fitted with all 48 catalog scenes withheld, then applied to those frames.
+
+Asked *within* a shoot, because asked globally it answers the wrong question and
+answers it confusingly: pooled WB correlation is 0.50 while pooled held-out skill
+is 0.00. Same reason the shipped model has two heads — a global linear map spends
+itself on session offsets. The baseline is therefore "no per-frame modulation",
+i.e. exactly what a gated frame head emits.
+
+| parameter | r within | shoots agreeing on sign | skill within shoot |
+|---|---|---|---|
+| **`Exposure2012`** | **−0.464** | **22/24** | **+0.0553 ± 0.0035** |
+| `Highlights2012` | −0.222 | 14/24 | +0.0022 ± 0.0056 |
+| `Shadows2012` | 0.063 | 10/24 | −0.0061 |
+| `Contrast2012` | 0.121 | 12/24 | −0.0403 |
+| `WB (mired)` | 0.520 | **11/24** | −0.0067 ± 0.0192 |
+
+**Exposure is the only parameter where the link holds** — and it holds hard: 22
+shoots of 24 agree on the sign. Everything else sits at chance agreement with
+zero or negative skill.
+
+**The WB row is the important negative.** A pooled 0.520 looks like the strongest
+number in the table and is worth nothing: only 11 of 24 shoots agree on the sign,
+and in several the photographer never moved `Temperature` within the shoot at all
+— the per-frame variance being predicted does not exist. No encoder fixes that.
+It also closes the premise this plan inherited from the FiveK ceiling analysis:
+"white balance is the predictable part" is true *across* photographers and false
+*within* this one's shoots, where it is set once and left.
+
+**Consequence for Phase 3: the bet is no longer "the corrective half of editing".
+It is one slider.** Weeks of encoder work to improve per-frame exposure is a much
+worse trade than this plan assumed when it was written.
+
+**Do this first — days, not weeks.** The +5.5% is already available from a linear
+ridge on features the tool computes today. Feed that one scalar into the frame
+head for `Exposure2012` and diff against `BASELINE.md` (currently 10.2% ± 3.9%).
+It is a real product change, it is cheap, and it converts the encoder question
+from "is there any signal" into "is a stronger estimator worth it" — answerable
+against a number instead of a hope.
+
+## Phase 3 — train the encoder · weeks · gated on Phase 2.5
 
 A small CNN or fine-tuned compact backbone over the degraded image, predicting
 the degradation vector plus a low-dimensional embedding.
