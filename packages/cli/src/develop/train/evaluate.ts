@@ -65,8 +65,8 @@ export const EPS = 1e-6;
  * limited to three. That mismatch gated Highlights outright the first time.
  */
 export const MAX_RESPONSE = 3;
-export const clampResponse = (v: number): number =>
-  Number.isFinite(v) ? Math.min(MAX_RESPONSE, Math.max(0, v)) : 1;
+export const clampResponse = (v: number, max: number = MAX_RESPONSE): number =>
+  Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : 1;
 
 /** How held-out folds are drawn. */
 export type GroupBy = 'folder' | 'none';
@@ -274,7 +274,7 @@ export function degenerateTargets(rows: EvalRow[], paramCount: number): boolean[
 export function crossValidate(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; grid?: number[]; transform?: RowTransform },
+  options: { folds: number; groupBy: GroupBy; grid?: number[]; transform?: RowTransform; maxResponse?: number },
 ): Map<number, ParamStats[]> {
   const grid = options.grid ?? LAMBDA_GRID;
   const P = params.length;
@@ -345,7 +345,7 @@ export function crossValidate(
       }
       const varP = spp / n - (sp / n) ** 2;
       const covPY = spy / n - (sp / n) * (sy / n);
-      const slope = clampResponse(varP > EPS ? covPY / varP : 0);
+      const slope = clampResponse(varP > EPS ? covPY / varP : 0, options.maxResponse);
 
       let modelErr = 0;
       let shippedErr = 0;
@@ -408,7 +408,7 @@ function ship(raw: number, mean: number, policy: ShippedPolicy | undefined, k: n
 function accumulateFolds(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy },
+  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy; maxResponse?: number },
   lambdasFor: (train: EvalRow[]) => number[],
 ): ParamStats[] {
   const P = params.length;
@@ -500,7 +500,7 @@ function accumulateFolds(
     // a second nested layer of folds, costs more than the number is worth.
     const varP = pair.spp[k]! / n - (pair.sp[k]! / n) ** 2;
     const covPY = pair.spy[k]! / n - (pair.sp[k]! / n) * (pair.sy[k]! / n);
-    const response = clampResponse(varP > EPS ? covPY / varP : 0);
+    const response = clampResponse(varP > EPS ? covPY / varP : 0, options.maxResponse);
     return { modelMae, baselineMae, skill, skillSd, response };
   });
 }
@@ -523,7 +523,7 @@ function accumulateFolds(
 export function selectLambdas(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; grid?: number[]; transform?: RowTransform },
+  options: { folds: number; groupBy: GroupBy; grid?: number[]; transform?: RowTransform; maxResponse?: number },
 ): number[] {
   const grid = options.grid ?? LAMBDA_GRID;
   const cv = crossValidate(rows, params, options);
@@ -546,7 +546,7 @@ export function selectLambdas(
 export function evaluateWithLambda(
   rows: EvalRow[],
   params: DevelopParam[],
-  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy },
+  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy; maxResponse?: number },
   lambdas: number[],
 ): ParamStats[] {
   return accumulateFolds(rows, params, options, () => lambdas);
@@ -563,7 +563,7 @@ export function evaluateWithLambda(
 export function heldOutDeltas(
   rows: EvalRow[],
   paramCount: number,
-  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy },
+  options: { folds: number; groupBy: GroupBy; transform?: RowTransform; shipped?: ShippedPolicy; maxResponse?: number },
   lambdas: number[],
 ): number[][] {
   const P = paramCount;

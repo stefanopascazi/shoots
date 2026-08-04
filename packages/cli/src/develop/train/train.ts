@@ -57,6 +57,7 @@ import { fitPca, applyPca, type PcaModel } from './pca.js';
 import {
   EPS,
   LAMBDA_GRID,
+  MAX_RESPONSE,
   assignFolds,
   clampResponse,
   columnStats,
@@ -99,6 +100,13 @@ export interface TrainOptions {
    * it raw. See {@link DEFAULT_EMBEDDING_DIM}.
    */
   embeddingDim?: number;
+  /**
+   * How willing the model is to move a slider, 0..1. See {@link conservatismFor}.
+   *
+   * Overridden by an explicit `gateThreshold` / `frameGateThreshold`, so the two
+   * can be mixed: raise the boldness and still pin one gate by hand.
+   */
+  boldness?: number;
   /**
    * Called as the fit advances, in the arbitrary work units of {@link COST}.
    *
@@ -147,6 +155,49 @@ function branchUnits(buckets: number, folds: number, auto: boolean): number {
 const DEFAULT_FALLBACK_LAMBDA = 2;
 const DEFAULT_GATE_THRESHOLD = 0.02;
 const DEFAULT_FRAME_GATE_THRESHOLD = 0.01;
+
+/** The four brakes that decide how far a prediction is allowed to travel. */
+export interface Conservatism {
+  /** Standard deviations of its own fold spread a parameter must clear. */
+  gateZ: number;
+  /** Absolute floor, for parameters whose folds agree exactly. */
+  gateFloor: number;
+  maxResponse: number;
+  frameMaeAllowance: number;
+}
+
+/**
+ * One knob across every mechanism that holds a prediction back.
+ *
+ * Each of the four defaults below was chosen on its own, defensibly, to avoid
+ * claiming more than the evidence supports — and their *product* is a model that
+ * gates 70 of 77 colour parameters and emits a constant for them. Every brake is
+ * individually reasonable and collectively they stop the car.
+ *
+ * That trade is not the tool's to make. A photographer who wants a starting point
+ * rather than a safe average is asking for a model that moves, and is willing to
+ * be wrong more often to get it; "closest on average" and "worth opening in
+ * Lightroom" are different targets and only one of them can be measured here.
+ *
+ * 0 is exactly today's behaviour, so an existing profile retrains byte-identical.
+ * 1 opens the gates completely, lets the de-shrinking slope reach 8x instead of
+ * 3x, and allows the frame head to spend 30% more held-out error buying back its
+ * reach instead of 5%.
+ *
+ * **The skill numbers get worse as this goes up, by construction.** That is not a
+ * regression: MAE is minimised by the flat answer, so any model that moves more
+ * pays for it. Judge this one in Lightroom, not in `BASELINE.md`.
+ */
+export function conservatismFor(boldness: number): Conservatism {
+  const b = Math.min(1, Math.max(0, Number.isFinite(boldness) ? boldness : 0));
+  const mix = (at0: number, at1: number): number => at0 + (at1 - at0) * b;
+  return {
+    gateZ: mix(1, 0),
+    gateFloor: mix(DEFAULT_GATE_THRESHOLD, 0),
+    maxResponse: mix(MAX_RESPONSE, 8),
+    frameMaeAllowance: mix(FRAME_MAE_ALLOWANCE, 0.3),
+  };
+}
 
 /**
  * How much held-out MAE the frame head may cost, once its output is stretched
@@ -353,7 +404,7 @@ function fitHead(
   maskOf: (param: DevelopParam) => boolean[],
   rawEmbedding: number,
   keep: number,
-  opts: { folds: number; groupBy: GroupBy; lambda?: number; evaluate: boolean; tick?: Tick },
+  opts: { folds: number; groupBy: GroupBy; lambda?: number; evaluate: boolean; maxResponse: number; tick?: Tick },
 ): HeadFit {
   const buckets = bucketize(params);
   const transform = embeddingTransform(rawEmbedding, keep);
@@ -390,7 +441,7 @@ function fitHead(
         ...(r.offset ? { offset: at.map((k) => r.offset![k]!) } : {}),
       }));
       const tf = maskedTransform(maskFor.get(key)!);
-      const cv = { folds: opts.folds, groupBy: opts.groupBy, grid: LAMBDA_GRID, transform: tf };
+      const cv = { folds: opts.folds, groupBy: opts.groupBy, grid: LAMBDA_GRID, transform: tf, maxResponse: opts.maxResponse };
       const auto = opts.lambda === undefined;
       const subLambdas = auto ? selectLambdas(subRows, sub, cv) : sub.map(() => opts.lambda!);
       opts.tick?.(COST.search(auto), `${key} · λ`);
@@ -472,7 +523,7 @@ function shippedStats(
   fit: HeadFit,
   rows: EvalRow[],
   params: DevelopParam[],
-  opts: { folds: number; groupBy: GroupBy; tick?: Tick },
+  opts: { folds: number; groupBy: GroupBy; maxResponse: number; tick?: Tick },
 ): ParamStats[] {
   const out = new Array<ParamStats>(params.length);
   for (const [key, at] of fit.buckets) {
@@ -495,6 +546,7 @@ function shippedStats(
         folds: opts.folds,
         groupBy: opts.groupBy,
         transform: tf,
+        maxResponse: opts.maxResponse,
         shipped: {
           scale: at.map((k) => fit.head.response[k]!),
           suppress: at.map((k) => fit.head.gated[k]!),
@@ -581,7 +633,7 @@ function shippedHeldOut(
   fit: HeadFit,
   rows: EvalRow[],
   params: DevelopParam[],
-  opts: { folds: number; groupBy: GroupBy; tick?: Tick },
+  opts: { folds: number; groupBy: GroupBy; maxResponse: number; tick?: Tick },
 ): number[][] {
   const out = rows.map(() => new Array<number>(params.length).fill(0));
   for (const [key, at] of fit.buckets) {
@@ -597,6 +649,7 @@ function shippedHeldOut(
         folds: opts.folds,
         groupBy: opts.groupBy,
         transform: tf,
+        maxResponse: opts.maxResponse,
         shipped: {
           scale: at.map((k) => fit.head.response[k]!),
           suppress: at.map((k) => fit.head.gated[k]!),
@@ -625,8 +678,13 @@ function trainBranch(
   const params = paramsForTreatment(treatment);
   const folds = options.folds ?? 5;
   const groupBy: GroupBy = options.groupBy ?? 'folder';
-  const gateThreshold = options.gateThreshold ?? DEFAULT_GATE_THRESHOLD;
-  const frameGateThreshold = options.frameGateThreshold ?? DEFAULT_FRAME_GATE_THRESHOLD;
+  const brakes = conservatismFor(options.boldness ?? 0);
+  // An explicit threshold still wins, and now pins the *floor* of the adaptive
+  // bar rather than replacing it: "never let anything below this through",
+  // leaving the per-parameter noise term to do the rest.
+  if (options.gateThreshold !== undefined) brakes.gateFloor = options.gateThreshold;
+  const gateThreshold = brakes.gateFloor;
+  const frameGateThreshold = options.frameGateThreshold ?? brakes.gateFloor;
   const renderVocab = buildRenderVocab(raw);
 
   const requested = options.embeddingDim ?? DEFAULT_EMBEDDING_DIM;
@@ -694,9 +752,9 @@ function trainBranch(
     report && ((cost, detail) => report(cost, `${treatment} ${head} · ${detail}`));
 
   const levelFit = fitHead(levelRows, params, (p) => levelMask(p.key, p.group, layout), dims.embedding, keep,
-    { folds, groupBy, lambda: options.lambda, evaluate, tick: tickFor('level') });
+    { folds, groupBy, lambda: options.lambda, evaluate, maxResponse: brakes.maxResponse, tick: tickFor('level') });
   const frameFit = fitHead(frameRows, params, (p) => frameMask(p.key, p.group, layout), dims.embedding, keep,
-    { folds, groupBy, lambda: options.lambda, evaluate, tick: tickFor('frame') });
+    { folds, groupBy, lambda: options.lambda, evaluate, maxResponse: brakes.maxResponse, tick: tickFor('frame') });
 
   // ── de-shrink, then gate ───────────────────────────────────────────────────
   // The slope first, because the gate has to judge the output that will actually
@@ -716,15 +774,39 @@ function trainBranch(
   let endToEnd: ParamStats[] = [];
   let endToEndRandom: ParamStats[] = [];
   if (evaluate) {
-    const levelPlain = shippedStats(levelFit, levelRows, params, { folds, groupBy, tick: tickFor('level') });
-    const framePlain = shippedStats(frameFit, frameRows, params, { folds, groupBy, tick: tickFor('frame') });
+    const levelPlain = shippedStats(levelFit, levelRows, params, { folds, groupBy, maxResponse: brakes.maxResponse, tick: tickFor('level') });
+    const framePlain = shippedStats(frameFit, frameRows, params, { folds, groupBy, maxResponse: brakes.maxResponse, tick: tickFor('frame') });
     for (let k = 0; k < params.length; k++) {
-      levelFit.head.response[k] = clampResponse(levelPlain[k]?.response ?? 1);
-      frameFit.head.response[k] = clampResponse(framePlain[k]?.response ?? 1);
+      levelFit.head.response[k] = clampResponse(levelPlain[k]?.response ?? 1, brakes.maxResponse);
+      frameFit.head.response[k] = clampResponse(framePlain[k]?.response ?? 1, brakes.maxResponse);
     }
-    levelShipped = shippedStats(levelFit, levelRows, params, { folds, groupBy, tick: tickFor('level') });
-    frameShipped = shippedStats(frameFit, frameRows, params, { folds, groupBy, tick: tickFor('frame') });
+    levelShipped = shippedStats(levelFit, levelRows, params, { folds, groupBy, maxResponse: brakes.maxResponse, tick: tickFor('level') });
+    frameShipped = shippedStats(frameFit, frameRows, params, { folds, groupBy, maxResponse: brakes.maxResponse, tick: tickFor('frame') });
   }
+
+  /**
+   * The skill a parameter has to clear to be allowed to move — measured against
+   * **its own noise**, not against a constant.
+   *
+   * A fixed threshold cannot be right for every parameter at once. `skillSd` is
+   * the spread of the same skill across held-out folds, and on the reference
+   * catalog it ranges from 0.00 to over 1.0: judging all of them against 0.02
+   * passes parameters whose apparent skill is a tenth of their measurement noise
+   * and blocks parameters that are tightly measured just below it. `Texture` at
+   * 2.2% ±20.3% and `Blacks2012` at 4.7% ±4.7% are not the same evidence, and the
+   * old gate treated the first as the better one.
+   *
+   * So the bar is `z` standard deviations above zero, per parameter. A tightly
+   * measured 3% now passes where a noisy 15% does not, which is the ordering the
+   * evidence actually supports. `z` comes from the boldness knob: 1.0 asks for a
+   * full standard deviation of separation, 0 lets any positive skill through.
+   *
+   * The floor keeps a parameter measured with *zero* observed spread — every fold
+   * agreeing exactly, which happens when a slider barely moves — from passing on a
+   * skill of 1e-9.
+   */
+  const bar = (stats: ParamStats): number | null =>
+    brakes.gateZ <= 0 && brakes.gateFloor <= 0 ? null : Math.max(brakes.gateFloor, brakes.gateZ * stats.skillSd);
 
   for (let k = 0; k < params.length; k++) {
     const lg = levelFit.gate[k];
@@ -735,11 +817,12 @@ function trainBranch(
     // allowed to spend a little error buying its reach back.
     levelFit.head.gated[k] =
       levelFit.degenerate[k]! ||
-      (lg !== undefined && gateThreshold > 0 && Math.min(lg.skill, levelShipped[k]?.skill ?? lg.skill) <= gateThreshold);
+      (lg !== undefined && bar(lg) !== null &&
+        Math.min(lg.skill, levelShipped[k]?.skill ?? lg.skill) <= bar(lg)!);
     frameFit.head.gated[k] =
       frameFit.degenerate[k]! ||
-      (fg !== undefined && frameGateThreshold > 0 &&
-        (fg.skill <= frameGateThreshold || (frameShipped[k]?.skill ?? 0) < -FRAME_MAE_ALLOWANCE));
+      (fg !== undefined && bar(fg) !== null &&
+        (fg.skill <= bar(fg)! || (frameShipped[k]?.skill ?? 0) < -brakes.frameMaeAllowance));
     // A gated head emits its constant, which *is* the baseline: its skill is 0 by
     // definition, and re-running the folds to rediscover that would be waste.
     if (levelFit.head.gated[k]) { levelFit.head.response[k] = 1; if (levelShipped[k]) levelShipped[k]!.skill = 0; }
@@ -753,8 +836,8 @@ function trainBranch(
       x: [], deltas: deltas[i]!, abs: abs[i]!, meta: r.meta, group: groups[i]!, weight: r.weight,
     }));
     for (const policy of [groupBy, 'none' as const]) {
-      const lp = shippedHeldOut(levelFit, levelRows, params, { folds, groupBy: policy, tick: tickFor('level') });
-      const fp = shippedHeldOut(frameFit, frameRows, params, { folds, groupBy: policy, tick: tickFor('frame') });
+      const lp = shippedHeldOut(levelFit, levelRows, params, { folds, groupBy: policy, maxResponse: brakes.maxResponse, tick: tickFor('level') });
+      const fp = shippedHeldOut(frameFit, frameRows, params, { folds, groupBy: policy, maxResponse: brakes.maxResponse, tick: tickFor('frame') });
       const summed = lp.map((row, i) => row.map((v, k) => v + fp[i]![k]!));
       const stats = endToEndStats(fullRows, params, summed, { folds, groupBy: policy });
       if (policy === groupBy) endToEnd = stats;
