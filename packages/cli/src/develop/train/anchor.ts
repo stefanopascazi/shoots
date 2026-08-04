@@ -58,18 +58,86 @@ export const ANCHORS: Record<string, AnchorSpec> = {
   Highlights2012: { feature: 'lumaP99' },
 };
 
-/** A fitted anchor, stored in the profile and replayed at inference. */
+/**
+ * A fitted anchor, stored in the profile and replayed at inference.
+ *
+ * The shape is a dead zone with a gain on each side:
+ *
+ *     gap   = x − x̄
+ *     slider = ȳ + gain · max(0, gap − d) + gainBelow · min(0, gap + d)
+ *
+ * `d = 0` and `gainBelow = gain` reduce it to the plain line, so a profile
+ * carrying neither field still replays exactly.
+ *
+ * The dead zone is the shape the measurement asked for. A single line fitted to
+ * `Exposure2012` scored +0.151 on the tail and **−0.218 on the average**: too
+ * steep for the frames that were already fine and too shallow for the ones that
+ * were not. That is a photographer leaving an acceptable frame alone and going
+ * after a bad one, which no straight line through the origin can be.
+ *
+ * The two gains are separate because over- and under-exposure are not the same
+ * decision: a blown highlight is gone and gets pulled hard, a dark frame is
+ * recoverable and carries noise, so the same distance from target does not buy
+ * the same correction in each direction.
+ */
 export interface AnchorModel extends AnchorSpec {
   /** Index into the dataset's colour feature block. */
   index: number;
   xbar: number;
   ybar: number;
-  /** Unshrunk slope, slider units per unit of the anchor. */
+  /** Unshrunk slope above the dead zone, slider units per unit of the anchor. */
   gain: number;
+  /** Slope below it. Absent ⇒ the same as {@link gain}. */
+  gainBelow?: number;
+  /** Half-width of the zone around x̄ where the slider does not move at all. */
+  deadband?: number;
   /** Held-out skill on the worst fifth of frames — why this was kept. */
   tailSkill: number;
   /** Held-out skill over everything, for the record. It is usually worse. */
   skill: number;
+}
+
+/** The shape, in one place, so the fit and the inference cannot disagree. */
+export function anchorApply(m: Pick<AnchorModel, 'xbar' | 'ybar' | 'gain' | 'gainBelow' | 'deadband'>, x: number): number {
+  const gap = x - m.xbar;
+  const d = m.deadband ?? 0;
+  return m.ybar + m.gain * Math.max(0, gap - d) + (m.gainBelow ?? m.gain) * Math.min(0, gap + d);
+}
+
+/** Least squares for [intercept, gainAbove, gainBelow] at a fixed dead zone. */
+function fitShape(rows: readonly AnchorSample[], xbar: number, d: number): { ybar: number; gain: number; gainBelow: number } {
+  // 3x3 normal equations, solved by elimination. The two gain columns have
+  // disjoint support but both overlap the intercept, so they cannot be fitted
+  // independently.
+  const A = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const b = [0, 0, 0];
+  for (const r of rows) {
+    const gap = r.x - xbar;
+    const v = [1, Math.max(0, gap - d), Math.min(0, gap + d)];
+    for (let i = 0; i < 3; i++) {
+      b[i]! += v[i]! * r.y;
+      for (let j = 0; j < 3; j++) A[i]![j]! += v[i]! * v[j]!;
+    }
+  }
+  // A touch of ridge on the gains only: a dead zone wide enough to empty one
+  // side leaves that column singular, and 0 is the right answer there.
+  A[1]![1]! += 1e-8;
+  A[2]![2]! += 1e-8;
+  for (let c = 0; c < 3; c++) {
+    let piv = c;
+    for (let r = c + 1; r < 3; r++) if (Math.abs(A[r]![c]!) > Math.abs(A[piv]![c]!)) piv = r;
+    if (Math.abs(A[piv]![c]!) < 1e-12) continue;
+    [A[c], A[piv]] = [A[piv]!, A[c]!];
+    [b[c], b[piv]] = [b[piv]!, b[c]!];
+    for (let r = 0; r < 3; r++) {
+      if (r === c) continue;
+      const f = A[r]![c]! / A[c]![c]!;
+      for (let k = c; k < 3; k++) A[r]![k]! -= f * A[c]![k]!;
+      b[r]! -= f * b[c]!;
+    }
+  }
+  const sol = [0, 1, 2].map((i) => (Math.abs(A[i]![i]!) > 1e-12 ? b[i]! / A[i]![i]! : 0));
+  return { ybar: sol[0]!, gain: sol[1]!, gainBelow: sol[2]! };
 }
 
 const EPS = 1e-9;
@@ -118,6 +186,46 @@ export interface AnchorFit {
   keep: boolean;
 }
 
+/** Dead-zone half-widths tried, as multiples of the anchor's own spread. */
+const DEADBAND_GRID = [0, 0.15, 0.3, 0.5, 0.75, 1, 1.5];
+
+/** Held-out error of one shape over a subset. Null when the subset is empty. */
+function scoreShape(
+  param: DevelopParam,
+  shape: { xbar: number; ybar: number; gain: number; gainBelow: number; deadband: number },
+  test: readonly AnchorSample[],
+  pick: (r: AnchorSample) => boolean,
+): { skill: number } | null {
+  let model = 0;
+  let base = 0;
+  let n = 0;
+  for (const r of test) {
+    if (!pick(r)) continue;
+    const p = Math.min(param.absMax, Math.max(param.absMin, anchorApply(shape, r.x)));
+    model += Math.abs(p - r.y);
+    base += Math.abs(shape.ybar - r.y);
+    n++;
+  }
+  return n > 0 && base > EPS ? { skill: 1 - model / base } : null;
+}
+
+/** Fit the shape at a given dead zone, on one training set. */
+function shapeAt(rows: readonly AnchorSample[], d: number): { xbar: number; ybar: number; gain: number; gainBelow: number; deadband: number } {
+  const xbar = meanOf(rows.map((r) => r.x));
+  return { xbar, deadband: d, ...fitShape(rows, xbar, d) };
+}
+
+/** Deterministic fold assignment over whole shoots. */
+function foldsOf(groups: readonly string[], folds: number, seed: number): Map<string, number> {
+  let s = (seed * 7919 + 13) >>> 0;
+  const rnd = (): number => {
+    s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff;
+    return s / 0x7fffffff;
+  };
+  const order = [...new Set(groups)].sort(() => rnd() - 0.5);
+  return new Map(order.map((g, i) => [g, i % folds]));
+}
+
 /**
  * Fit one anchor and decide whether it is worth shipping.
  *
@@ -126,6 +234,10 @@ export interface AnchorFit {
  * flat answer, so judging an anti-flatness mechanism by it would reject every
  * candidate by construction. A slider sitting at the photographer's mean on a
  * blown frame is useless at any MAE.
+ *
+ * The dead zone is chosen **inside** each outer fold, never on the split it is
+ * then scored against. Seven candidate widths on a few dozen shoots is more than
+ * enough freedom to manufacture a tail skill out of one lucky split.
  */
 export function fitAnchor(
   param: DevelopParam,
@@ -136,60 +248,76 @@ export function fitAnchor(
 ): AnchorFit | null {
   if (rows.length < 60) return null;
   const ys = rows.map((r) => r.y);
-  if (sdOf(ys) < EPS || sdOf(rows.map((r) => r.x)) < EPS) return null;
+  const xs = rows.map((r) => r.x);
+  if (sdOf(ys) < EPS || sdOf(xs) < EPS) return null;
 
   const centre = meanOf(ys);
   const spread = ys.map((v) => Math.abs(v - centre)).sort((a, b) => a - b);
   const tailCut = spread[Math.floor(spread.length * 0.8)] ?? 0;
   const isTail = (r: AnchorSample): boolean => Math.abs(r.y - centre) >= tailCut;
+  const grid = DEADBAND_GRID.map((f) => f * sdOf(xs));
 
-  const groups = [...new Set(rows.map((r) => r.group))];
+  // Scores are pooled per *shuffle*, not per fold. A single fold's skill on a few
+  // dozen shoots swings several points on its own — BASELINE.md says so for every
+  // other number in this tool — so the fold is the wrong unit to measure
+  // stability in. The shuffle mean is what has to be reliably positive.
   const all: number[] = [];
   const tail: number[] = [];
+  const chosen: number[] = [];
   for (let s = 0; s < opts.shuffles; s++) {
-    // Deterministic reshuffle of shoots into folds; the spread across them is
-    // what stops a single lucky split from deciding this.
-    let seed = (s * 7919 + 13) >>> 0;
-    const rnd = (): number => {
-      seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
-      return seed / 0x7fffffff;
-    };
-    const order = [...groups].sort(() => rnd() - 0.5);
-    const foldOf = new Map(order.map((g, i) => [g, i % opts.folds]));
+    const foldAll: number[] = [];
+    const foldTail: number[] = [];
+    const foldOf = foldsOf(rows.map((r) => r.group), opts.folds, s + 1);
     for (let f = 0; f < opts.folds; f++) {
       const tr = rows.filter((r) => foldOf.get(r.group) !== f);
       const te = rows.filter((r) => foldOf.get(r.group) === f);
-      if (tr.length < 20 || te.length === 0) continue;
-      const g = slope(tr);
-      const xb = meanOf(tr.map((r) => r.x));
-      const yb = meanOf(tr.map((r) => r.y));
-      const score = (pick: (r: AnchorSample) => boolean): number | null => {
-        let model = 0;
-        let base = 0;
+      if (tr.length < 40 || te.length === 0) continue;
+
+      // Inner selection: the width is picked on the training shoots alone, on
+      // the same tail criterion the outer score will use.
+      const inner = foldsOf(tr.map((r) => r.group), opts.folds, s + 500 + f);
+      let best = { d: grid[0]!, skill: -Infinity };
+      for (const d of grid) {
+        let acc = 0;
         let n = 0;
-        for (const r of te) {
-          if (!pick(r)) continue;
-          const clamped = Math.min(param.absMax, Math.max(param.absMin, yb + g * (r.x - xb)));
-          model += Math.abs(clamped - r.y);
-          base += Math.abs(yb - r.y);
-          n++;
+        for (let g = 0; g < opts.folds; g++) {
+          const itr = tr.filter((r) => inner.get(r.group) !== g);
+          const ite = tr.filter((r) => inner.get(r.group) === g);
+          if (itr.length < 20 || ite.length === 0) continue;
+          const sc = scoreShape(param, shapeAt(itr, d), ite, isTail);
+          if (sc) { acc += sc.skill; n++; }
         }
-        return n > 0 && base > EPS ? 1 - model / base : null;
-      };
-      const a = score(() => true);
-      if (a !== null) all.push(a);
-      const t = score(isTail);
-      if (t !== null) tail.push(t);
+        if (n > 0 && acc / n > best.skill) best = { d, skill: acc / n };
+      }
+      chosen.push(best.d);
+
+      const shape = shapeAt(tr, best.d);
+      const a = scoreShape(param, shape, te, () => true);
+      if (a) foldAll.push(a.skill);
+      const t = scoreShape(param, shape, te, isTail);
+      if (t) foldTail.push(t.skill);
     }
+    if (foldAll.length > 0) all.push(meanOf(foldAll));
+    if (foldTail.length > 0) tail.push(meanOf(foldTail));
   }
   if (tail.length === 0) return null;
 
+  // The shipped width is the one the inner selections agreed on most often —
+  // averaging them would invent a width no fold ever chose.
+  const modeD = [...new Set(chosen)].sort(
+    (a, b) => chosen.filter((v) => v === b).length - chosen.filter((v) => v === a).length,
+  )[0] ?? 0;
+  const shape = shapeAt(rows, modeD);
+
+  const round = (v: number): number => Math.round(v * 1e6) / 1e6;
   const model: AnchorModel = {
     ...spec,
     index,
-    xbar: meanOf(rows.map((r) => r.x)),
-    ybar: meanOf(ys),
-    gain: slope(rows),
+    xbar: round(shape.xbar),
+    ybar: round(shape.ybar),
+    gain: round(shape.gain),
+    ...(Math.abs(shape.gainBelow - shape.gain) > EPS ? { gainBelow: round(shape.gainBelow) } : {}),
+    ...(modeD > EPS ? { deadband: round(modeD) } : {}),
     tailSkill: Math.round(meanOf(tail) * 1e4) / 1e4,
     skill: Math.round(meanOf(all) * 1e4) / 1e4,
   };
@@ -208,6 +336,5 @@ export function predictAnchor(
 ): number | null {
   const x = anchorValue(model, colour);
   if (x === null) return null;
-  const raw = model.ybar + model.gain * (x - model.xbar);
-  return Math.min(param.absMax, Math.max(param.absMin, raw));
+  return Math.min(param.absMax, Math.max(param.absMin, anchorApply(model, x)));
 }
