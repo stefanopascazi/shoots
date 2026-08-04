@@ -54,6 +54,7 @@ export interface InitArgs extends CommonArgs {
   anchorGain?: number;
   review?: boolean;
   reviewPort?: number;
+  reviewTimeout?: number;
   embeddingDim?: number;
   all?: boolean;
   /** Export every file, not only those carrying an edit. */
@@ -151,6 +152,7 @@ export async function runInit(targetPath: string, args: InitArgs): Promise<void>
     anchorGain: args.anchorGain,
     review: args.review,
     reviewPort: args.reviewPort,
+    reviewTimeout: args.reviewTimeout,
     embeddingDim: args.embeddingDim,
     all: args.all,
     json: args.json,

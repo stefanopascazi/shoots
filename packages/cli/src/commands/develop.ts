@@ -74,6 +74,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--all', 'report every parameter, not just the image-dependent ones')
     .option('--review', 'open a local page to set the anchored corrections by eye before writing the profile')
     .option('--review-port <n>', 'port for --review', (v) => parseInt(v, 10))
+    .option('--review-timeout <min>', 'minutes to wait for --review before keeping the fitted values (0 waits forever)', (v) => parseFloat(v))
     .option('--dry-run', 'print the steps and the paths, write nothing')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
@@ -152,11 +153,12 @@ export function registerDevelopCommand(program: Command): void {
     .option('--all', 'report every parameter, not just the image-dependent ones')
     .option('--review', 'open a local page to set the anchored corrections by eye before writing the profile')
     .option('--review-port <n>', 'port for --review', (v) => parseInt(v, 10))
+    .option('--review-timeout <min>', 'minutes to wait for --review before keeping the fitted values (0 waits forever)', (v) => parseFloat(v))
     .action((opts) => runTrain({
       data: opts.data, name: opts.name, out: opts.out, lambda: opts.lambda, folds: opts.folds,
       groupBy: opts.groupBy, gateThreshold: opts.gateThreshold, boldness: opts.boldness, anchorGain: opts.anchorGain,
       embeddingDim: opts.embeddingDim, all: opts.all,
-      review: opts.review, reviewPort: opts.reviewPort,
+      review: opts.review, reviewPort: opts.reviewPort, reviewTimeout: opts.reviewTimeout,
     }));
 
   develop

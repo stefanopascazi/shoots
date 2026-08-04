@@ -384,6 +384,8 @@ shoots develop train --data <file> --name <name> --out <file> [options]
 | `--boldness <n>` | `0` | How far predictions may travel, `0`..`1`. See [below](#--boldness-how-far-a-prediction-may-travel) |
 | `--anchor-gain <n>` | `1` | Multiplier on every anchored slider's fitted correction. See [below](#--anchor-gain-how-hard-to-correct) |
 | `--review` | off | Set those corrections by eye before the profile is written. See [below](#--review-calibrate-by-looking) |
+| `--review-port <n>` | auto | Port for `--review`; a free one is chosen if this is omitted and the default is taken |
+| `--review-timeout <min>` | `10` | How long to wait for the page before keeping the fitted values. `0` waits forever |
 | `--gate-threshold <n>` | — | Floor under the adaptive gate, overriding what `--boldness` sets |
 | `--embedding-dim <k>` | `16` | CLIP components to keep; `0` drops the embedding, a high value keeps it raw |
 
@@ -454,6 +456,20 @@ profile; closing the page or pressing Ctrl-C keeps the fitted values.
 
 Run it once per profile. The RAWs have to still be where the export found them,
 since the previews are rendered from the originals.
+
+**In a pipeline it will not hang.** `shoots pipeline` runs each step as a child
+process with stdin ignored, so a `train --review` step followed by `develop edit`
+would otherwise sit on the review forever and never reach the edit — nothing
+wrong, just never finished, which is the worst way for a batch job to fail. The
+wait is therefore bounded: after `--review-timeout` minutes (10 by default) it
+keeps the fitted values and the pipeline carries on. Pass `--review-timeout 0` to
+wait indefinitely when you know somebody is watching, and omit `--review`
+entirely for a run nobody will attend.
+
+The port behaves the same way. Omitted, it takes 7391 or the next free one if
+something already has it — nobody bookmarks this page, so moving is better than
+failing. Named with `--review-port`, it fails with the busy port and the flag
+rather than quietly serving somewhere else.
 
 **Clarity and Texture are not shown.** They are local-contrast effects over a
 neighbourhood, not a curve, and this preview cannot reproduce them — a wrong

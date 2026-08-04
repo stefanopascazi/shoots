@@ -29,6 +29,7 @@ export interface TrainArgs {
   /** Open the calibration screen before writing the profile. */
   review?: boolean;
   reviewPort?: number;
+  reviewTimeout?: number;
   /** CLIP components to keep: 0 drops the embedding, high values keep it raw. */
   embeddingDim?: number;
   /** Report every parameter, not just the image-dependent ones. */
@@ -187,6 +188,7 @@ export async function runTrain(args: TrainArgs): Promise<void> {
   if (args.review) {
     const chosen = await review(profile, dataset, {
       ...(args.reviewPort !== undefined ? { port: args.reviewPort } : {}),
+      ...(args.reviewTimeout !== undefined ? { timeoutMinutes: args.reviewTimeout } : {}),
       onStatus: (m) => process.stderr.write(`  ${m}\n`),
     });
     if (chosen) {

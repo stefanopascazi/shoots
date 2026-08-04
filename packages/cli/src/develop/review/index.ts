@@ -32,6 +32,18 @@ import { baseFeatures } from '../develop/assemble.js';
 export interface ReviewOptions {
   port?: number;
   size?: number;
+  /**
+   * Minutes to wait for somebody to open the page and save. 0 waits forever.
+   *
+   * This screen is the one interactive step in a tool that is otherwise entirely
+   * unattended, and `shoots pipeline` runs its steps as child processes with
+   * stdin ignored — so a pipeline of `train --review` followed by `edit` would
+   * sit on the review forever and never reach the edit. Nothing would be wrong;
+   * it would simply never finish, which is the worst way for a batch job to
+   * fail. Giving up and keeping the fitted values is a correct profile, so the
+   * wait is bounded by default and the deadline is stated up front.
+   */
+  timeoutMinutes?: number;
   onStatus?: (message: string) => void;
 }
 
@@ -139,14 +151,26 @@ export async function review(
   }
   if (loaded.length === 0) return null;
 
+  const timeoutMinutes = options.timeoutMinutes ?? 10;
   return new Promise((resolve) => {
     let settled = false;
+    let timer: NodeJS.Timeout | undefined;
     const finish = (value: Intensities | null): void => {
       if (settled) return;
       settled = true;
+      if (timer) clearTimeout(timer);
       server.close();
       resolve(value);
     };
+    if (timeoutMinutes > 0) {
+      timer = setTimeout(() => {
+        status(`nobody opened the review in ${timeoutMinutes} minutes — keeping the fitted intensities`);
+        finish(null);
+      }, timeoutMinutes * 60_000);
+      // Not a reason to hold the process open on its own: if everything else has
+      // finished, the wait is over whatever the clock says.
+      timer.unref();
+    }
 
     const server = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://localhost');
@@ -220,7 +244,9 @@ export async function review(
     server.on('listening', () => {
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : wanted;
-      status(`review at http://localhost:${port} — save there, or press Ctrl-C to keep the fitted values`);
+      const deadline = timeoutMinutes > 0 ? ` or waiting ${timeoutMinutes} min` : '';
+      status(`review at http://localhost:${port}`);
+      status(`  save there to apply — pressing Ctrl-C${deadline} keeps the fitted values`);
     });
     server.listen(wanted ?? 7391, '127.0.0.1');
     process.once('SIGINT', () => finish(null));
