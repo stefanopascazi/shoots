@@ -52,6 +52,8 @@ export interface InitArgs extends CommonArgs {
   gateThreshold?: number;
   boldness?: number;
   anchorGain?: number;
+  review?: boolean;
+  reviewPort?: number;
   embeddingDim?: number;
   all?: boolean;
   /** Export every file, not only those carrying an edit. */
@@ -147,6 +149,8 @@ export async function runInit(targetPath: string, args: InitArgs): Promise<void>
     gateThreshold: args.gateThreshold,
     boldness: args.boldness,
     anchorGain: args.anchorGain,
+    review: args.review,
+    reviewPort: args.reviewPort,
     embeddingDim: args.embeddingDim,
     all: args.all,
     json: args.json,

@@ -383,6 +383,7 @@ shoots develop train --data <file> --name <name> --out <file> [options]
 | `--folds <k>` | `5` | Cross-validation folds |
 | `--boldness <n>` | `0` | How far predictions may travel, `0`..`1`. See [below](#--boldness-how-far-a-prediction-may-travel) |
 | `--anchor-gain <n>` | `1` | Multiplier on every anchored slider's fitted correction. See [below](#--anchor-gain-how-hard-to-correct) |
+| `--review` | off | Set those corrections by eye before the profile is written. See [below](#--review-calibrate-by-looking) |
 | `--gate-threshold <n>` | — | Floor under the adaptive gate, overriding what `--boldness` sets |
 | `--embedding-dim <k>` | `16` | CLIP components to keep; `0` drops the embedding, a high value keeps it raw |
 
@@ -431,6 +432,35 @@ and the sign.
 Raise it if the corrections feel timid on your blown frames; `1.8` roughly
 doubles them. The skill figures in the report describe the gain **as fitted**,
 so they do not move when you scale it.
+
+### `--review`: calibrate by looking
+
+`--anchor-gain` sets that intensity from the command line, in the dark. `--review`
+sets it by showing you the result: after the fit and **before** the profile is
+written, a local page opens with four sliders — exposure, highlight recovery,
+presence, colour — and the frames each one actually changes.
+
+```sh
+shoots develop init <catalog> --boldness 1 --review
+shoots develop train --data <file> --name <name> --out <file> --review
+```
+
+The frames are not a sample. Each is the photograph in your catalog where that
+control makes its **largest correction**, because a correctly exposed frame looks
+identical at every setting — it sits inside the dead zone and nothing applies. A
+fifth frame sits in the middle deliberately: it should hold still, and if it does
+not, something is wrong you should see. Saving writes the multipliers into the
+profile; closing the page or pressing Ctrl-C keeps the fitted values.
+
+Run it once per profile. The RAWs have to still be where the export found them,
+since the previews are rendered from the originals.
+
+**Clarity and Texture are not shown.** They are local-contrast effects over a
+neighbourhood, not a curve, and this preview cannot reproduce them — a wrong
+version would be worse than none. Exposure and white balance are exact; the tone
+controls are monotone approximations of Camera Raw, faithful in direction and
+ordering but not in numbers. That is enough to answer "too much or too little",
+which is the only question the screen asks.
 
 One model is trained **per treatment** over `shared + <branch>`, so a
 high-contrast B&W edit and a light colour edit never average into a mush.

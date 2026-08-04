@@ -12,6 +12,7 @@ import { GROUP_BY_MODES, type GroupBy } from '../train/evaluate.js';
 import { loadDataset } from '../dataset/load.js';
 import { startSteps } from '../../progress.js';
 import { makeIo } from '../../io.js';
+import { applyIntensities, review } from '../review/index.js';
 import type { BranchModel } from '../types.js';
 
 export interface TrainArgs {
@@ -25,6 +26,9 @@ export interface TrainArgs {
   gateThreshold?: number;
   boldness?: number;
   anchorGain?: number;
+  /** Open the calibration screen before writing the profile. */
+  review?: boolean;
+  reviewPort?: number;
   /** CLIP components to keep: 0 drops the embedding, high values keep it raw. */
   embeddingDim?: number;
   /** Report every parameter, not just the image-dependent ones. */
@@ -173,6 +177,26 @@ export async function runTrain(args: TrainArgs): Promise<void> {
     onProgress: (done, total, label) => steps.update(done, total, label),
   });
   steps.done(`${profile.stats.edited} edited images`);
+
+  // Between the fit and the file: the one quantity the measurement could not
+  // supply. How hard an anchored slider should correct is a property of the
+  // *shoot* — fitted per shoot it runs from −4.2 to +0.3 where the global fit
+  // says −1.0 — and nothing predicts which a new shoot wants. So it is asked
+  // once, here, while the frames that make the answer visible are identifiable.
+  // Declining keeps the fitted values, which is a perfectly good profile.
+  if (args.review) {
+    const chosen = await review(profile, dataset, {
+      ...(args.reviewPort !== undefined ? { port: args.reviewPort } : {}),
+      onStatus: (m) => process.stderr.write(`  ${m}\n`),
+    });
+    if (chosen) {
+      applyIntensities(profile, chosen);
+      process.stderr.write(`  calibrated: ${Object.entries(chosen).map(([k, v]) => `${k} ${v.toFixed(2)}×`).join(', ')}\n`);
+    } else {
+      process.stderr.write('  review skipped — keeping the fitted intensities\n');
+    }
+  }
+
   await writeFile(args.out, JSON.stringify(profile, null, 2) + '\n', 'utf8');
 
   const w = process.stderr;

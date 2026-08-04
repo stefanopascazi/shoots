@@ -45,6 +45,7 @@ export {
 } from './tools/librawManifest.js';
 
 export { sharpVips } from './health.js';
+export { encodeJpeg } from './encode.js';
 
 export {
   isRawFile,
