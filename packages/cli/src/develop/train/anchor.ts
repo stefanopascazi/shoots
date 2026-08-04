@@ -78,11 +78,37 @@ export const ANCHORS: Record<string, AnchorSpec[]> = {
   // hiding from the heads entirely until satMean was added to the presence set.
   Vibrance: [{ feature: 'satMean' }, { feature: 'satStd' }],
   Saturation: [{ feature: 'satMean' }, { feature: 'satStd' }],
-  // How much local structure there is to push.
-  Clarity2012: [{ feature: 'detailCoarse' }, { feature: 'detailFine' }],
-  Texture: [{ feature: 'detailFine' }, { feature: 'detailCoarse' }],
-  Dehaze: [{ feature: 'darkChannel' }, { feature: 'detailCoarse' }],
+  // How much local structure there is to push, and how much veil sits over it.
+  Clarity2012: [{ feature: 'detailCoarse' }, { feature: 'detailFine' }, { feature: 'lumaStd' }, { feature: 'darkChannel' }],
+  Texture: [{ feature: 'detailFine' }, { feature: 'detailCoarse' }, { feature: 'lumaStd' }],
+  Dehaze: [{ feature: 'darkChannel' }, { feature: 'detailCoarse' }, { feature: 'satMean' }, { feature: 'lumaStd' }],
+  ...curveAnchors(),
 };
+
+/**
+ * Tone-curve knots, anchored on the histogram bin they sit over.
+ *
+ * A knot at input level L lifts or drops whatever tone is *at* L, so the
+ * question it answers is how much of this photograph lives there — which is
+ * exactly `lumaHist<n>` for the bin containing L, a feature that has existed in
+ * the vector all along and was never offered to the curve. The knots were
+ * predicted from the whole 50-column block instead, and every one of them came
+ * back with a de-shrinking slope at or near zero: a constant curve, which is
+ * what "the tone curve barely changes" looks like from the outside.
+ *
+ * `lumaMedian` rides along as the alternative reading — a knot may be answering
+ * where the whole image sits rather than what is at its own level — and the tail
+ * measurement picks between them per knot.
+ */
+function curveAnchors(): Record<string, AnchorSpec[]> {
+  const out: Record<string, AnchorSpec[]> = {};
+  const BINS = 16;
+  for (const level of [0, 32, 64, 96, 128, 160, 192, 224, 255]) {
+    const bin = Math.min(BINS - 1, Math.floor((level / 256) * BINS));
+    out[`ToneCurvePoint${level}`] = [{ feature: `lumaHist${bin}` }, { feature: 'lumaMedian' }];
+  }
+  return out;
+}
 
 /**
  * A fitted anchor, stored in the profile and replayed at inference.
@@ -353,16 +379,20 @@ export function fitAnchor(
   // the same discipline BASELINE.md applies everywhere else, since a single
   // per-parameter figure on a few hundred frames swings several points on its own.
   //
-  // And the average is allowed to get worse, but not without limit. An anchor
-  // buying reach always costs average MAE, which is why the tail is what selects
-  // it; but `Whites2012` on the black-and-white branch measured +0.187 on the
-  // tail against **−0.381** on the average, which is a slider being wrecked
-  // everywhere in exchange for the few frames it helps. The budget is the same
-  // one the frame head already spends for the same reason — see
-  // FRAME_MAE_ALLOWANCE — so the two mechanisms cannot disagree about how much
-  // error reach is worth.
+  // And the average may get worse, but never by more than the tail gains.
+  //
+  // An anchor buying reach always costs average MAE, which is why the tail is
+  // what selects it — but the budget has to scale with what is being bought. A
+  // flat allowance let `ToneCurvePoint224` through at +0.041 on the tail against
+  // **−0.205** on the average: five points of everything spent for one point of
+  // the extremes. Capping the loss at the tail's own gain makes the trade
+  // self-scaling — a slider that rescues blown frames convincingly may spend
+  // accordingly, one that barely helps may not spend at all — and the frame
+  // head's own allowance stays the ceiling over the whole thing, so the two
+  // mechanisms cannot disagree about the most error reach is ever worth.
   const tailOk = meanOf(tail) > sdOf(tail);
-  const averageOk = meanOf(all) > -opts.maeAllowance;
+  const budget = Math.min(opts.maeAllowance, Math.max(0, meanOf(tail)));
+  const averageOk = meanOf(all) > -budget;
   return { model, keep: tailOk && averageOk };
 }
 
