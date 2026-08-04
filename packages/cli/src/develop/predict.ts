@@ -16,6 +16,7 @@ import {
 import { baseFeatures, deviationFrom, renderOneHot } from './develop/assemble.js';
 import { applyPca } from './train/pca.js';
 import { applyOffset } from './feedback/calibrate.js';
+import { predictAnchor } from './train/anchor.js';
 import type { PredictedEdit } from './adapters/types.js';
 import type { BranchModel, DevelopDataset, DevelopExportResult, DevelopProfile, HeadModel } from './types.js';
 
@@ -183,11 +184,15 @@ export function predictOne(
   const develop: Record<string, number> = {};
   for (let k = 0; k < params.length; k++) {
     const param = params[k]!;
-    const delta = headDelta(branch.level, levelX, k) + headDelta(branch.frame, frameX, k);
+    // An anchored slider is a correction toward the photographer's target read
+    // off this photograph, not a shrunk regression — so it replaces both heads
+    // rather than being added to them. Falls through to the heads when the
+    // profile carries no anchor for it, or when the feature cannot be read.
+    const anchor = branch.anchors?.[param.key];
+    const anchored = anchor ? predictAnchor(param, anchor, result.features, meta) : null;
+    const raw = anchored ?? decodeDelta(param, headDelta(branch.level, levelX, k) + headDelta(branch.frame, frameX, k), meta);
     const offset = offsets[param.key];
-    const value = offset === undefined
-      ? decodeDelta(param, delta, meta)
-      : applyOffset(param, decodeDelta(param, delta, meta), offset);
+    const value = offset === undefined ? raw : applyOffset(param, raw, offset);
     develop[param.key] = Math.round(value * 1e4) / 1e4;
   }
   return { file: result.file, treatment, develop, render };

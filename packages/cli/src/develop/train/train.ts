@@ -73,6 +73,7 @@ import {
   type ParamStats,
   type RowTransform,
 } from './evaluate.js';
+import { ANCHORS, fitAnchor, anchorValue, type AnchorModel } from './anchor.js';
 import type { BranchModel, DevelopDataset, DevelopProfile, HeadEval, HeadModel, ParamEval } from '../types.js';
 
 export interface TrainOptions {
@@ -253,6 +254,8 @@ interface RawRow {
   render: RenderProfile;
   /** Importance in the fit; 1 for an ordinary catalog edit. See dataset/weight.ts. */
   weight: number;
+  /** The photograph's raw colour features — what an anchor reads. */
+  colour: number[];
 }
 
 /** How often each rendering appears in a branch, most common first. */
@@ -334,6 +337,7 @@ function buildRows(dataset: DevelopDataset): RawRow[] {
       // Absent on every ordinary export, and on every dataset written before
       // weighting existed: an unmarked photograph is worth exactly one.
       weight: Number.isFinite(r.weight) && r.weight! > 0 ? r.weight! : 1,
+      colour: r.features,
     });
   }
   return rows;
@@ -682,6 +686,7 @@ function trainBranch(
   dims: { embedding: number; colour: number },
   options: TrainOptions,
   looks: Record<string, string>,
+  colourNames: string[],
   report?: (cost: number, label: string) => void,
 ): BranchModel {
   const params = paramsForTreatment(treatment);
@@ -854,6 +859,25 @@ function trainBranch(
     }
   }
 
+  // ── anchored sliders ───────────────────────────────────────────────────────
+  // Fitted from the photograph's own colour block rather than the model's feature
+  // vector, because the whole point is an unshrunk correction against one measured
+  // scene property. Kept only where the tail measurement earns it; see anchor.ts.
+  const anchors: Record<string, AnchorModel> = {};
+  for (const [key, spec] of Object.entries(ANCHORS)) {
+    const k = params.findIndex((p) => p.key === key);
+    const index = colourNames.indexOf(spec.feature);
+    if (k < 0 || index < 0) continue;
+    const samples = [];
+    for (let i = 0; i < raw.length; i++) {
+      const x = anchorValue({ ...spec, index }, raw[i]!.colour);
+      if (x === null) continue;
+      samples.push({ x, y: abs[i]![k]!, group: groups[i]! });
+    }
+    const fit = fitAnchor(params[k]!, spec, index, samples, { folds, shuffles: 20 });
+    if (fit?.keep) anchors[key] = fit.model;
+  }
+
   const deltaStats = columnStats(deltas);
   const bothDegenerate = params.map((_, k) => levelFit.degenerate[k]! && frameFit.degenerate[k]!);
 
@@ -900,6 +924,7 @@ function trainBranch(
     renderVocab,
     level: levelFit.head,
     frame: frameFit.head,
+    ...(Object.keys(anchors).length > 0 ? { anchors } : {}),
     defaultRender: defaultRenderFor(raw),
     looks: looksFor(raw, looks),
     deltaMean: deltaStats.mean.map(round6),
@@ -963,6 +988,7 @@ export function train(dataset: DevelopDataset, options: TrainOptions): DevelopPr
     if (byTreatment[treatment].length >= 5) {
       branches[treatment] = trainBranch(
         byTreatment[treatment], treatment, dims, options, looks,
+        dataset.colorFeatureNames ?? [],
         units.has(treatment) ? reporter?.(byTreatment[treatment].length) : undefined,
       );
     }

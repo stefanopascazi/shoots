@@ -1,3 +1,4 @@
+import type { AnchorModel } from './train/anchor.js';
 /**
  * Shared types for the develop tool.
  *
@@ -201,6 +202,12 @@ export interface BranchModel {
   level: HeadModel;
   /** How far this frame departs from its shoot, from its deviation vector. */
   frame: HeadModel;
+  /**
+   * Sliders predicted as a correction toward a target instead of by the heads,
+   * keyed by crs tag. Absent on profiles trained before anchoring existed, and
+   * absent for any parameter whose anchor did not measure up. See train/anchor.ts.
+   */
+  anchors?: Record<string, AnchorModel>;
   /**
    * The rendering to assume, and to write out, when the image being predicted
    * does not state one — which is every unedited file, i.e. the whole point of
