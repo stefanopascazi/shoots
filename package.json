@@ -1,6 +1,6 @@
 {
   "name": "shoots",
-  "version": "0.5.14",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "shoots — scriptable batch automation for photography workflows (monorepo root)",
