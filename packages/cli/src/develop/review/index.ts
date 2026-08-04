@@ -21,13 +21,15 @@
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
 import { decode, renderPreview } from './preview.js';
-import { page, type PageFrame } from './page.js';
+import { rawPixels } from '@shoots/imaging';
+import { page, type PageStep } from './page.js';
 import { FAMILIES, familyOf, selectFrames } from './select.js';
 import type { LinearImage } from './pipeline.js';
 import type { DevelopDataset, DevelopProfile } from '../types.js';
 import { predictOne, resolveTreatment } from '../predict.js';
 import { buildSessionContext, contextFor } from '../develop/session.js';
 import { baseFeatures } from '../develop/assemble.js';
+import { paramsForTreatment } from '../develop/schema.js';
 
 export interface ReviewOptions {
   port?: number;
@@ -50,8 +52,12 @@ export interface ReviewOptions {
 /** What the reviewer chose, per family. 1 leaves the fitted gain alone. */
 export type Intensities = Record<string, number>;
 
+const round = (v: number, decimals: number): number => {
+  const f = 10 ** decimals;
+  return Math.round(v * f) / f;
+};
+
 interface Loaded {
-  frame: PageFrame;
   image: LinearImage;
   record: DevelopDataset['results'][number];
   sessionMean: number[];
@@ -127,20 +133,14 @@ export async function review(
 
   const size = options.size ?? 900;
   const loaded: Loaded[] = [];
-  for (const [i, pick] of picks.entries()) {
-    status(`rendering preview ${i + 1}/${picks.length}`);
+  const stepsFor: { pick: (typeof picks)[number]; index: number }[] = [];
+  for (const pick of picks) {
+    if (!pick.family) continue; // the control frame has no slider of its own
+    status(`rendering preview ${loaded.length + 1}`);
     try {
       const image = await decode(pick.record.file, size);
-      const label = FAMILIES.find((f) => f.id === pick.family)?.label ?? 'Already close';
+      stepsFor.push({ pick, index: loaded.length });
       loaded.push({
-        frame: {
-          id: i,
-          label,
-          ...(pick.family ? { family: pick.family } : {}),
-          caption: pick.family
-            ? `the strongest correction this control makes in your catalog`
-            : 'inside the dead zone on every control — this one should hold still',
-        },
         image,
         record: pick.record,
         sessionMean: contextFor(context, pick.record.file, baseFeatures(pick.record.embedding, pick.record.features, pick.record.asShot)),
@@ -150,6 +150,86 @@ export async function review(
     }
   }
   if (loaded.length === 0) return null;
+
+  /** Render one frame with one family scaled, as the reviewer would see it. */
+  const renderAt = async (item: Loaded, family: string, scale: number): Promise<Buffer> => {
+    const scaled = structuredClone(profile);
+    applyIntensities(scaled, { ...initial, [family]: scale });
+    const treatment = resolveTreatment(scaled, item.record, 'auto');
+    const prediction = predictOne(scaled, item.record, treatment, item.sessionMean);
+    return renderPreview(item.image, prediction.develop, item.record.asShot);
+  };
+
+  /**
+   * How much the picture actually changes between the control off and as fitted.
+   *
+   * Mean absolute difference over the encoded pixels, as a fraction of full
+   * scale. Cheap, and it answers the only question that matters here: would a
+   * photographer see this slider do anything.
+   */
+  const visibleChange = async (item: Loaded, family: string): Promise<number> => {
+    const [a, b] = await Promise.all([renderAt(item, family, 0), renderAt(item, family, 1)]);
+    const [pa, pb] = await Promise.all([rawPixels(a), rawPixels(b)]);
+    const n = Math.min(pa.length, pb.length);
+    if (n === 0) return 0;
+    let sum = 0;
+    for (let i = 0; i < n; i++) sum += Math.abs(pa[i]! - pb[i]!);
+    return sum / n / 255;
+  };
+
+  /** What one parameter lands on for a frame, with one family scaled by `scale`. */
+  const valueAt = (item: Loaded, family: string, param: string, scale: number): number => {
+    const scaled = structuredClone(profile);
+    applyIntensities(scaled, { ...initial, [family]: scale });
+    const treatment = resolveTreatment(scaled, item.record, 'auto');
+    return predictOne(scaled, item.record, treatment, item.sessionMean).develop[param] ?? 0;
+  };
+
+  // A step per family, labelled in the parameter's own units. A family whose
+  // frame does not actually move between "off" and "as fitted" is dropped rather
+  // than shown as a control that does nothing — which is what Presence was
+  // before Dehaze reached the preview at all.
+  const pageSteps: PageStep[] = [];
+  for (const { pick, index } of stepsFor) {
+    const family = FAMILIES.find((f) => f.id === pick.family);
+    if (!family) continue;
+    const item = loaded[index]!;
+    const zero = valueAt(item, family.id, family.shownAs, 0);
+    const fitted = valueAt(item, family.id, family.shownAs, 1);
+    // Whether the control is reviewable is a question about the *picture*, not
+    // about the parameter. A span that looks respectable in slider units can be
+    // invisible on screen — and worse, a family scales several parameters at
+    // once, so two of them with opposite gains cancel and the frame does not
+    // move at all however far the slider travels. Highlights does exactly that
+    // here: it scales Highlights2012 at −32.7 together with Whites2012 at +177,
+    // and the rendered p99 changes by 4% across the whole range.
+    //
+    // So the test is a render at each end, compared. Offering a control that
+    // visibly does nothing is worse than offering none: it reads as broken.
+    const change = await visibleChange(item, family.id);
+    if (change < 0.02) {
+      status(`${family.label}: moving it changes the picture by ${(change * 100).toFixed(1)}% — not reviewable, skipping it`);
+      continue;
+    }
+    const span = fitted - zero;
+    const far = zero + span * 3;
+    pageSteps.push({
+      id: index,
+      family: family.id,
+      label: family.label,
+      caption: 'the photograph in your catalog this control changes the most',
+      unit: family.unit,
+      decimals: family.decimals,
+      zero: round(zero, family.decimals),
+      fitted: round(fitted, family.decimals),
+      min: round(Math.min(zero, far), family.decimals),
+      max: round(Math.max(zero, far), family.decimals),
+    });
+  }
+  if (pageSteps.length === 0) {
+    status('none of the anchored controls change anything on these frames — nothing to review');
+    return null;
+  }
 
   const timeoutMinutes = options.timeoutMinutes ?? 10;
   return new Promise((resolve) => {
@@ -181,7 +261,7 @@ export async function review(
       const url = new URL(req.url ?? '/', 'http://localhost');
       if (url.pathname === '/') {
         res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        res.end(page(loaded.map((l) => l.frame), initial));
+        res.end(page(pageSteps));
         return;
       }
       if (url.pathname === '/save' && req.method === 'POST') {

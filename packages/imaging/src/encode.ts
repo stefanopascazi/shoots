@@ -8,6 +8,12 @@
  */
 import sharp from 'sharp';
 
+/** A JPEG back to interleaved 8-bit RGB, for comparing two renders. */
+export async function rawPixels(jpeg: Buffer): Promise<Uint8Array> {
+  const { data } = await sharp(jpeg).raw().toBuffer({ resolveWithObject: true });
+  return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+}
+
 /** Interleaved 8-bit RGB → JPEG. */
 export function encodeJpeg(
   rgb: Uint8Array,

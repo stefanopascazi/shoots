@@ -111,6 +111,17 @@ export interface ToneSettings {
   shadows: number;
   whites: number;
   blacks: number;
+  /**
+   * Dehaze, folded in as the contrast-and-black-point move it mostly is.
+   *
+   * Camera Raw's is a physical haze model over local depth; this is a global
+   * approximation of its two visible consequences — the histogram spreads and
+   * the bottom end drops. Directionally right, numerically not, which is the
+   * same bargain the region controls make. It is here rather than omitted
+   * because Dehaze carries the strongest anchor in the model, and a control the
+   * preview cannot show is a control nobody can calibrate.
+   */
+  dehaze: number;
   /** `[input, output]` pairs at 0..255, already sampled from the profile. */
   curve: [number, number][];
 }
@@ -129,8 +140,9 @@ export function buildLut(t: ToneSettings, channelGain: number): Uint8Array {
   const hi = t.highlights / 100;
   const sh = t.shadows / 100;
   const wh = t.whites / 100;
-  const bl = t.blacks / 100;
-  const contrast = t.contrast / 100;
+  const dehaze = t.dehaze / 100;
+  const bl = t.blacks / 100 - dehaze * 0.35;
+  const contrast = t.contrast / 100 + dehaze * 0.5;
   for (let i = 0; i < 65536; i++) {
     let v = encode(clamp01((i / 65535) * exposure * channelGain));
 
@@ -141,10 +153,14 @@ export function buildLut(t: ToneSettings, channelGain: number): Uint8Array {
     // region it acts on, negative darkens it. Highlights and Blacks had it
     // backwards, which made highlight recovery brighten the very areas it exists
     // to rescue — the slider ran the wrong way and hard.
-    v += wh * 0.25 * smooth((v - 0.5) / 0.5);
-    v += bl * 0.25 * smooth((0.5 - v) / 0.5);
-    v += hi * 0.35 * smooth((v - 0.35) / 0.65);
-    v += sh * 0.35 * smooth((0.65 - v) / 0.65);
+    // The coefficients are deliberately gentle. At 0.35 a full-strength
+    // Highlights move swallowed a third of the encoded range and tore the
+    // picture apart — far more than Camera Raw does at −100, which makes the
+    // preview useless for judging "how much" precisely when it matters most.
+    v += wh * 0.18 * smooth((v - 0.5) / 0.5);
+    v += bl * 0.18 * smooth((0.5 - v) / 0.5);
+    v += hi * 0.22 * smooth((v - 0.35) / 0.65);
+    v += sh * 0.22 * smooth((0.65 - v) / 0.65);
 
     // Contrast as an S-curve about middle grey.
     if (contrast !== 0) v += contrast * 0.28 * Math.sin(2 * Math.PI * clamp01(v)) * -1;

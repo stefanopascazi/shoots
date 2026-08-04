@@ -125,6 +125,7 @@ export function toneOf(develop: Record<string, number>): ToneSettings {
     shadows: develop.Shadows2012 ?? 0,
     whites: develop.Whites2012 ?? 0,
     blacks: develop.Blacks2012 ?? 0,
+    dehaze: develop.Dehaze ?? 0,
     curve: moved ? knots : [],
   };
 }
@@ -145,7 +146,7 @@ export async function renderPreview(
     buildLut(tone, gains[1]),
     buildLut(tone, gains[2]),
   ];
-  const rgb = render(image, luts, develop.Saturation ?? 0, develop.Vibrance ?? 0);
+  const rgb = render(image, luts, (develop.Saturation ?? 0) + (develop.Dehaze ?? 0) * 0.3, develop.Vibrance ?? 0);
   return encodeJpeg(rgb, image.width, image.height, quality);
 }
 

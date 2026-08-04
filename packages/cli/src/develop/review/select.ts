@@ -16,12 +16,20 @@
 import type { DevelopExportResult } from '../types.js';
 import { anchorValue, type AnchorModel } from '../train/anchor.js';
 
-/** Slider families, and the anchored parameters each one scales. */
+/**
+ * Slider families, the anchored parameters each scales, and the one parameter
+ * whose value the slider is *labelled* with.
+ *
+ * The label matters more than it sounds. A multiplier on a fitted gain is an
+ * implementation detail — "×2.2" tells a photographer nothing about what will
+ * land in Lightroom. The slider therefore reads in the units of `shownAs`:
+ * −1.4 EV, −72 highlights. The multiplier is derived from wherever it is left.
+ */
 export const FAMILIES = [
-  { id: 'exposure', label: 'Exposure', params: ['Exposure2012'] },
-  { id: 'highlights', label: 'Highlight recovery', params: ['Highlights2012', 'Whites2012'] },
-  { id: 'presence', label: 'Presence', params: ['Dehaze', 'Texture', 'Clarity2012'] },
-  { id: 'colour', label: 'Colour', params: ['Vibrance', 'Saturation'] },
+  { id: 'exposure', label: 'Exposure', params: ['Exposure2012'], shownAs: 'Exposure2012', unit: ' EV', decimals: 2 },
+  { id: 'highlights', label: 'Highlights', params: ['Highlights2012', 'Whites2012'], shownAs: 'Highlights2012', unit: '', decimals: 0 },
+  { id: 'presence', label: 'Dehaze', params: ['Dehaze', 'Texture', 'Clarity2012'], shownAs: 'Dehaze', unit: '', decimals: 0 },
+  { id: 'colour', label: 'Vibrance', params: ['Vibrance', 'Saturation'], shownAs: 'Vibrance', unit: '', decimals: 0 },
 ] as const;
 
 export type FamilyId = (typeof FAMILIES)[number]['id'];
@@ -58,23 +66,29 @@ export function selectFrames(
     let best: Candidate | undefined;
     for (const record of records) {
       if (taken.has(record.file) || !record.features?.length) continue;
-      // The largest *correction* this family's anchors produce on this frame,
-      // not the largest distance from centre. The two differ whenever a gain is
-      // asymmetric, and Exposure's is extreme: −1.41 above the dead zone against
-      // +0.08 below it, because this photographer pulls overexposure back hard
-      // and leaves underexposure alone. Ranked by distance, the darkest frame in
-      // the catalog wins and then demonstrates nothing, since its gain is ~0.
+      // The largest correction this family makes **on the side the anchor exists
+      // for** — above the dead zone, where the scene carries an excess.
+      //
+      // Two earlier rankings were wrong in instructive ways. By distance from
+      // centre, the darkest frame in the catalog won for Exposure and then
+      // demonstrated nothing, since the gain below the dead zone is +0.08 against
+      // −1.41 above. By absolute correction, Highlights landed on a frame *under*
+      // the zone where the anchor moves the slider from −58 to +1 — a real and
+      // large correction, in the direction of *undoing* recovery, which makes the
+      // control read backwards to anyone calibrating highlight recovery with it.
+      //
+      // The excess side is the one the control is named after and the one a
+      // photographer can judge: a blown frame being pulled back.
       let excess = 0;
       for (const m of models) {
         const x = anchorValue(m, record.features);
         if (x === null) continue;
-        const gap = x - m.xbar;
-        const d = m.deadband ?? 0;
-        const move = m.gain * Math.max(0, gap - d) + (m.gainBelow ?? m.gain) * Math.min(0, gap + d);
+        const gap = x - m.xbar - (m.deadband ?? 0);
+        if (gap <= 0) continue;
         // Scaled by the parameter's own range so families in stops and families
         // in ±100 slider units can be compared at all.
         const range = Math.max(1, Math.abs(m.gain) * ((m.deadband ?? 0) || 1));
-        excess = Math.max(excess, Math.abs(move) / range);
+        excess = Math.max(excess, Math.abs(m.gain * gap) / range);
       }
       if (excess > 0 && (best === undefined || excess > best.excess)) {
         best = { record, family: family.id, excess };
