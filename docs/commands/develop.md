@@ -466,6 +466,18 @@ keeps the fitted values and the pipeline carries on. Pass `--review-timeout 0` t
 wait indefinitely when you know somebody is watching, and omit `--review`
 entirely for a run nobody will attend.
 
+**If you miss it, nothing is lost.** Behind the screen there may be hours of
+export and fitting on a large catalog, and none of it has to be repeated — the
+profile already carries the anchors and the dataset already carries the features,
+so the same screen re-opens over work already paid for:
+
+```sh
+shoots develop calibrate --review
+```
+
+That refits nothing. Pass `--profile` and `--data` if they are not the ones
+`develop init` wrote.
+
 The port behaves the same way. Omitted, it takes 7391 or the next free one if
 something already has it — nobody bookmarks this page, so moving is better than
 failing. Named with `--review-port`, it fails with the busy port and the flag

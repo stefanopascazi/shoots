@@ -165,6 +165,11 @@ export async function review(
     if (timeoutMinutes > 0) {
       timer = setTimeout(() => {
         status(`nobody opened the review in ${timeoutMinutes} minutes — keeping the fitted intensities`);
+        // The recovery path, on the line where it is needed. Behind this screen
+        // there may be hours of export and fit, and nothing about the profile
+        // just written says the calibration is still available without redoing
+        // any of it.
+        status('  re-open it any time — no refit — with:  shoots develop calibrate --review');
         finish(null);
       }, timeoutMinutes * 60_000);
       // Not a reason to hold the process open on its own: if everything else has

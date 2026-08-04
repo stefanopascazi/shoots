@@ -15,9 +15,11 @@
  * feedback/calibrate.ts — that reasoning is the substance of this feature.
  */
 import path from 'node:path';
+import { loadDataset } from '../dataset/load.js';
+import { applyIntensities, review } from '../review/index.js';
 import { existsSync } from 'node:fs';
 import { readFile, rename, writeFile } from 'node:fs/promises';
-import { developFeedbackPath, developProfilePath } from '@shoots/core';
+import { developExportPath, developFeedbackPath, developProfilePath } from '@shoots/core';
 import { DEVELOP_PARAMS, type Treatment } from '../develop/schema.js';
 import { loadJournal, shootCount } from '../feedback/journal.js';
 import {
@@ -46,6 +48,21 @@ export interface CalibrateArgs {
   importedOnly?: boolean;
   /** Remove any calibration and leave the model as trained. */
   reset?: boolean;
+  /**
+   * Re-open the calibration screen against a profile that already exists.
+   *
+   * The screen normally runs inside `train`, and the wait there is bounded so a
+   * pipeline cannot hang on it — which means it is possible to miss. On a 20k
+   * catalog the export and the fit behind it are hours; redoing them to move a
+   * slider would be absurd. Nothing here refits: the profile already carries the
+   * anchors and the dataset already carries the features, so this is the same
+   * screen over work that has already been paid for.
+   */
+  review?: boolean;
+  /** Dataset the previews are chosen and predicted from. */
+  data?: string;
+  reviewPort?: number;
+  reviewTimeout?: number;
   dryRun?: boolean;
   json?: boolean;
   verbose?: boolean;
@@ -70,6 +87,32 @@ export async function runCalibrate(args: CalibrateArgs): Promise<void> {
     return;
   }
   const profile = JSON.parse(await readFile(profilePath, 'utf8')) as DevelopProfile;
+
+  if (args.review) {
+    const dataPath = path.resolve(args.data ?? developExportPath());
+    if (!existsSync(dataPath)) {
+      logError(`no dataset at ${dataPath} — pass --data, or re-run \`shoots develop init\``);
+      process.exitCode = 2;
+      return;
+    }
+    const dataset = await loadDataset(dataPath);
+    const chosen = await review(profile, dataset, {
+      ...(args.reviewPort !== undefined ? { port: args.reviewPort } : {}),
+      ...(args.reviewTimeout !== undefined ? { timeoutMinutes: args.reviewTimeout } : {}),
+      onStatus: (m) => process.stderr.write(`  ${m}
+`),
+    });
+    if (!chosen) {
+      printHuman(io, 'Nothing changed — the profile is as it was.');
+      return;
+    }
+    applyIntensities(profile, chosen);
+    if (!args.dryRun) await writeProfile(profilePath, profile);
+    const shown = Object.entries(chosen).map(([k, v]) => `${k} ${v.toFixed(2)}×`).join(', ');
+    if (io.json) printJson({ command: 'develop-calibrate', review: chosen, dryRun: !!args.dryRun, profile: profilePath });
+    else printHuman(io, args.dryRun ? `Dry run — would apply ${shown}.` : `Applied ${shown} to ${profilePath}.`);
+    return;
+  }
 
   if (args.reset) {
     if (!profile.calibration) {
