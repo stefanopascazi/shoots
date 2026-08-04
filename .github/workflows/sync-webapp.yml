@@ -1,6 +1,6 @@
 name: sync-webapp
 
-# Pushes docs/, assets/ and the version into the webapp repo
+# Pushes docs/, assets/, the version and the sidebar entries into the webapp repo
 # (stefanopascazi/shoots-ai), which lives outside this monorepo since Vercel
 # could not build it from a subdirectory here. This workflow is what keeps the
 # two in sync: the content is authored ONLY in this repo.
@@ -47,7 +47,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add content public/assets
+          git add content public/assets lib/docs/nav.ts
           if git diff --cached --quiet; then
             echo 'content already up to date — nothing to push'
             exit 0
