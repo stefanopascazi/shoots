@@ -20,7 +20,7 @@
  */
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
-import { decode, renderPreview } from './preview.js';
+import { decode, downscale, renderPreview } from './preview.js';
 import { rawPixels } from '@shoots/imaging';
 import { page, type PageStep } from './page.js';
 import { FAMILIES, familyOf, selectFrames } from './select.js';
@@ -59,6 +59,8 @@ const round = (v: number, decimals: number): number => {
 
 interface Loaded {
   image: LinearImage;
+  /** The same frame small, for the film strip. Rendered once and cached. */
+  thumb: LinearImage;
   record: DevelopDataset['results'][number];
   sessionMean: number[];
 }
@@ -142,6 +144,7 @@ export async function review(
       stepsFor.push({ pick, index: loaded.length });
       loaded.push({
         image,
+        thumb: downscale(image, 200),
         record: pick.record,
         sessionMean: contextFor(context, pick.record.file, baseFeatures(pick.record.embedding, pick.record.features, pick.record.asShot)),
       });
@@ -234,6 +237,8 @@ export async function review(
       caption: 'the photograph in your catalog this control changes the most',
       unit: family.unit,
       decimals: family.decimals,
+      width: item.image.width,
+      height: item.image.height,
       zero: round(zero, family.decimals),
       fitted: round(fitted, family.decimals),
       min: round(Math.min(zero, far), family.decimals),
@@ -246,6 +251,7 @@ export async function review(
   }
 
   const timeoutMinutes = options.timeoutMinutes ?? 10;
+  const thumbCache = new Map<Loaded, Buffer>();
   return new Promise((resolve) => {
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
@@ -290,6 +296,26 @@ export async function review(
           res.writeHead(400);
           res.end();
         }
+        return;
+      }
+      // The film strip. Rendered at the fitted values and cached: it is for
+      // navigation, and repainting five thumbnails on every slider move would
+      // cost five times what repainting the one frame being judged costs.
+      const thumb = /^\/thumb\/(\d+)$/.exec(url.pathname);
+      if (thumb) {
+        const item = loaded[Number(thumb[1])];
+        if (!item) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        if (!thumbCache.has(item)) {
+          const treatment = resolveTreatment(profile, item.record, 'auto');
+          const prediction = predictOne(profile, item.record, treatment, item.sessionMean);
+          thumbCache.set(item, await renderPreview(item.thumb, prediction.develop, item.record.asShot, 70));
+        }
+        res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'max-age=3600' });
+        res.end(thumbCache.get(item));
         return;
       }
       const match = /^\/frame\/(\d+)$/.exec(url.pathname);

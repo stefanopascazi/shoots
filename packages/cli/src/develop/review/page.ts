@@ -5,25 +5,31 @@
  * runtime dependency has to be licence-checked, so a page that is a string in the
  * source costs nothing and can never drift from the server that serves it.
  *
- * **One photograph, one control, one step at a time.** The first version put five
- * frames and four sliders on screen together and it read as though every slider
- * applied to every frame — which is true of the profile and useless as an
- * explanation, because each frame was chosen to demonstrate exactly one control.
- * Judging "how much highlight recovery" against a photograph picked for its
- * exposure is asking a question about the wrong picture.
+ * **One photograph, one control, and the whole photograph on screen.** Three
+ * things this gets right that the first two attempts did not:
  *
- * And the slider reads in the parameter's own units, not as a multiplier on a
- * fitted gain. "×2.2" says nothing about what will land in Lightroom; "−1.4 EV"
- * is the thing being decided. The multiplier is computed back from wherever the
- * slider is left.
+ * - The page never scrolls. It is a viewport-height grid — header, stage, film
+ *   strip — and the image is contained inside the stage rather than sizing it.
+ *   Scrolling to see the bottom of a photograph you are judging the exposure of
+ *   is absurd.
+ * - The image is **never upscaled**. The preview is rendered at a known pixel
+ *   size and that size is the ceiling, so a small frame sits small and sharp
+ *   instead of being stretched into mush.
+ * - There is a film strip. Each control has its own photograph and you can move
+ *   between them at will — click, arrow keys — rather than being marched through
+ *   a queue.
+ *
+ * The slider reads in the parameter's own units, not as a multiplier on a fitted
+ * gain: "×2.2" says nothing about what will land in Lightroom, "−1.4 EV" is the
+ * thing being decided. The multiplier is computed back from where it is left.
  */
 
 export interface PageStep {
   /** Index into the server's loaded frames. */
   id: number;
-  /** Family id, e.g. `exposure`. */
+  /** Anchored parameter this control scales, e.g. `Exposure2012`. */
   family: string;
-  /** Family label, e.g. `Exposure`. */
+  /** Human label, e.g. `Exposure`. */
   label: string;
   caption: string;
   unit: string;
@@ -32,102 +38,162 @@ export interface PageStep {
   zero: number;
   /** Its value at the gain exactly as fitted — where the slider starts. */
   fitted: number;
-  /** Slider bounds, already clamped to what the parameter allows. */
   min: number;
   max: number;
+  /** Rendered preview size, so the image is never scaled beyond it. */
+  width: number;
+  height: number;
 }
 
 export function page(steps: readonly PageStep[]): string {
   if (steps.length === 0) return '<!doctype html><p>Nothing to calibrate.</p>';
 
+  const stages = steps
+    .map(
+      (s, i) => `
+      <figure class="stage" data-index="${i}" ${i === 0 ? '' : 'hidden'}>
+        <img id="img-${s.id}" src="/frame/${s.id}" alt="${s.label}"
+             style="max-width:${s.width}px;max-height:${s.height}px">
+      </figure>`,
+    )
+    .join('');
+
   const panels = steps
     .map(
       (s, i) => `
-    <section class="step" data-index="${i}" data-family="${s.family}" ${i === 0 ? '' : 'hidden'}>
-      <div class="frame"><img id="img-${s.id}" src="/frame/${s.id}" alt="${s.label}"></div>
-      <div class="control">
+      <div class="control" data-index="${i}" ${i === 0 ? '' : 'hidden'}>
         <h2>${s.label}</h2>
         <p class="why">${s.caption}</p>
-        <input type="range" id="r-${i}" min="${s.min}" max="${s.max}" step="${s.decimals > 0 ? 0.01 : 1}" value="${s.fitted}">
-        <div class="readout">
-          <output id="v-${i}">${s.fitted.toFixed(s.decimals)}${s.unit}</output>
-          <span class="hint">fitted <b>${s.fitted.toFixed(s.decimals)}${s.unit}</b> · off <b>${s.zero.toFixed(s.decimals)}${s.unit}</b></span>
-        </div>
-        <div class="actions">
-          <button class="ghost" data-back ${i === 0 ? 'disabled' : ''}>Back</button>
-          <button class="ghost" data-reset>Reset</button>
-          <button class="primary" data-next>${i === steps.length - 1 ? 'Save into the profile' : 'Next'}</button>
-        </div>
-        <div class="progress">${i + 1} of ${steps.length}</div>
-      </div>
-    </section>`,
+        <output id="v-${i}">${s.fitted.toFixed(s.decimals)}${s.unit}</output>
+        <input type="range" id="r-${i}" min="${s.min}" max="${s.max}"
+               step="${s.decimals > 0 ? 0.01 : 1}" value="${s.fitted}">
+        <div class="ends"><span>${s.min.toFixed(s.decimals)}</span><span>${s.max.toFixed(s.decimals)}</span></div>
+        <p class="hint">fitted <b>${s.fitted.toFixed(s.decimals)}${s.unit}</b> · off <b>${s.zero.toFixed(s.decimals)}${s.unit}</b></p>
+        <button class="ghost" data-reset>Reset to fitted</button>
+      </div>`,
+    )
+    .join('');
+
+  const thumbs = steps
+    .map(
+      (s, i) => `
+      <button class="thumb${i === 0 ? ' current' : ''}" data-go="${i}" title="${s.label}">
+        <img src="/thumb/${s.id}" alt="">
+        <span>${s.label}</span>
+      </button>`,
     )
     .join('');
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Calibrate your profile</title>
 <style>
-  :root { color-scheme: light dark; --bg:#111; --fg:#eee; --panel:#1c1c1c; --line:#333; --accent:#5b9dd9; --muted:#999; }
-  @media (prefers-color-scheme: light) { :root { --bg:#f6f6f6; --fg:#1a1a1a; --panel:#fff; --line:#ddd; --muted:#666; } }
+  :root {
+    color-scheme: light dark;
+    --bg:#0e0e0f; --fg:#ededed; --panel:#191a1b; --line:#2c2d2f; --accent:#5b9dd9; --muted:#8b8d90;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f2f3f4; --fg:#17181a; --panel:#fff; --line:#dcdee0; --muted:#6b6d70; }
+  }
   * { box-sizing:border-box; }
-  body { margin:0; font:14px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--fg); }
-  header { padding:16px 24px; border-bottom:1px solid var(--line); }
-  h1 { margin:0 0 3px; font-size:16px; font-weight:600; }
-  header p { margin:0; color:var(--muted); max-width:78ch; font-size:13px; }
-  .step { display:grid; grid-template-columns: 1fr 340px; gap:24px; padding:22px 24px; align-items:start; }
-  @media (max-width:900px) { .step { grid-template-columns:1fr; } }
-  .frame { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; }
-  img { display:block; width:100%; height:auto; border-radius:6px; background:#000; }
-  .control h2 { margin:0 0 4px; font-size:20px; }
-  .why { margin:0 0 20px; color:var(--muted); font-size:13px; }
+  html, body { height:100%; }
+  body {
+    margin:0; overflow:hidden;
+    font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+    background:var(--bg); color:var(--fg);
+    display:grid; grid-template-rows:auto minmax(0,1fr) auto;
+  }
+  header { padding:12px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:14px; }
+  header h1 { margin:0; font-size:15px; font-weight:600; }
+  header p { margin:0; color:var(--muted); font-size:12.5px; }
+
+  /* The middle row is the only thing allowed to take the leftover height, and
+     minmax(0,1fr) is what lets it actually shrink instead of being sized by its
+     content — which is how an image ends up pushing the page into a scrollbar. */
+  main { display:grid; grid-template-columns:minmax(0,1fr) 300px; min-height:0; }
+  @media (max-width:820px) { main { grid-template-columns:1fr; } }
+
+  .stages { position:relative; min-height:0; padding:16px; display:grid; place-items:center; }
+  .stage { margin:0; min-height:0; max-height:100%; display:grid; place-items:center; }
+  .stage[hidden] { display:none; }
+  /* Contained, never enlarged: the inline max-width/max-height carry the render's
+     own pixel size, so a small preview stays small and crisp. */
+  img { display:block; width:auto; height:auto; max-width:100%; max-height:100%;
+        border-radius:6px; box-shadow:0 2px 18px rgb(0 0 0 / .35); }
+
+  aside { border-left:1px solid var(--line); padding:20px; overflow-y:auto; display:flex; flex-direction:column; }
+  @media (max-width:820px) { aside { border-left:0; border-top:1px solid var(--line); } }
+  .control[hidden] { display:none; }
+  .control h2 { margin:0 0 2px; font-size:19px; }
+  .why { margin:0 0 18px; color:var(--muted); font-size:12.5px; }
+  output { display:block; font:600 30px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
+           font-variant-numeric:tabular-nums; margin-bottom:10px; }
   input[type=range] { width:100%; accent-color:var(--accent); }
-  .readout { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-top:8px; }
-  output { font:600 24px/1 ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric:tabular-nums; }
-  .hint { color:var(--muted); font-size:12px; text-align:right; }
-  .actions { margin-top:26px; display:flex; gap:8px; }
-  button { font:inherit; padding:9px 16px; border-radius:6px; border:1px solid var(--line); background:var(--panel); color:var(--fg); cursor:pointer; }
-  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; margin-left:auto; }
-  button:disabled { opacity:.4; cursor:default; }
-  .progress { margin-top:14px; color:var(--muted); font-size:12px; }
-  #status { padding:0 24px 22px; color:var(--muted); }
+  .ends { display:flex; justify-content:space-between; color:var(--muted); font-size:11px;
+          font-variant-numeric:tabular-nums; margin-top:2px; }
+  .hint { color:var(--muted); font-size:12px; margin:14px 0 0; }
+  button { font:inherit; padding:8px 14px; border-radius:6px; border:1px solid var(--line);
+           background:var(--panel); color:var(--fg); cursor:pointer; }
+  button.ghost { margin-top:16px; align-self:flex-start; }
+  .save { margin-top:auto; padding-top:18px; }
+  .save button { width:100%; background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  #status { color:var(--muted); font-size:12px; margin-top:10px; min-height:1.3em; }
+
+  /* The film strip: every control's photograph, always reachable. */
+  footer { border-top:1px solid var(--line); padding:10px 14px; display:flex; gap:10px;
+           overflow-x:auto; align-items:flex-end; }
+  .thumb { padding:4px; display:grid; gap:4px; justify-items:center; border-color:transparent;
+           background:none; flex:0 0 auto; }
+  .thumb img { width:82px; height:56px; object-fit:cover; border-radius:4px; opacity:.55;
+               box-shadow:none; transition:opacity .12s; }
+  .thumb span { font-size:11px; color:var(--muted); max-width:88px; overflow:hidden;
+                text-overflow:ellipsis; white-space:nowrap; }
+  .thumb:hover img { opacity:.85; }
+  .thumb.current img { opacity:1; outline:2px solid var(--accent); outline-offset:1px; }
+  .thumb.current span { color:var(--fg); }
 </style></head><body>
 <header>
   <h1>Calibrate your profile</h1>
-  <p>One control at a time, on the photograph in your catalog where it does the most.
-     The number is what the profile will put in that slider — move it until the picture
-     looks right. Clarity and Texture are not calibrated here: they are local-contrast
-     effects this preview cannot reproduce.</p>
+  <p>Each control, on the photograph in your catalog where it does the most. The number is what
+     the profile will put in that slider. Clarity and Texture are not here — local contrast is
+     something this preview cannot show.</p>
 </header>
-${panels}
-<div id="status"></div>
+<main>
+  <div class="stages">${stages}</div>
+  <aside>
+    ${panels}
+    <div class="save">
+      <button id="save">Save into the profile</button>
+      <div id="status"></div>
+    </div>
+  </aside>
+</main>
+<footer>${thumbs}</footer>
 <script>
-  const steps = ${JSON.stringify(steps.map((s) => ({ id: s.id, family: s.family, zero: s.zero, fitted: s.fitted, unit: s.unit, decimals: s.decimals })))};
+  const steps = ${JSON.stringify(
+    steps.map((s) => ({ id: s.id, family: s.family, zero: s.zero, fitted: s.fitted, unit: s.unit, decimals: s.decimals })),
+  )};
   const status = document.getElementById('status');
-  let at = 0;
   const chosen = {};
   for (const s of steps) chosen[s.family] = 1;
+  let at = 0;
 
   // Slider value to multiplier. The fitted gain puts the parameter at s.fitted
   // and switching it off puts it at s.zero, so the response is linear between
-  // them and any value on the slider maps straight back onto a gain scale.
+  // them and any value maps straight back onto a gain scale.
   function scaleFor(s, value) {
     const span = s.fitted - s.zero;
     return Math.abs(span) < 1e-9 ? 1 : (value - s.zero) / span;
   }
-  function query(overrideFamily, overrideScale) {
+  function query() {
     const p = new URLSearchParams();
-    for (const s of steps) {
-      p.set(s.family, String(s.family === overrideFamily ? overrideScale : chosen[s.family]));
-    }
+    for (const s of steps) p.set(s.family, String(chosen[s.family]));
     return p.toString();
   }
 
   let inflight = false, queued = null;
   async function repaint(index) {
     const s = steps[index];
-    const value = parseFloat(document.getElementById('r-' + index).value);
-    const scale = scaleFor(s, value);
-    chosen[s.family] = scale;
+    chosen[s.family] = scaleFor(s, parseFloat(document.getElementById('r-' + index).value));
     if (inflight) { queued = index; return; }
     inflight = true;
     await new Promise((res) => {
@@ -142,8 +208,12 @@ ${panels}
 
   function show(index) {
     at = index;
-    for (const el of document.querySelectorAll('.step')) el.hidden = Number(el.dataset.index) !== index;
-    repaint(index);
+    for (const el of document.querySelectorAll('.stage, .control')) {
+      el.hidden = Number(el.dataset.index) !== index;
+    }
+    for (const t of document.querySelectorAll('.thumb')) {
+      t.classList.toggle('current', Number(t.dataset.go) === index);
+    }
   }
 
   steps.forEach((s, i) => {
@@ -152,27 +222,26 @@ ${panels}
       out.textContent = parseFloat(range.value).toFixed(s.decimals) + s.unit;
       repaint(i);
     });
-    const panel = document.querySelector('.step[data-index="' + i + '"]');
-    panel.querySelector('[data-back]').addEventListener('click', () => show(i - 1));
-    panel.querySelector('[data-reset]').addEventListener('click', () => {
-      range.value = s.fitted;
-      out.textContent = s.fitted.toFixed(s.decimals) + s.unit;
-      repaint(i);
-    });
-    panel.querySelector('[data-next]').addEventListener('click', async () => {
-      if (i < steps.length - 1) { show(i + 1); return; }
-      status.textContent = 'Saving…';
-      const r = await fetch('/save', {
-        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(chosen),
+    document.querySelector('.control[data-index="' + i + '"] [data-reset]')
+      .addEventListener('click', () => {
+        range.value = s.fitted;
+        out.textContent = s.fitted.toFixed(s.decimals) + s.unit;
+        repaint(i);
       });
-      status.textContent = r.ok
-        ? 'Saved — you can close this tab.'
-        : 'Save failed.';
-    });
   });
+  for (const t of document.querySelectorAll('.thumb')) {
+    t.addEventListener('click', () => show(Number(t.dataset.go)));
+  }
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight' && at < steps.length - 1) show(at + 1);
-    if (e.key === 'ArrowLeft' && at > 0) show(at - 1);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') show(Math.min(steps.length - 1, at + 1));
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') show(Math.max(0, at - 1));
+  });
+  document.getElementById('save').addEventListener('click', async () => {
+    status.textContent = 'Saving…';
+    const r = await fetch('/save', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(chosen),
+    });
+    status.textContent = r.ok ? 'Saved — you can close this tab.' : 'Save failed.';
   });
 </script>
 </body></html>`;

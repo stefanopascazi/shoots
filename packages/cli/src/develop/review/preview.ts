@@ -53,7 +53,7 @@ function parsePpm(buf: Buffer): LinearImage {
 }
 
 /** Area-average downscale, in linear light — the only place averaging is meaningful. */
-function downscale(src: LinearImage, maxEdge: number): LinearImage {
+export function downscale(src: LinearImage, maxEdge: number): LinearImage {
   const scale = Math.min(1, maxEdge / Math.max(src.width, src.height));
   if (scale >= 1) return src;
   const width = Math.max(1, Math.round(src.width * scale));
