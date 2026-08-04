@@ -17,25 +17,45 @@ import type { DevelopExportResult } from '../types.js';
 import { anchorValue, type AnchorModel } from '../train/anchor.js';
 
 /**
- * Slider families, the anchored parameters each scales, and the one parameter
- * whose value the slider is *labelled* with.
+ * One control per anchored parameter, in histogram order.
  *
- * The label matters more than it sounds. A multiplier on a fitted gain is an
- * implementation detail — "×2.2" tells a photographer nothing about what will
- * land in Lightroom. The slider therefore reads in the units of `shownAs`:
- * −1.4 EV, −72 highlights. The multiplier is derived from wherever it is left.
+ * Not grouped. Grouping was the first design and it was wrong twice over.
+ *
+ * Conceptually: `Whites` is where the histogram is allowed to clip and
+ * `Highlights` is the recoverable region below it, exactly as `Blacks` is the
+ * black point and `Shadows` the region above it. They are different decisions
+ * about different parts of the histogram, and a photographer sets them
+ * separately because they *are* separate.
+ *
+ * Practically: a grouped control scales every parameter in it by the same
+ * factor, so members whose fitted gains have opposite signs cancel. Highlights
+ * and Whites did precisely that on the reference catalog — −32.7 against +177 —
+ * and the rendered frame moved 0.9% across the whole slider. The control was
+ * inert and looked broken.
+ *
+ * Offering one per parameter costs nothing, because the reviewability test drops
+ * whatever does not visibly move. A short screen is the *result* of that test,
+ * not an assumption baked in here.
  */
-export const FAMILIES = [
-  { id: 'exposure', label: 'Exposure', params: ['Exposure2012'], shownAs: 'Exposure2012', unit: ' EV', decimals: 2 },
-  { id: 'highlights', label: 'Highlights', params: ['Highlights2012', 'Whites2012'], shownAs: 'Highlights2012', unit: '', decimals: 0 },
-  { id: 'presence', label: 'Dehaze', params: ['Dehaze', 'Texture', 'Clarity2012'], shownAs: 'Dehaze', unit: '', decimals: 0 },
-  { id: 'colour', label: 'Vibrance', params: ['Vibrance', 'Saturation'], shownAs: 'Vibrance', unit: '', decimals: 0 },
-] as const;
+export type FamilyId = string;
 
-export type FamilyId = (typeof FAMILIES)[number]['id'];
-
+/** Which control scales a given anchored parameter — now one to one. */
 export const familyOf = (param: string): FamilyId | undefined =>
-  FAMILIES.find((f) => (f.params as readonly string[]).includes(param))?.id;
+  FAMILIES.some((f) => f.id === param) ? param : undefined;
+
+export const FAMILIES = [
+  { id: 'Exposure2012', label: 'Exposure', params: ['Exposure2012'], shownAs: 'Exposure2012', unit: ' EV', decimals: 2 },
+  { id: 'Whites2012', label: 'Whites', params: ['Whites2012'], shownAs: 'Whites2012', unit: '', decimals: 0 },
+  { id: 'Highlights2012', label: 'Highlights', params: ['Highlights2012'], shownAs: 'Highlights2012', unit: '', decimals: 0 },
+  { id: 'Contrast2012', label: 'Contrast', params: ['Contrast2012'], shownAs: 'Contrast2012', unit: '', decimals: 0 },
+  { id: 'Shadows2012', label: 'Shadows', params: ['Shadows2012'], shownAs: 'Shadows2012', unit: '', decimals: 0 },
+  { id: 'Blacks2012', label: 'Blacks', params: ['Blacks2012'], shownAs: 'Blacks2012', unit: '', decimals: 0 },
+  { id: 'Dehaze', label: 'Dehaze', params: ['Dehaze'], shownAs: 'Dehaze', unit: '', decimals: 0 },
+  { id: 'Texture', label: 'Texture', params: ['Texture'], shownAs: 'Texture', unit: '', decimals: 0 },
+  { id: 'Clarity2012', label: 'Clarity', params: ['Clarity2012'], shownAs: 'Clarity2012', unit: '', decimals: 0 },
+  { id: 'Vibrance', label: 'Vibrance', params: ['Vibrance'], shownAs: 'Vibrance', unit: '', decimals: 0 },
+  { id: 'Saturation', label: 'Saturation', params: ['Saturation'], shownAs: 'Saturation', unit: '', decimals: 0 },
+] as const;
 
 export interface Candidate {
   record: DevelopExportResult;

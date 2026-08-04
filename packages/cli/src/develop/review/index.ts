@@ -161,20 +161,34 @@ export async function review(
   };
 
   /**
-   * How much the picture actually changes between the control off and as fitted.
+   * How much the picture changes between the control off and as fitted.
    *
-   * Mean absolute difference over the encoded pixels, as a fraction of full
-   * scale. Cheap, and it answers the only question that matters here: would a
-   * photographer see this slider do anything.
+   * The **95th percentile** of the per-pixel difference, not the mean. Most of
+   * these controls are regional — Highlights acts on the bright end, Blacks on
+   * the dark one — so averaging over every pixel dilutes the effect by however
+   * much of the frame the control does not touch, and judges a highlight control
+   * by what it does to the shadows. A change that is 1% on average and 15% in
+   * the region it acts on is plainly visible, and the mean would hide it.
+   *
+   * The 95th and not the maximum: a single clipped pixel should not qualify a
+   * control as reviewable.
    */
   const visibleChange = async (item: Loaded, family: string): Promise<number> => {
     const [a, b] = await Promise.all([renderAt(item, family, 0), renderAt(item, family, 1)]);
     const [pa, pb] = await Promise.all([rawPixels(a), rawPixels(b)]);
     const n = Math.min(pa.length, pb.length);
     if (n === 0) return 0;
-    let sum = 0;
-    for (let i = 0; i < n; i++) sum += Math.abs(pa[i]! - pb[i]!);
-    return sum / n / 255;
+    // Counting sort over the 256 possible differences — cheaper than sorting a
+    // few million samples and exact for what is being asked.
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < n; i++) hist[Math.abs(pa[i]! - pb[i]!)]!++;
+    let seen = 0;
+    const target = n * 0.95;
+    for (let d = 0; d < 256; d++) {
+      seen += hist[d]!;
+      if (seen >= target) return d / 255;
+    }
+    return 1;
   };
 
   /** What one parameter lands on for a frame, with one family scaled by `scale`. */
