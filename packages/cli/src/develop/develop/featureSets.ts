@@ -100,6 +100,29 @@ const SETS: Record<string, FeatureSet> = {
  * Anything absent here inherits its group's set.
  */
 const PARAM_SETS: Record<string, FeatureSet> = {
+  // How much colour is already there. Both live in `presence`, whose set is
+  // TONE_COLOUR — all luminance, no chroma — so until now the model was asked how
+  // far to push saturation while forbidden from seeing any. Measured on 553
+  // frames: Vibrance tracks satStd at -0.274 and satMean at -0.143, and the
+  // relationship survives inside a shoot (-0.16 and -0.19 over 14 shoots), which
+  // is where a constant cannot help. lumaMean stays because it is the strongest
+  // single term of the three (+0.367): a brighter frame arrives with its colour
+  // already washed out and gets more vibrance back, which is the same decision
+  // read from the other side.
+  //
+  // Saturation gets the identical set and is expected to keep gating: it varies
+  // (sd 11.2, and 6.3 inside a shoot) but tracks none of these — -0.03 against
+  // satMean, -0.005 within a shoot. That is worth stating rather than leaving as
+  // an absence: whatever drives it is not the scene's colour, and the gate
+  // refusing it is the correct answer until something measures otherwise.
+  // Embedding off, unlike the rest of `presence`: four colour columns against a
+  // 16-component semantic projection at n=553 is the p>n regime BASELINE.md
+  // already documents costing more than it returns, and here it was drowning the
+  // only evidence that measures. Both heads came back with a de-shrinking slope
+  // of exactly 0 — held-out anti-correlation, i.e. the fit was reading noise —
+  // and a slope of 0 emits the constant no matter how far the gate is opened.
+  Vibrance: { colour: ['satMean', 'satStd', 'lumaMean', 'lumaStd'], embedding: false },
+  Saturation: { colour: ['satMean', 'satStd', 'lumaMean', 'lumaStd'], embedding: false },
   // The ends of the histogram: what was sacrificed, and what was protected.
   // shadowFloor earns its place: dropping it takes Blacks from 4.7% to 3.1%.
   // Note it was nearly cut on a bad comparison — the 6.8% it was measured against

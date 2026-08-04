@@ -184,6 +184,15 @@ export interface Conservatism {
  * 3x, and allows the frame head to spend 30% more held-out error buying back its
  * reach instead of 5%.
  *
+ * **Raising the ceiling further does not work, and the reason matters.** On the
+ * reference catalog `Exposure2012`'s frame head pins itself to whatever cap is
+ * offered — 8 at 8, 30 at 30 — because the slope is `cov/var` over an output that
+ * barely moves, so it grows without bound as the fit flattens. At 30 the
+ * within-shoot skill fell from 0.034 to 0.021: that is noise being amplified, not
+ * a correction being restored. De-shrinking can only rescale a prediction that
+ * already points somewhere; it cannot make a flat one informative, and a frame
+ * that needs −1.5 stops will not be reached this way.
+ *
  * **The skill numbers get worse as this goes up, by construction.** That is not a
  * regression: MAE is minimised by the flat answer, so any model that moves more
  * pays for it. Judge this one in Lightroom, not in `BASELINE.md`.
