@@ -206,6 +206,48 @@ It is a real product change, it is cheap, and it converts the encoder question
 from "is there any signal" into "is a stronger estimator worth it" — answerable
 against a number instead of a hope.
 
+## Phase 2.6 — the per-shoot gain · RUN 2026-08-04 · **ceiling found, not reachable**
+
+`tools/shoot-gain`. An anchored slider's intensity is a property of the *shoot*,
+not of the photographer: fitted inside each shoot separately the gain runs from
+−4.23 to +0.34 where the global fit says −1.01. `--anchor-gain` exists because
+one number cannot serve both habits.
+
+Measured on a second, independent catalog — 1265 edited frames over 113 shoots,
+against the reference catalog's 553 over 48. Leave-one-shoot-out, descriptors
+taken from frames disjoint from the gain fit:
+
+| slider | shoots | ceiling | best photometric | best CLIP |
+|---|---:|---:|---:|---:|
+| `Dehaze` | 19–25 | **56.9%** | 2.8% | 11.8% (K=3) |
+| `Exposure2012` | 15–21 | **32.0%** | −1.2% | 1.7% |
+| `Highlights2012` | 13 | 5.1% | 0.3% | — |
+| `Whites2012` | 11 | 4.5% | 0.5% | — |
+
+**The ceilings are the largest measured opportunity left in this project** — 32%
+of the error on the frames that need exposure correction, 57% on dehaze — and
+they are per-shoot, not per-frame.
+
+**Nothing reaches them.** Five shoot-level photometric descriptors correlate at
+best −0.33 and lose to the global gain when actually used. The reference catalog
+agreed independently: ceiling 29.3%, predictor −8.6%.
+
+`Dehaze` at 11.8% from three CLIP components is the one hint, and it is **not a
+result**: K was chosen after seeing all four values, on 25 shoots. Redo it with
+nested selection of K before building anything on it.
+
+**Conclusion for `--anchor-gain`: calibrate it once by eye and stop.** Two
+catalogs, four sliders, photometric and semantic descriptors all fail. The
+intensity is irreducibly the photographer's.
+
+**Conclusion for data collection, and it is the important one.** What is missing
+is not frames, it is *shoots*. The unexploited structure lives between shoots and
+21 of them is what stalls every test here — the external catalog has 113 shoots
+but a median of 4 frames each, so only a fifth qualify. Ten photographers giving
+30 shoots each would answer this; one photographer giving 10,000 more frames
+would not. That reframes [[Phase 5]]: ask for *many small catalogs*, not few
+large ones.
+
 ## Phase 3 — train the encoder · weeks · gated on Phase 2.5
 
 A small CNN or fine-tuned compact backbone over the degraded image, predicting
