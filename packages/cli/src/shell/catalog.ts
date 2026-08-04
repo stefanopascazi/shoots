@@ -60,6 +60,11 @@ export const COMMANDS: CommandSpec[] = [
     usage: '/develop export <path> --out <f> [--edited-only] · train --data <f> --name <n> --out <f> · predict --data <f> --profile <f> [--xmp <dir>] · diagnose --data <f>',
   },
   {
+    name: 'pipeline',
+    summary: 'Run a YAML pipeline: shoots commands in order, sharing variables',
+    usage: '/pipeline <config.yaml> [--var name=value] [--from <id>] [--dry-run] [--continue-on-error] [--json]',
+  },
+  {
     name: 'schedule',
     summary: 'Run `develop refine` daily and unattended, via the OS scheduler (cron / Task Scheduler)',
     usage: '/schedule install [--at 03:00] [--dry-run] · status · uninstall · run [--force] [--dry-run] [--json]',

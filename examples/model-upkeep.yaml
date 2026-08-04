@@ -1,0 +1,54 @@
+# The model-side chains: rebuild the develop profile from the catalog, and close
+# the loop on a shoot you have finished developing.
+#
+#   shoots pipeline examples/model-upkeep.yaml --dry-run
+#   shoots pipeline examples/model-upkeep.yaml --var catalog=D:/Photos
+#   shoots pipeline examples/model-upkeep.yaml --from refit   # resume after a fix
+#
+# `export → train` is always run together and always with the same paths, which
+# is exactly the kind of repetition a pipeline file is for.
+version: 2
+name: model-upkeep
+
+vars:
+  catalog: D:/Photos
+  shoot: D:/Shoots/2026/smith-wedding/raw
+  work: ${env:USERPROFILE}/.shoots/develop
+  dataset: ${work}/export/export.jsonl
+  profile: ${work}/profile/export.json
+
+defaults:
+  concurrency: 8
+
+steps:
+  # 1. Read every edited frame in the catalog into a training dataset.
+  - id: harvest
+    run: develop export
+    args: ${catalog}
+    with:
+      out: ${dataset}
+      edited-only: true
+      baseline: embedded-preview
+
+  # 2. Refit the profile on it.
+  - id: refit
+    run: develop train
+    with:
+      data: ${dataset}
+      out: ${profile}
+      name: my-style
+      lambda: auto
+      folds: 5
+      boldness: 0.3
+
+  # 3. Measure how much of the last prediction survived your own editing, fold
+  #    the shoot into training, and recalibrate. Off by default: it only makes
+  #    sense once you have actually developed the shoot in `shoot`.
+  - id: close-the-loop
+    run: develop refine
+    enabled: false
+    args: ${shoot}
+    with:
+      data: ${dataset}
+      profile: ${profile}
+      name: my-style

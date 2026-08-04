@@ -31,11 +31,17 @@ so scripts are unaffected.
 | [`match`](./match.md) | Learn your eye from pairwise duels: `import` → `serve` → `train` a rating profile |
 | [`develop`](./develop.md) | Personal develop-setting predictor: `init` → `edit` → `refine`, plus the steps underneath (`export`, `train`, `predict`, `feedback`, `learn`, `calibrate`, `diagnose`) |
 
+### Orchestration
+
+| Command | Purpose |
+| --- | --- |
+| [`pipeline`](./pipeline.md) | Run a [YAML pipeline](../pipelines.md): shoots commands in order, sharing variables |
+| [`schedule`](./schedule.md) | Run `develop refine` daily and unattended, via cron / the Windows Task Scheduler |
+
 ### Maintenance
 
 | Command | Purpose |
 | --- | --- |
-| [`schedule`](./schedule.md) | Run `develop refine` daily and unattended, via cron / the Windows Task Scheduler |
 | [`setup`](./setup.md) | Download & verify exiftool, LibRaw and the inference model into `~/.shoots` |
 | [`doctor`](./doctor.md) | Environment health check |
 | [`update`](./update.md) | Self-update the standalone binary |

@@ -25,7 +25,7 @@ tedious parts around them.
 | [Rating profiles](./profiles.md) | Built-in profiles, how stars are decided, learned profiles |
 | [Preference learning](./preference-learning.md) | `embeddings` → `match` duels → your own profile |
 | [Develop predictor](./develop-predictor.md) | The local "Lightroom AI": learn your edit style, predict XMP |
-| [Pipelines](./pipelines.md) | Declarative YAML pipelines (status: authorable, not yet executable) |
+| [Pipelines](./pipelines.md) | Declarative YAML pipelines: `shoots pipeline <config.yaml>` |
 | [Scripting & automation](./scripting.md) | JSON, exit codes, cron, CI, watch folders |
 | [Recipes](./recipes.md) | Complete end-to-end workflows for real shoots |
 

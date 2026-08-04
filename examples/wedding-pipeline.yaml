@@ -1,44 +1,71 @@
-# Sample shoots pipeline: card → tagged → culled → rated.
+# The develop pipeline: card → named → tagged → rated → culled → developed.
 #
-# Consumed by `shoots run <config.yaml>` (lands in a later stage).
-# Types: packages/core/src/pipeline/PipelineConfig.ts
+#   shoots pipeline examples/wedding-pipeline.yaml --dry-run
+#   shoots pipeline examples/wedding-pipeline.yaml
+#
+# Override any variable without editing the file — the same pipeline, next shoot:
+#
+#   shoots pipeline examples/wedding-pipeline.yaml --var shoot=D:/Shoots/2026/jones-wedding
 #
 # Pipelines are plain files on purpose: version them, share them across the
 # studio, run them headless from cron / CI / a watch folder.
-version: 1
+version: 2
 name: wedding-ingest
 
+# Declared once, used by every step. `raw` builds on `shoot`.
+vars:
+  card: E:/DCIM/100CANON
+  shoot: D:/Shoots/2026/smith-wedding
+  raw: ${shoot}/raw
+  studio: Jane Doe Photography
+
+# Applied to every step whose command accepts the flag — the others ignore it.
+defaults:
+  concurrency: 8
+
 steps:
-  - type: import
-    id: offload-card
-    source: "E:/DCIM/100CANON"
-    dest: "D:/Shoots/2026/smith-wedding/raw"
-    pattern: "{date}_{time}_{camera}_{seq:4}.{ext}"
-    move: false            # copy only; checksum-verified either way
+  - id: offload
+    run: import
+    args: ${card}
+    with:
+      dest: ${raw}
+      move: false # copy only; checksum-verified either way
 
-  - type: exif
-    id: studio-tags
-    set:
-      artist: "Jane Doe Photography"
-      copyright: "© 2026 Jane Doe Photography. All rights reserved."
-      keywords: [wedding, smith, "2026"]
+  - id: name-frames
+    run: rename
+    args: ${raw}
+    with:
+      pattern: "{date}_{time}_{camera}_{seq:4}.{ext}"
+      recursive: true
 
-  - type: cull
-    id: focus-check
-    threshold: 100         # Laplacian variance; tune per camera/subject
-    separate: true
-    dest: "D:/Shoots/2026/smith-wedding/culled"
+  - id: studio-tags
+    run: exif
+    args: ${raw}
+    with:
+      set-artist: ${studio}
+      set-copyright: "© 2026 ${studio}. All rights reserved."
+      set-keywords: [wedding, smith, "2026"] # a list becomes a,b,c
 
-  - type: rate
-    id: first-pass-rating
-    model: stub            # swap for 'onnx' when the real model lands
-    output: sidecar
+  # rate and cull both write triage marks rather than sidecars, so they stack
+  # instead of overwriting each other; `develop edit` folds them in at the end.
+  - id: first-pass-rating
+    run: rate
+    args: ${raw}
+    with:
+      profile: wedding
+      mark: true
 
-  # Future stage — declared now so this config keeps working unchanged later.
-  - type: export
-    id: client-proofs
-    enabled: false
-    format: jpeg
-    maxDimension: 3000
-    quality: 90
-    dest: "D:/Shoots/2026/smith-wedding/proofs"
+  - id: focus-check
+    run: cull
+    args: ${raw}
+    with:
+      mark: true
+      mark-label: reject
+      threshold: 100 # Laplacian variance; tune per camera/subject
+
+  - id: develop
+    run: develop edit
+    args: ${raw}
+    with:
+      treatment: auto
+      # Marks from the two steps above land in the sidecars here (default on).
