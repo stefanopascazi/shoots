@@ -94,7 +94,7 @@ shoots develop init <path> [options]
 | `--dry-run` | off | Print the steps and the paths, write nothing |
 
 It also takes every `train` flag — `--lambda`, `--folds`, `--group-by`,
-`--boldness`, `--gate-threshold`, `--embedding-dim`, `--all` — plus `--model`,
+`--boldness`, `--anchor-gain`, `--gate-threshold`, `--embedding-dim`, `--all` — plus `--model`,
 `--concurrency` and `--editor`. If the export fails it stops rather than
 training on a half-written dataset.
 
@@ -382,6 +382,7 @@ shoots develop train --data <file> --name <name> --out <file> [options]
 | `--lambda <n>` | `auto` | Ridge strength for every parameter, or `auto` to choose one **per parameter** by cross-validation |
 | `--folds <k>` | `5` | Cross-validation folds |
 | `--boldness <n>` | `0` | How far predictions may travel, `0`..`1`. See [below](#--boldness-how-far-a-prediction-may-travel) |
+| `--anchor-gain <n>` | `1` | Multiplier on every anchored slider's fitted correction. See [below](#--anchor-gain-how-hard-to-correct) |
 | `--gate-threshold <n>` | — | Floor under the adaptive gate, overriding what `--boldness` sets |
 | `--embedding-dim <k>` | `16` | CLIP components to keep; `0` drops the embedding, a high value keeps it raw |
 
@@ -406,6 +407,30 @@ Judge this one in your editor, not in a report.
 The gate it moves is not a fixed number either: a parameter has to clear its own
 measurement noise — the spread of its skill across held-out folds — so a tightly
 measured 3% passes where a noisy 15% does not.
+
+### `--anchor-gain`: how hard to correct
+
+Some sliders are not predicted by regression at all. They are fitted as a
+correction toward your target — a dead zone where the frame is already close
+enough, and a gain per stop of excess outside it — which is what lets a blown
+frame get a large correction the fit never saw an example of.
+
+The gain is measured from your own edits, and `--anchor-gain` scales it. It is
+not a fudge factor: **your gain is a property of the shoot, not of you.** Fitted
+inside each shoot separately on the reference catalog it runs from −0.04 to
+−2.61 — some weddings get their blown frames rescued at two and a half stops per
+stop of excess, others are left alone entirely — and the single fitted value is
+the average of two opposite habits.
+
+Predicting which one a new shoot wants would be the right answer, and there is
+not enough data to do it: only 13 shoots carried five or more frames outside the
+dead zone. So the intensity is yours to set, and the measurement still decides
+everything else — which sliders are anchored, against what, the dead zone width,
+and the sign.
+
+Raise it if the corrections feel timid on your blown frames; `1.8` roughly
+doubles them. The skill figures in the report describe the gain **as fitted**,
+so they do not move when you scale it.
 
 One model is trained **per treatment** over `shared + <branch>`, so a
 high-contrast B&W edit and a light colour edit never average into a mush.
@@ -790,8 +815,8 @@ shoots develop refine <shoot> [options]
 
 It also takes the flags of the steps it wraps: `--min-weight` / `--max-weight`
 (from `learn`), `--shrink` / `--min-shoots` (from `calibrate`), and the `train`
-flags `--lambda`, `--folds`, `--group-by`, `--boldness`, `--gate-threshold`,
-`--embedding-dim`.
+flags `--lambda`, `--folds`, `--group-by`, `--boldness`, `--anchor-gain`,
+`--gate-threshold`, `--embedding-dim`.
 
 ### Why the order is fixed
 
@@ -866,7 +891,7 @@ the model moves it, and this is the refit.
 | `--max-weight <n>` | `3` | Ceiling for a frame you overhauled |
 | `--no-train` | off | Update the dataset but stop before refitting |
 | `--dry-run` | off | Show the weighting and the plan, write nothing |
-| `--name`, `--lambda`, `--folds`, `--group-by`, `--boldness`, `--gate-threshold`, `--embedding-dim`, `--all` | — | As [`train`](#shoots-develop-train) |
+| `--name`, `--lambda`, `--folds`, `--group-by`, `--boldness`, `--anchor-gain`, `--gate-threshold`, `--embedding-dim`, `--all` | — | As [`train`](#shoots-develop-train) |
 
 Nothing is recomputed: `develop edit` already left the shoot's embeddings and
 colour features on disk, and only the *targets* changed when you developed the

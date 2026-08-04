@@ -51,6 +51,7 @@ export interface InitArgs extends CommonArgs {
   groupBy?: string;
   gateThreshold?: number;
   boldness?: number;
+  anchorGain?: number;
   embeddingDim?: number;
   all?: boolean;
   /** Export every file, not only those carrying an edit. */
@@ -145,6 +146,7 @@ export async function runInit(targetPath: string, args: InitArgs): Promise<void>
     groupBy: args.groupBy,
     gateThreshold: args.gateThreshold,
     boldness: args.boldness,
+    anchorGain: args.anchorGain,
     embeddingDim: args.embeddingDim,
     all: args.all,
     json: args.json,

@@ -102,6 +102,23 @@ export interface TrainOptions {
    */
   embeddingDim?: number;
   /**
+   * Multiplier on every anchored slider's fitted gain. 1 leaves it as measured.
+   *
+   * Not a fudge factor: on the reference catalog the gain is a property of the
+   * *shoot*, not of the photographer. Fitted inside each shoot separately it runs
+   * from −0.04 to −2.61 — some weddings get their blown frames rescued at two and
+   * a half stops per stop of excess, others are left alone entirely — and the
+   * single fitted value is the average of two opposite habits. Predicting which
+   * one a new shoot wants would be the right answer and is not possible here:
+   * only 13 shoots carry five or more frames outside the dead zone, which is
+   * nothing to fit a gain predictor on.
+   *
+   * So the intensity is the photographer's to set, and the measurement decides
+   * everything else — which sliders are anchored, against what, the dead zone,
+   * and the sign.
+   */
+  anchorGain?: number;
+  /**
    * How willing the model is to move a slider, 0..1. See {@link conservatismFor}.
    *
    * Overridden by an explicit `gateThreshold` / `frameGateThreshold`, so the two
@@ -880,7 +897,15 @@ function trainBranch(
       const fit = fitAnchor(params[k]!, spec, index, samples, { folds, shuffles: 20, maeAllowance: brakes.frameMaeAllowance });
       if (fit?.keep && (best === undefined || fit.model.tailSkill > best.tailSkill)) best = fit.model;
     }
-    if (best) anchors[key] = best;
+    if (best) {
+      // Applied after the measurement, never before it: the skills stored on the
+      // model describe the gain as fitted, and scaling is a taste decision taken
+      // on top of them.
+      const scale = options.anchorGain ?? 1;
+      anchors[key] = scale === 1
+        ? best
+        : { ...best, gain: best.gain * scale, ...(best.gainBelow !== undefined ? { gainBelow: best.gainBelow * scale } : {}) };
+    }
   }
 
   const deltaStats = columnStats(deltas);

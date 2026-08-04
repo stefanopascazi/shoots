@@ -24,6 +24,7 @@ export interface TrainArgs {
   groupBy?: string;
   gateThreshold?: number;
   boldness?: number;
+  anchorGain?: number;
   /** CLIP components to keep: 0 drops the embedding, high values keep it raw. */
   embeddingDim?: number;
   /** Report every parameter, not just the image-dependent ones. */
@@ -167,6 +168,7 @@ export async function runTrain(args: TrainArgs): Promise<void> {
     groupBy,
     gateThreshold: args.gateThreshold,
     boldness: args.boldness,
+    anchorGain: args.anchorGain,
     embeddingDim: args.embeddingDim,
     onProgress: (done, total, label) => steps.update(done, total, label),
   });

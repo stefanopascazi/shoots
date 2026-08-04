@@ -69,6 +69,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--group-by <mode>', 'held-out folds: folder (capture sessions) | none (leakage-prone)', 'folder')
     .option('--gate-threshold <n>', 'floor under the adaptive gate; overrides what --boldness sets', (v) => parseFloat(v))
     .option('--boldness <n>', 'how far predictions may travel, 0..1 (0 = safest averages, 1 = moves the sliders). Skill scores fall as this rises — judge it in your editor', (v) => parseFloat(v), 0)
+    .option('--anchor-gain <n>', "multiply every anchored slider's fitted correction (1 = as measured); your gain differs per shoot, so this is the intensity you want by default", (v) => parseFloat(v), 1)
     .option('--embedding-dim <k>', 'CLIP components to keep (0 drops it)', (v) => parseInt(v, 10))
     .option('--all', 'report every parameter, not just the image-dependent ones')
     .option('--dry-run', 'print the steps and the paths, write nothing')
@@ -144,11 +145,12 @@ export function registerDevelopCommand(program: Command): void {
     .option('--group-by <mode>', 'held-out folds: folder (whole capture sessions) | none (random, leakage-prone)', 'folder')
     .option('--gate-threshold <n>', 'floor under the adaptive gate; overrides what --boldness sets', (v) => parseFloat(v))
     .option('--boldness <n>', 'how far predictions may travel, 0..1 (0 = safest averages, 1 = moves the sliders). Skill scores fall as this rises — judge it in your editor', (v) => parseFloat(v), 0)
+    .option('--anchor-gain <n>', "multiply every anchored slider's fitted correction (1 = as measured); your gain differs per shoot, so this is the intensity you want by default", (v) => parseFloat(v), 1)
     .option('--embedding-dim <k>', 'CLIP components to keep (0 drops it, high values keep it raw)', (v) => parseInt(v, 10))
     .option('--all', 'report every parameter, not just the image-dependent ones')
     .action((opts) => runTrain({
       data: opts.data, name: opts.name, out: opts.out, lambda: opts.lambda, folds: opts.folds,
-      groupBy: opts.groupBy, gateThreshold: opts.gateThreshold, boldness: opts.boldness,
+      groupBy: opts.groupBy, gateThreshold: opts.gateThreshold, boldness: opts.boldness, anchorGain: opts.anchorGain,
       embeddingDim: opts.embeddingDim, all: opts.all,
     }));
 
@@ -200,6 +202,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--group-by <mode>', 'held-out folds: folder (capture sessions) | none (leakage-prone)', 'folder')
     .option('--gate-threshold <n>', 'floor under the adaptive gate; overrides what --boldness sets', (v) => parseFloat(v))
     .option('--boldness <n>', 'how far predictions may travel, 0..1 (0 = safest averages, 1 = moves the sliders). Skill scores fall as this rises — judge it in your editor', (v) => parseFloat(v), 0)
+    .option('--anchor-gain <n>', "multiply every anchored slider's fitted correction (1 = as measured); your gain differs per shoot, so this is the intensity you want by default", (v) => parseFloat(v), 1)
     .option('--embedding-dim <k>', 'CLIP components to keep (0 drops it)', (v) => parseInt(v, 10))
     .option('--dry-run', 'print the steps and the paths, write nothing')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -223,6 +226,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--group-by <mode>', 'held-out folds: folder (capture sessions) | none (leakage-prone)', 'folder')
     .option('--gate-threshold <n>', 'floor under the adaptive gate; overrides what --boldness sets', (v) => parseFloat(v))
     .option('--boldness <n>', 'how far predictions may travel, 0..1 (0 = safest averages, 1 = moves the sliders). Skill scores fall as this rises — judge it in your editor', (v) => parseFloat(v), 0)
+    .option('--anchor-gain <n>', "multiply every anchored slider's fitted correction (1 = as measured); your gain differs per shoot, so this is the intensity you want by default", (v) => parseFloat(v), 1)
     .option('--embedding-dim <k>', 'CLIP components to keep (0 drops it)', (v) => parseInt(v, 10))
     .option('--all', 'report every parameter, not just the image-dependent ones')
     .option('--dry-run', 'show the weighting and the plan, write nothing')

@@ -44,6 +44,7 @@ export interface RefineArgs {
   groupBy?: string;
   gateThreshold?: number;
   boldness?: number;
+  anchorGain?: number;
   embeddingDim?: number;
   minWeight?: number;
   maxWeight?: number;
@@ -146,6 +147,7 @@ export async function runRefine(targetPath: string, args: RefineArgs): Promise<v
     groupBy: args.groupBy,
     gateThreshold: args.gateThreshold,
     boldness: args.boldness,
+    anchorGain: args.anchorGain,
     embeddingDim: args.embeddingDim,
     minWeight: args.minWeight,
     maxWeight: args.maxWeight,

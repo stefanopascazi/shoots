@@ -57,6 +57,7 @@ export interface LearnArgs {
   groupBy?: string;
   gateThreshold?: number;
   boldness?: number;
+  anchorGain?: number;
   embeddingDim?: number;
   all?: boolean;
   minWeight?: number;
@@ -248,6 +249,7 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
     groupBy: args.groupBy,
     gateThreshold: args.gateThreshold,
     boldness: args.boldness,
+    anchorGain: args.anchorGain,
     embeddingDim: args.embeddingDim,
     all: args.all,
     json: args.json,
