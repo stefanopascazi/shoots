@@ -137,9 +137,13 @@ export function buildLut(t: ToneSettings, channelGain: number): Uint8Array {
     // Whites and blacks move the endpoints; highlights and shadows bend the
     // regions inside them. Each is weighted by a smooth mask so no control has a
     // visible boundary where it stops acting.
+    // Every one of these follows Camera Raw's sign: positive brightens the
+    // region it acts on, negative darkens it. Highlights and Blacks had it
+    // backwards, which made highlight recovery brighten the very areas it exists
+    // to rescue — the slider ran the wrong way and hard.
     v += wh * 0.25 * smooth((v - 0.5) / 0.5);
-    v += bl * 0.25 * smooth((0.5 - v) / 0.5) * -1;
-    v -= hi * 0.35 * smooth((v - 0.35) / 0.65) * (hi > 0 ? 1 : 1);
+    v += bl * 0.25 * smooth((0.5 - v) / 0.5);
+    v += hi * 0.35 * smooth((v - 0.35) / 0.65);
     v += sh * 0.35 * smooth((0.65 - v) / 0.65);
 
     // Contrast as an S-curve about middle grey.

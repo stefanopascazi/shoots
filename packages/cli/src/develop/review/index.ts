@@ -212,8 +212,14 @@ export async function review(
         const scaled = structuredClone(profile);
         const intensities: Intensities = { ...initial };
         for (const key of Object.keys(initial)) {
-          const v = Number(url.searchParams.get(key));
-          if (Number.isFinite(v)) intensities[key] = v;
+          // `Number(null)` is 0 and `Number.isFinite(0)` is true, so testing the
+          // parsed value alone turns every *absent* parameter into a ×0 — which
+          // is how the very first render, before any slider has been touched,
+          // came back with every anchor switched off.
+          const raw = url.searchParams.get(key);
+          if (raw === null) continue;
+          const v = Number(raw);
+          if (Number.isFinite(v) && v >= 0) intensities[key] = v;
         }
         applyIntensities(scaled, intensities);
         const treatment = resolveTreatment(scaled, item.record, 'auto');

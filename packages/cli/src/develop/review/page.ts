@@ -29,7 +29,7 @@ export function page(frames: readonly PageFrame[], initial: Record<string, numbe
   const tiles = frames
     .map(
       (f) => `
-      <figure>
+      <figure data-id="${f.id}" data-family="${f.family ?? ''}" tabindex="0">
         <img id="img-${f.id}" src="/frame/${f.id}" alt="${f.label}">
         <figcaption><strong>${f.label}</strong><br>${f.caption}</figcaption>
       </figure>`,
@@ -54,7 +54,16 @@ export function page(frames: readonly PageFrame[], initial: Record<string, numbe
   .slider input { width:100%; accent-color: var(--accent); }
   .slider output { font-variant-numeric: tabular-nums; opacity:.75; }
   .gallery { display:flex; flex-wrap:wrap; gap:14px; padding:20px 24px; }
-  figure { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px; max-width:340px; }
+  figure { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px; max-width:340px; cursor:zoom-in; outline:none; }
+  figure:focus-visible { border-color:var(--accent); }
+  /* Focus mode: one frame large, the rest as strips beside it. Nothing about the
+     sliders changes — they are per profile, not per image — but a correction is
+     far easier to judge on one big photograph than on five small ones. */
+  .gallery.focused figure { display:none; }
+  .gallery.focused figure.is-open { display:block; max-width:min(72vw, 900px); cursor:zoom-out; }
+  .gallery.focused figure.peer { display:block; max-width:110px; opacity:.6; }
+  .gallery.focused figure.peer figcaption { display:none; }
+  .slider.dimmed { opacity:.35; }
   img { display:block; width:100%; height:auto; border-radius:4px; background:#000; }
   figcaption { font-size:12px; opacity:.75; margin-top:8px; }
   .actions { margin-top:26px; display:flex; gap:10px; flex-wrap:wrap; }
@@ -65,9 +74,11 @@ export function page(frames: readonly PageFrame[], initial: Record<string, numbe
 <header>
   <h1>Calibrate your profile</h1>
   <p>These frames were picked because they are the ones each control actually changes — the
-     last one sits in the middle and should barely move. Set each slider where the correction
-     looks right to you, then save. Clarity and Texture are not shown: they are local-contrast
-     effects this preview cannot reproduce.</p>
+     last one sits in the middle and should barely move. <strong>Click a frame to study it
+     alone</strong>, Esc to come back. The sliders apply to the whole profile, not to one
+     photograph — there is one profile, and these frames are how you see what it does.
+     Clarity and Texture are not shown: they are local-contrast effects this preview
+     cannot reproduce.</p>
 </header>
 <main>
   <aside>
@@ -78,7 +89,7 @@ export function page(frames: readonly PageFrame[], initial: Record<string, numbe
     </div>
     <div id="status"></div>
   </aside>
-  <div class="gallery">${tiles}</div>
+  <div class="gallery" id="gallery">${tiles}</div>
 </main>
 <script>
   const ids = ${JSON.stringify(FAMILIES.filter((f) => initial[f.id] !== undefined).map((f) => f.id))};
@@ -109,6 +120,33 @@ export function page(frames: readonly PageFrame[], initial: Record<string, numbe
     const s = document.getElementById('s-' + id), o = document.getElementById('o-' + id);
     s.addEventListener('input', () => { o.textContent = parseFloat(s.value).toFixed(2) + '×'; apply(); });
   }
+  // Click a frame to study it alone; the others stay as strips so you can move
+  // between them without losing your place. The slider that drives the open
+  // frame stays lit and the rest dim — the controls still apply to the whole
+  // profile, this only says which one you are watching.
+  const gallery = document.getElementById('gallery');
+  let open = null;
+  function focusFrame(fig) {
+    open = fig === open ? null : fig;
+    gallery.classList.toggle('focused', open !== null);
+    for (const f of gallery.querySelectorAll('figure')) {
+      f.classList.toggle('is-open', f === open);
+      f.classList.toggle('peer', open !== null && f !== open);
+    }
+    const family = open ? open.dataset.family : '';
+    for (const id of ids) {
+      document.getElementById('s-' + id).closest('.slider')
+        .classList.toggle('dimmed', family !== '' && family !== id);
+    }
+  }
+  for (const fig of gallery.querySelectorAll('figure')) {
+    fig.addEventListener('click', () => focusFrame(fig));
+    fig.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); focusFrame(fig); }
+    });
+  }
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) focusFrame(open); });
+
   document.getElementById('reset').addEventListener('click', () => {
     for (const id of ids) {
       const s = document.getElementById('s-' + id);
