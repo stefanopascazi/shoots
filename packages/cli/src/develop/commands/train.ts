@@ -112,8 +112,30 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
       w.write(`  … ${hidden.length} style params not shown (${negative} with negative skill) — pass --all\n`);
     }
   }
+  // Anchored sliders, before the gate counts — for these the table above reports
+  // the *heads*, which inference does not use, so a row reading 0.0% there can be
+  // shipping at 0.26. Without this block the most active part of the model is
+  // invisible in its own report.
+  const anchors = Object.entries(b.anchors ?? {});
+  if (anchors.length > 0) {
+    w.write(`\n  ${anchors.length} sliders predicted as a correction toward your target, not by the heads:\n`);
+    w.write('  param                anchor           gain    below  dead zone     tail     mean\n');
+    for (const [key, a] of anchors.sort((x, y) => y[1].tailSkill - x[1].tailSkill)) {
+      w.write(
+        `  ${key.padEnd(20)} ${a.feature.padEnd(14)} ${a.gain.toFixed(2).padStart(8)} ` +
+          `${(a.gainBelow ?? a.gain).toFixed(2).padStart(8)} ${(a.deadband ?? 0).toFixed(3).padStart(10)} ` +
+          `${pct(a.tailSkill).padStart(8)} ${pct(a.skill).padStart(8)}\n`,
+      );
+    }
+    w.write('  "tail" is skill on the worst fifth of frames — the ones a constant fails. It is\n');
+    w.write('  what selects an anchor; "mean" may be worse, never by more than tail gains.\n\n');
+  }
   if (b.gatedParams.length > 0) {
-    w.write(`  constant (both heads gated): ${b.gatedParams.length}/${b.perParam.length} params\n`);
+    const alsoAnchored = b.gatedParams.filter((k) => b.anchors?.[k]).length;
+    w.write(
+      `  constant (both heads gated): ${b.gatedParams.length}/${b.perParam.length} params` +
+        (alsoAnchored > 0 ? ` (${alsoAnchored} of them anchored, so not constant in practice)\n` : '\n'),
+    );
   }
   if (b.flatParams.length > 0) {
     w.write(
