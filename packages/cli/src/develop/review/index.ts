@@ -198,12 +198,31 @@ export async function review(
       res.end();
     });
 
-    server.on('error', () => finish(null));
-    server.listen(options.port ?? 7391, '127.0.0.1', () => {
+    // The port is an implementation detail unless the caller named one: if 7391
+    // is taken — another shoots review, a dev server, anything — asking the OS
+    // for a free one is what the photographer wanted anyway. A named port is a
+    // different promise, so that one fails loudly instead of moving silently.
+    const wanted = options.port;
+    let retried = false;
+    server.on('error', (e: NodeJS.ErrnoException) => {
+      if (e.code === 'EADDRINUSE' && wanted === undefined && !retried) {
+        retried = true;
+        server.listen(0, '127.0.0.1');
+        return;
+      }
+      status(
+        e.code === 'EADDRINUSE'
+          ? `port ${wanted} is already in use — pass a free --review-port, or omit it to let one be chosen`
+          : `could not open the review page: ${e.message}`,
+      );
+      finish(null);
+    });
+    server.on('listening', () => {
       const addr = server.address();
-      const port = typeof addr === 'object' && addr ? addr.port : options.port;
+      const port = typeof addr === 'object' && addr ? addr.port : wanted;
       status(`review at http://localhost:${port} — save there, or press Ctrl-C to keep the fitted values`);
     });
+    server.listen(wanted ?? 7391, '127.0.0.1');
     process.once('SIGINT', () => finish(null));
   });
 }

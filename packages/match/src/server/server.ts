@@ -145,11 +145,27 @@ export function createServer(db: Db): Server {
   });
 }
 
-/** Starts the server and resolves once it is accepting connections. */
+/**
+ * Starts the server and resolves once it is accepting connections.
+ *
+ * A busy port is the one failure a caller will actually hit, and node's raw
+ * `EADDRINUSE` names neither the port nor the flag that changes it. Unlike the
+ * develop review screen this one does *not* fall back to a free port: the
+ * address was asked for by name, and quietly serving somewhere else would leave
+ * a bookmark pointing at nothing.
+ */
 export function serve(db: Db, opts: ServeOptions): Promise<Server> {
   const server = createServer(db);
   return new Promise((listening, reject) => {
-    server.once('error', reject);
+    server.once('error', (e: NodeJS.ErrnoException) => {
+      if (e.code === 'EADDRINUSE') {
+        reject(new Error(`port ${opts.port} is already in use — pass a free --port`));
+      } else if (e.code === 'EACCES') {
+        reject(new Error(`not allowed to open port ${opts.port} — ports below 1024 need privileges; pass a higher --port`));
+      } else {
+        reject(e);
+      }
+    });
     server.listen(opts.port, opts.host, () => listening(server));
   });
 }
