@@ -15,156 +15,160 @@ baseline for the model that produced it.
 
 | | |
 |---|---|
-| commit | `200935c` |
-| dataset | `train_v2.jsonl` — 2422 records, 553 edited |
+| commit | `c21fdad` |
+| dataset | `train_v2.jsonl` — 2421 records, 553 edited (428 colour + 125 B&W) |
 | baseline render | `external` (neutral, external RAW developer) |
 | colour features | 50 |
 | fold policy | whole sessions held out (`--group-by folder`) |
-| gate | skill ≤ 0.02 → the photographer's constant |
+| **boldness** | **1** (`--boldness 1`) |
+
+**The boldness matters more than anything else here.** At the default of 0 this
+same fit gates 76 of 77 colour parameters and scores 0.0137 / 0.0132; at 1 it
+gates 21 and scores 0.0759 / 0.0342. Numbers from the two are not comparable, and
+nothing in this file applies to a profile trained without the flag.
 
 Skill is `1 - MAE_model / MAE_constant` on photographs from shoots the fit never
 saw. **±fold is the spread between held-out folds: a difference smaller than it
-is not a difference.** Several parameters below carry ±25% or more — on a few
+is not a difference.** Several parameters below carry ±20% or more — on a few
 hundred images that is normal, and it is why single-parameter movements of two
 or three points mean nothing on their own.
 
-## Colour branch
+## Headline
 
-77 parameters, 70 gated.
+| | colour | B&W |
+|---|---:|---:|
+| images / shoots | 428 / 32 | 125 / 32 |
+| image-dependent skill | 0.0759 | 0.0328 |
+| … with random folds | 0.1487 | 0.0687 |
+| within-shoot skill | 0.0342 | −0.0021 |
+| constant (both heads gated) | 21/77 | 24/41 |
 
-| parameter | skill | ±fold | λ | state |
-|---|---:|---:|---:|---|
-| `Contrast2012` | 23.8% | ±27.3% | 100 | **predicted** |
-| `Highlights2012` | 14.0% | ±10.2% | 1000 | **predicted** |
-| `Exposure2012` | 10.2% | ±3.9% | 300 | **predicted** |
-| `ToneCurvePoint96` | 5.0% | ±7.4% | 30000 | **predicted** |
-| `Blacks2012` | 4.7% | ±4.7% | 100 | **predicted** |
-| `ToneCurvePoint32` | 3.4% | ±29.3% | 3000 | **predicted** |
-| `Texture` | 2.2% | ±20.3% | 10000 | **predicted** |
-| `ToneCurvePoint64` | 1.7% | ±20.0% | 10000 | gated → constant |
-| `Dehaze` | 1.0% | ±11.8% | 10000 | gated → constant |
-| `ToneCurvePoint224` | 0.1% | ±6.5% | 30000 | gated → constant |
-| `ParametricHighlights` | 0.0% | ±0.0% | 30000 | never moves |
-| `ParametricLights` | 0.0% | ±0.0% | 30000 | never moves |
-| `ParametricDarks` | 0.0% | ±0.0% | 30000 | never moves |
-| `ParametricShadows` | 0.0% | ±0.0% | 30000 | never moves |
-| `ShadowTint` | 0.0% | ±0.0% | 30000 | never moves |
-| `HueAdjustmentPurple` | 0.0% | ±0.0% | 30000 | never moves |
-| `HueAdjustmentMagenta` | 0.0% | ±0.0% | 30000 | never moves |
-| `LuminanceAdjustmentPurple` | 0.0% | ±0.0% | 30000 | never moves |
-| `LuminanceAdjustmentMagenta` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeShadowHue` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeShadowSat` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeShadowLum` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeMidtoneLum` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeHighlightHue` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeHighlightSat` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeHighlightLum` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeGlobalHue` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeGlobalSat` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeGlobalLum` | 0.0% | ±0.0% | 30000 | never moves |
-| `ColorGradeBlending` | 0.0% | ±0.0% | 30000 | never moves |
-| `SplitToningBalance` | 0.0% | ±0.0% | 30000 | never moves |
-| `ToneCurvePoint128` | -0.0% | ±9.3% | 30000 | gated → constant |
-| `ToneCurvePoint255` | -0.2% | ±39.6% | 3000 | gated → constant |
-| `GreenSaturation` | -0.7% | ±5.5% | 30000 | gated → constant |
-| `Vibrance` | -1.0% | ±10.2% | 3000 | gated → constant |
-| `SaturationAdjustmentGreen` | -1.0% | ±10.8% | 30000 | gated → constant |
-| `ToneCurvePoint192` | -1.2% | ±2.9% | 30000 | gated → constant |
-| `SaturationAdjustmentPurple` | -1.4% | ±9.4% | 30000 | gated → constant |
-| `HueAdjustmentBlue` | -1.6% | ±6.2% | 30000 | gated → constant |
-| `LuminanceAdjustmentGreen` | -1.6% | ±7.1% | 30000 | gated → constant |
-| `HueAdjustmentGreen` | -1.6% | ±7.9% | 30000 | gated → constant |
-| `LuminanceAdjustmentYellow` | -1.8% | ±9.7% | 30000 | gated → constant |
-| `ColorGradeMidtoneHue` | -1.8% | ±5.9% | 30000 | gated → constant |
-| `HueAdjustmentAqua` | -1.8% | ±18.7% | 30000 | gated → constant |
-| `Temperature` | -2.1% | ±8.6% | 30000 | gated → constant |
-| `LuminanceAdjustmentBlue` | -2.3% | ±25.9% | 30000 | gated → constant |
-| `RedHue` | -2.4% | ±17.1% | 30000 | gated → constant |
-| `GrainAmount` | -2.4% | ±9.8% | 30000 | gated → constant |
-| `LuminanceAdjustmentAqua` | -2.4% | ±10.7% | 30000 | gated → constant |
-| `BlueHue` | -2.4% | ±10.0% | 30000 | gated → constant |
-| `GreenHue` | -2.5% | ±89.9% | 30000 | gated → constant |
-| `ColorGradeMidtoneSat` | -2.5% | ±11.2% | 30000 | gated → constant |
-| `Shadows2012` | -2.8% | ±25.9% | 10000 | gated → constant |
-| `ToneCurvePoint0` | -2.9% | ±27.9% | 3000 | gated → constant |
-| `LuminanceAdjustmentOrange` | -3.0% | ±7.4% | 30000 | gated → constant |
-| `Whites2012` | -3.0% | ±16.7% | 10000 | gated → constant |
-| `ToneCurvePoint160` | -3.4% | ±22.8% | 30000 | gated → constant |
-| `HueAdjustmentOrange` | -3.4% | ±16.3% | 30000 | gated → constant |
-| `SaturationAdjustmentMagenta` | -3.5% | ±12.2% | 30000 | gated → constant |
-| `LuminanceAdjustmentRed` | -3.5% | ±11.4% | 30000 | gated → constant |
-| `HueAdjustmentRed` | -3.7% | ±9.5% | 30000 | gated → constant |
-| `BlueSaturation` | -4.0% | ±16.9% | 30000 | gated → constant |
-| `SaturationAdjustmentBlue` | -4.1% | ±14.8% | 30000 | gated → constant |
-| `SaturationAdjustmentRed` | -4.5% | ±15.8% | 30000 | gated → constant |
-| `SaturationAdjustmentOrange` | -5.2% | ±14.4% | 30000 | gated → constant |
-| `RedSaturation` | -5.2% | ±30.2% | 10000 | gated → constant |
-| `Clarity2012` | -5.6% | ±22.4% | 30000 | gated → constant |
-| `SplitToningHighlightHue` | -5.7% | ±12.7% | 30000 | gated → constant |
-| `HueAdjustmentYellow` | -7.4% | ±18.4% | 30000 | gated → constant |
-| `SaturationAdjustmentAqua` | -7.5% | ±2.1% | 30000 | gated → constant |
-| `SaturationAdjustmentYellow` | -7.9% | ±101.5% | 30000 | gated → constant |
-| `PostCropVignetteAmount` | -15.1% | ±58.9% | 30000 | gated → constant |
-| `SplitToningShadowHue` | -16.3% | ±62.2% | 30000 | gated → constant |
-| `SplitToningShadowSaturation` | -17.4% | ±71.4% | 30000 | gated → constant |
-| `SplitToningHighlightSaturation` | -19.1% | ±79.0% | 30000 | gated → constant |
-| `Saturation` | -24.3% | ±83.2% | 30000 | gated → constant |
-| `Tint` | -27.7% | ±71.1% | 10000 | gated → constant |
+The gap between grouped and random folds is session leakage, not a second result.
+**Read `within-shoot`, not the headline** — a model that only reproduces per-shoot
+averages scores fine on the headline and is useless in Lightroom.
 
-## Black & white branch
+## Anchored sliders — what actually ships for these
 
-41 parameters, 24 gated.
+These do **not** come from the two heads. They are fitted as a correction toward
+a target, `ȳ + gain·max(0, gap − d) + gainBelow·min(0, gap + d)`, with the gain
+unshrunk. See `train/anchor.ts`.
 
-| parameter | skill | ±fold | λ | state |
-|---|---:|---:|---:|---|
-| `GrayMixerMagenta` | 33.6% | ±4.3% | 100 | **predicted** |
-| `GrayMixerRed` | 33.2% | ±4.1% | 100 | **predicted** |
-| `GrayMixerPurple` | 31.7% | ±6.3% | 100 | **predicted** |
-| `GrayMixerYellow` | 29.2% | ±4.3% | 100 | **predicted** |
-| `GrayMixerOrange` | 26.5% | ±6.1% | 100 | **predicted** |
-| `GrayMixerBlue` | 25.2% | ±16.0% | 100 | **predicted** |
-| `Dehaze` | 24.2% | ±16.3% | 100 | **predicted** |
-| `Contrast2012` | 17.7% | ±12.4% | 100 | **predicted** |
-| `ToneCurvePoint224` | 12.5% | ±9.8% | 100 | **predicted** |
-| `GrayMixerAqua` | 12.4% | ±15.6% | 100 | **predicted** |
-| `Tint` | 11.7% | ±12.1% | 100 | **predicted** |
-| `ToneCurvePoint192` | 10.4% | ±8.2% | 100 | **predicted** |
-| `ToneCurvePoint160` | 9.8% | ±16.6% | 100 | **predicted** |
-| `GrayMixerGreen` | 9.3% | ±15.6% | 100 | **predicted** |
-| `Blacks2012` | 7.9% | ±7.3% | 100 | **predicted** |
-| `Texture` | 4.7% | ±6.0% | 100 | **predicted** |
-| `ToneCurvePoint255` | 3.0% | ±8.6% | 100 | **predicted** |
-| `Whites2012` | 0.6% | ±4.3% | 300 | gated → constant |
-| `Shadows2012` | 0.6% | ±4.3% | 1000 | gated → constant |
-| `PostCropVignetteAmount` | 0.4% | ±3.2% | 3000 | gated → constant |
-| `ParametricHighlights` | 0.0% | ±0.0% | 30000 | never moves |
-| `ParametricLights` | 0.0% | ±0.0% | 30000 | never moves |
-| `ParametricDarks` | 0.0% | ±0.0% | 30000 | never moves |
-| `ParametricShadows` | 0.0% | ±0.0% | 30000 | never moves |
-| `ShadowTint` | 0.0% | ±0.0% | 30000 | never moves |
-| `RedHue` | 0.0% | ±0.0% | 30000 | never moves |
-| `RedSaturation` | 0.0% | ±0.0% | 30000 | never moves |
-| `GreenHue` | 0.0% | ±0.0% | 30000 | never moves |
-| `GreenSaturation` | 0.0% | ±0.0% | 30000 | never moves |
-| `BlueHue` | 0.0% | ±0.0% | 30000 | never moves |
-| `BlueSaturation` | 0.0% | ±0.0% | 30000 | never moves |
-| `ToneCurvePoint0` | -0.6% | ±1.5% | 100 | gated → constant |
-| `Exposure2012` | -0.7% | ±10.0% | 300 | gated → constant |
-| `GrainAmount` | -0.8% | ±1.8% | 30000 | gated → constant |
-| `Clarity2012` | -1.6% | ±2.4% | 30000 | gated → constant |
-| `ToneCurvePoint128` | -1.7% | ±5.9% | 1000 | gated → constant |
-| `Highlights2012` | -2.2% | ±1.4% | 30000 | gated → constant |
-| `ToneCurvePoint32` | -4.3% | ±6.5% | 100 | gated → constant |
-| `ToneCurvePoint64` | -8.3% | ±12.2% | 10000 | gated → constant |
-| `ToneCurvePoint96` | -8.7% | ±10.0% | 30000 | gated → constant |
-| `Temperature` | -9.2% | ±11.6% | 30000 | gated → constant |
+| slider | anchor | gain above | gain below | dead zone | tail skill | mean skill |
+|---|---|---:|---:|---:|---:|---:|
+| `Dehaze` | detailCoarse | −102.3 | +256.1 | 0 | **0.258** | 0.258 |
+| `Exposure2012` | lumaMean (log2) | −1.41 | +0.08 | 0.514 | **0.216** | 0.124 |
+| `Highlights2012` | lumaP99 | −32.7 | −86.5 | 0 | **0.165** | 0.139 |
+| `Whites2012` | clipHigh | +177.3 | −2366.3 | 0 | 0.120 | 0.281 |
+| `Vibrance` | satStd | −22.5 | −45.4 | 0 | 0.077 | 0.032 |
+| `Texture` | detailFine | +169.4 | +6356.5 | 0.012 | 0.024 | 0.024 |
+
+B&W keeps one: `Dehaze` on `darkChannel`, tail 0.227.
+
+**Tail skill is over the worst fifth of frames** — the ones carrying the largest
+corrections, and the only place a preset and a prediction visibly differ. It is
+what selects an anchor; mean skill only has to clear the frame head's error
+allowance, because an unshrunk gain always costs average MAE.
+
+`Exposure2012` reads as a rule: ±0.51 stops of do-nothing, then −1.41 stops per
+stop of excess above it and +0.08 below. This photographer pulls overexposure
+back hard and leaves underexposure alone.
+
+### Trap: the per-parameter tables below do not describe these
+
+For an anchored slider the table reports the **heads'** held-out skill, which is
+not what inference uses — the anchor replaces both heads. `Dehaze` reads −0.5% in
+the colour table and ships at 0.258; `Texture` and `Vibrance` read 0.0% and ship
+at 0.024 and 0.077. Read the anchor table above for those six, and the tables
+below for everything else.
+
+## Predicted spread against the photographer's own
+
+The number that says whether it is a preset or a prediction. Colour branch,
+predicted over all 2421 records against the 553 real edits.
+
+| slider | predicted sd | true sd | predicted range | true range |
+|---|---:|---:|---|---|
+| `Exposure2012` | 0.30 | 0.58 | [−1.5, 0.5] | [−3.5, 2.4] |
+| `Highlights2012` | 17.3 | 33.0 | [−68.5, 0.7] | [−100, 41] |
+| `Whites2012` | 6.2 | 24.0 | [−9.6, 66.2] | [−100, 61] |
+| `Vibrance` | 2.4 | 8.4 | [2.7, 19.0] | [−20, 23] |
+| `Texture` | 2.1 | 8.2 | [−11.2, 9.8] | [−26, 100] |
+| `Dehaze` | 1.5 | 6.4 | [−5.2, 1.3] | [−22, 61] |
+| `Clarity2012` | 1.1 | 7.5 | [−0.5, 5.4] | [−20, 56] |
+| `Saturation` | **0.00** | 11.2 | constant | [−35, 14] |
+
+Everything sits at a quarter to a half of the photographer's own spread. That is
+the honest state: the model moves now, and not yet as far as they do.
+
+`Saturation` is the one that stays a constant, and its own data supports it — it
+tracks neither `satMean` nor `satStd` (−0.03 pooled, −0.005 within a shoot).
+Whatever drives it is not the scene's colour.
+
+## Colour branch — the parameters that carry anything
+
+77 parameters, 21 constant. Only the non-zero rows are listed; the remaining ~50
+sit at 0.0% (HSL, colour grading, split toning, parametric curve).
+
+| parameter | end-end | ±fold | random | shoot | in-shoot | reach |
+|---|---:|---:|---:|---:|---:|---:|
+| `Contrast2012` | 20.7% | ±15.6% | 40.1% | 20.5% | −0.9% | 8.00 |
+| `Highlights2012` | 19.8% | ±14.2% | 27.5% | 15.3% | **6.7%** | 1.03 |
+| `Exposure2012` | 13.8% | ±5.2% | 19.9% | 2.9% | **9.3%** | 8.00 |
+| `Shadows2012` | 9.1% | ±13.7% | 17.4% | 9.2% | −0.5% | 8.00 |
+| `ToneCurvePoint0` | 5.6% | ±30.0% | 12.0% | 5.6% | 0.0% | 0.00 |
+| `RedSaturation` | 5.6% | ±22.4% | 12.3% | 5.6% | 0.0% | 0.00 |
+| `ToneCurvePoint64` | 4.0% | ±12.9% | 11.7% | 3.9% | −4.3% | 0.06 |
+| `ToneCurvePoint96` | 4.0% | ±19.6% | 19.2% | 3.9% | −2.3% | 0.03 |
+| `ToneCurvePoint32` | 3.7% | ±13.0% | 8.1% | 3.5% | −3.8% | 2.83 |
+| `Temperature` | 3.3% | ±24.9% | 20.3% | 0.0% | **13.0%** | 0.78 |
+| `Whites2012` | 3.1% | ±7.6% | 4.9% | 0.0% | 0.4% | 0.51 |
+| `Blacks2012` | 1.8% | ±1.9% | 6.3% | 1.0% | 1.2% | 0.55 |
+| `HueAdjustmentRed` | 1.5% | ±20.7% | 0.6% | 1.5% | 0.0% | 0.00 |
+
+Worst rows, for the record: `SaturationAdjustmentMagenta` −6.5%, `RedHue` −3.3%,
+`GreenHue` −2.2%, `BlueSaturation` −1.8%. All within their own ±fold.
+
+`Exposure2012` and `Temperature` are the only two with real in-shoot skill
+(9.3% and 13.0%) — they tell two frames of the same wedding apart. `Contrast2012`
+has the highest headline and −0.9% in-shoot: it is a per-shoot level and nothing
+more.
+
+## B&W branch
+
+41 parameters, 24 constant.
+
+| parameter | end-end | ±fold | random | shoot | in-shoot | reach |
+|---|---:|---:|---:|---:|---:|---:|
+| `ToneCurvePoint96` | 18.2% | ±10.5% | 40.6% | 18.2% | −0.0% | 0.00 |
+| `ToneCurvePoint64` | 16.7% | ±22.4% | 46.9% | 16.7% | 0.0% | 0.00 |
+| `ToneCurvePoint32` | 14.9% | ±24.1% | 51.9% | 14.9% | 0.0% | 0.00 |
+| `Dehaze` | 13.2% | ±15.4% | 26.7% | 13.2% | 0.0% | 0.00 |
+| `GrayMixerMagenta` | 6.6% | ±10.1% | 30.5% | 6.4% | −3.0% | 0.02 |
+| `Contrast2012` | 6.2% | ±8.6% | 13.0% | 6.2% | 0.0% | 0.00 |
+| `GrayMixerYellow` | 5.9% | ±11.3% | 28.3% | 5.8% | −1.0% | 0.01 |
+| `GrayMixerPurple` | 5.8% | ±9.6% | 27.1% | 5.7% | −1.1% | 0.01 |
+| `GrayMixerRed` | 5.4% | ±8.7% | 25.9% | 5.1% | −2.6% | 0.02 |
+| `Tint` | 4.8% | ±6.0% | 14.0% | 4.5% | −0.3% | 8.00 |
+| `Exposure2012` | 4.3% | ±6.9% | 9.7% | 3.6% | −1.3% | 8.00 |
+| `GrayMixerAqua` | 4.0% | ±6.8% | 17.2% | 4.0% | 0.0% | 0.00 |
+| `Whites2012` | 3.9% | ±7.9% | 3.9% | 3.9% | 0.0% | 0.00 |
+| `GrayMixerOrange` | 3.7% | ±6.5% | 18.5% | 3.5% | −1.8% | 0.02 |
+| `GrayMixerBlue` | 2.8% | ±6.6% | 15.3% | 2.7% | −0.7% | 0.01 |
+
+Within-shoot skill is −0.0021: on 125 images the B&W branch predicts a per-shoot
+level and nothing per-frame. The `GrayMixer*` family, which scored 25–34% in the
+previous baseline, now reads 3–7% — that earlier run was scored before the level
+and frame heads were separated, so the two figures answer different questions.
 
 ## How to use this
 
 1. Change one thing.
-2. Re-run `develop train` on the **same** `train_v2.jsonl` — or re-export in
-   full if the feature vector changed. A partial export silently starves the
-   session context and invalidates every comparison.
-3. Diff against the table above, discounting anything inside ±fold.
-4. Regenerate this file when the change lands.
+2. Re-run `develop train` on the **same** `train_v2.jsonl`, **with
+   `--boldness 1`** — or re-export in full if the feature vector changed. A
+   partial export silently starves the session context and invalidates every
+   comparison.
+3. Diff against the tables above, discounting anything inside ±fold.
+4. For the six anchored sliders, diff the anchor table and the predicted-spread
+   table instead: their rows in the per-parameter tables describe machinery that
+   no longer decides their output.
+5. Regenerate this file when the change lands.
