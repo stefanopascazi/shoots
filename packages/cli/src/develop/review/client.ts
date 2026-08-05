@@ -16,7 +16,7 @@
  * Written in ES2020 without template literals: this whole file is interpolated
  * into one, and a nested backtick would be a debugging session nobody needs.
  */
-import { FRAGMENT_SHADER, VERTEX_SHADER } from './glsl.js';
+import { FRAGMENT_SHADER, QUAD, VERTEX_SHADER } from './glsl.js';
 
 /** Uniforms the shader takes, in the order they are set. */
 const SLIDER_UNIFORMS = [
@@ -60,6 +60,7 @@ export const CLIENT_SCRIPT = `
 'use strict';
 var VERT = ${JSON.stringify(VERTEX_SHADER)};
 var FRAG = ${JSON.stringify(FRAGMENT_SHADER)};
+var QUAD = ${JSON.stringify(QUAD)};
 var SLIDERS = ['${SLIDER_UNIFORMS.join("','")}'];
 var UNIFORMS = ['${uniformNames}'];
 
@@ -106,10 +107,51 @@ function initGL() {
   gl.uniform1i(loc.uImage, 0);
   gl.uniform1i(loc.uDetail, 1);
   gl.uniform1i(loc.uCurve, 2);
-  // The vertex shader builds its own triangle from gl_VertexID, so there is no
-  // buffer to bind — but a VAO must still be bound for the draw to be valid.
   gl.bindVertexArray(gl.createVertexArray());
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(QUAD), gl.STATIC_DRAW);
+  var aPos = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
   G = { gl: gl, canvas: canvas, prog: prog, loc: loc };
+}
+
+/**
+ * Draw a 2x2 texture of known colours and read back the corners.
+ *
+ * Everything above this line is arithmetic that can be checked without a GPU;
+ * everything below depends on the driver actually drawing the quad where the
+ * shader says. This is the one thing that cannot be tested anywhere but here, so
+ * it is tested here — and it is what caught the geometry being wrong on this
+ * machine while every buffer and every upload was correct.
+ *
+ * Returns null when the corners land where they should.
+ */
+function selfTest() {
+  var gl = G.gl;
+  var probe = {
+    width: 2, height: 2,
+    ramp: { samples: [{ scale: 0, value: 0, wb: [1, 1, 1], u: {} }, { scale: 1, value: 0, wb: [1, 1, 1], u: {} }] },
+    // Top-left red, top-right green, bottom-left blue, bottom-right white.
+    image: texture(gl, gl.RGBA32F, gl.RGBA, gl.FLOAT, 2, 2, new Float32Array([
+      1, 0, 0, 1,  0, 1, 0, 1,
+      0, 0, 1, 1,  1, 1, 1, 1
+    ])),
+    detail: texture(gl, gl.RG32F, gl.RG, gl.FLOAT, 2, 2, new Float32Array(8)),
+    curve: curveTexture(gl, [], [0, 0, 0, 0])
+  };
+  draw(probe, { wb: [1, 1, 1], u: {} }, false);
+  var px = new Uint8Array(16);
+  gl.readPixels(0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  // readPixels is bottom-up, so row 0 here is the bottom of the image.
+  var brightest = function (o) {
+    var c = [px[o], px[o + 1], px[o + 2]];
+    var m = Math.max(c[0], c[1], c[2]);
+    return c[0] === m && c[1] === m && c[2] === m ? 'white' : c[0] === m ? 'red' : c[1] === m ? 'green' : 'blue';
+  };
+  var got = [brightest(8), brightest(12), brightest(0), brightest(4)].join(',');
+  var want = 'red,green,blue,white';
+  return got === want ? null : 'corners came back ' + got + ', expected ' + want;
 }
 
 function texture(gl, internal, format, type, w, h, data) {
@@ -120,7 +162,14 @@ function texture(gl, internal, format, type, w, h, data) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+  gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, data);
+  var err = gl.getError();
+  if (err !== gl.NO_ERROR) throw new Error('texture ' + w + 'x' + h + ' rejected: GL error ' + err);
   return t;
 }
 
@@ -180,10 +229,7 @@ function detailTexture(gl, rgb, w, h) {
     out[k * 2] = logLuma[k] - fine[k];
     out[k * 2 + 1] = logLuma[k] - coarse[k];
   }
-  // Half-float storage from float input: these are log2 differences of about
-  // ±5, so ten bits of mantissa is far more than the eye can be shown, and it
-  // halves what a 1800px frame costs on the GPU.
-  return texture(gl, gl.RG16F, gl.RG, gl.FLOAT, w, h, out);
+  return texture(gl, gl.RG32F, gl.RG, gl.FLOAT, w, h, out);
 }
 
 /* ── Curves ─────────────────────────────────────────────────────────────── */
@@ -270,7 +316,7 @@ function draw(frame, sample, dither) {
   gl.uniform3f(G.loc.uWb, sample.wb[0], sample.wb[1], sample.wb[2]);
   gl.uniform1f(G.loc.uDither, dither ? 1 : 0);
   for (var i = 0; i < SLIDERS.length; i++) gl.uniform1f(G.loc[UNIFORMS[i]], sample.u[SLIDERS[i]] || 0);
-  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
 
 /** The sample at an arbitrary intensity, interpolated between the two nearest. */
@@ -386,10 +432,11 @@ async function loadFrame(step) {
     width: w,
     height: h,
     ramp: ramp,
-    // Half-float, not full: scene-linear values carry their precision in the
-    // exponent, so ten bits of mantissa is a constant 0.05% everywhere —
-    // including the shadows, where a fixed-point buffer would run out first.
-    image: texture(gl, gl.RGBA16F, gl.RGBA, gl.FLOAT, w, h, rgba),
+    // Full float storage. Half would be plenty for the data — scene-linear
+    // values keep their precision in the exponent — but 32F is the combination
+    // every WebGL2 implementation takes without argument, and this is not the
+    // place to be clever about memory.
+    image: texture(gl, gl.RGBA32F, gl.RGBA, gl.FLOAT, w, h, rgba),
     detail: detailTexture(gl, rgb, w, h),
     curve: curveTexture(gl, ramp.curve, ramp.parametric)
   };
@@ -586,6 +633,16 @@ async function boot() {
   // does not announce five controls while the screen shows one. Only this side
   // knows: whether a control is worth offering is decided by the render.
   var report = { renderer: String(G.gl.getParameter(G.gl.RENDERER)), steps: [] };
+  var broken = selfTest();
+  report.selfTest = broken || 'ok';
+  if (broken) {
+    // Nothing below this point can be trusted if the quad is not where the
+    // shader put it, and a wrong picture calibrated confidently is worse than
+    // no picture at all.
+    fetch('/diag', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(report) });
+    fail('This browser is not drawing correctly — ' + broken + '. Nothing here can be trusted, so nothing is shown. The fitted values are kept.');
+    return;
+  }
   for (var i = 0; i < candidates.length; i++) {
     bootEl.textContent = 'Preparing ' + candidates[i].label + '… (' + (i + 1) + ' of ' + candidates.length + ')';
     var frame;
@@ -611,7 +668,6 @@ async function boot() {
     report.steps.push({ label: candidates[i].label, change: change, size: frame.width + 'x' + frame.height });
     kept.push(frame);
   }
-  fetch('/diag', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(report) });
   frames = kept;
   if (frames.length === 0) {
     fail('None of the anchored controls change these photographs enough to be worth judging — close this tab and the fitted values are kept.');
@@ -644,6 +700,18 @@ async function boot() {
   // The strip left the canvas showing the last frame it drew; put the one on
   // screen back.
   show(0);
+
+  // A picture of what this GPU actually produced, sent home with the report.
+  // Nothing else can answer "is it rendering correctly" from a terminal: the
+  // renderer is in the browser, and a description of a wrong image is not the
+  // image. Small and lossy on purpose — it is evidence, not a deliverable.
+  var shot = document.createElement('canvas');
+  shot.width = 420;
+  shot.height = Math.max(1, Math.round((420 * frames[0].height) / frames[0].width));
+  shot.getContext('2d').drawImage(G.canvas, 0, 0, shot.width, shot.height);
+  report.shot = shot.toDataURL('image/jpeg', 0.85);
+  report.canvas = G.canvas.width + 'x' + G.canvas.height + ' shown at ' + G.canvas.style.width + ' x ' + G.canvas.style.height;
+  fetch('/diag', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(report) });
 }
 
 document.addEventListener('keydown', function (e) {

@@ -26,6 +26,9 @@
  */
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { decode } from './preview.js';
 import { page, type PageStep } from './page.js';
 import { buildRamp, MAX_SCALE } from './ramp.js';
@@ -214,11 +217,24 @@ export async function review(
         try {
           const diag = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
             renderer?: string;
+            selfTest?: string;
+            canvas?: string;
+            shot?: string;
             steps?: { label: string; change?: number; size?: string; dropped?: string }[];
           };
           status(`the browser is rendering on: ${diag.renderer ?? 'unknown'}`);
+          if (diag.selfTest) status(`  draw self-test: ${diag.selfTest}`);
+          if (diag.canvas) status(`  canvas ${diag.canvas}`);
           for (const s of diag.steps ?? []) {
             status(s.dropped ? `  ${s.label}: dropped — ${s.dropped}` : `  ${s.label}: ${s.size}, moves ${((s.change ?? 0) * 100).toFixed(1)}%`);
+          }
+          // A frame as the GPU drew it, on disk. Whether the shader is right is
+          // not a question a log line can answer.
+          const shot = /^data:image\/jpeg;base64,(.+)$/.exec(diag.shot ?? '');
+          if (shot) {
+            const file = path.join(tmpdir(), 'shoots-review-render.jpg');
+            await writeFile(file, Buffer.from(shot[1]!, 'base64'));
+            status(`  what it drew: ${file}`);
           }
         } catch {
           // A malformed report is not a reason to interrupt a review.

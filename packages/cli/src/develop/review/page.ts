@@ -85,6 +85,10 @@ export function page(steps: readonly PageStep[]): string {
   @media (max-width:820px) { main { grid-template-columns:1fr; } }
 
   #boot { display:grid; place-items:center; padding:40px; color:var(--muted); text-align:center; max-width:52ch; margin:0 auto; }
+  /* An id beats [hidden]'s display:none on specificity, so without this the
+     boot message never leaves — and it keeps a grid row, which is what made the
+     stage measure a fraction of the height it actually had. */
+  #boot[hidden] { display:none; }
 
   .stages { position:relative; min-height:0; padding:16px; display:grid; place-items:center; overflow:hidden; }
   .stage { margin:0; width:100%; height:100%; min-height:0; display:grid; place-items:center; }

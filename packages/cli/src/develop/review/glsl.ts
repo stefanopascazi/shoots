@@ -32,14 +32,29 @@
  * defines over encoded values, come after it.
  */
 
-/** A full-screen triangle. `vUv` is flipped so row 0 of the buffer is the top. */
+/**
+ * A full-screen quad from a real vertex buffer.
+ *
+ * The obvious version of this builds its own geometry out of `gl_VertexID` and
+ * needs no buffer at all. It is a common trick and it is not reliable: with no
+ * array buffer bound, some drivers — ANGLE and SwiftShader among them, which is
+ * what a browser falls back to — do not feed it a usable vertex index. The
+ * geometry comes out wrong, so the interpolated UVs come out wrong, and the
+ * frame renders as a squashed band repeated across the top of the canvas. Six
+ * vertices in a buffer cost nothing and behave the same everywhere.
+ *
+ * `vUv` is flipped on y so row 0 of the uploaded buffer is the top of the image.
+ */
 export const VERTEX_SHADER = `#version 300 es
+in vec2 aPos;
 out vec2 vUv;
 void main() {
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = vec2(p.x, 1.0 - p.y);
-  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+  vUv = vec2(aPos.x, 1.0 - aPos.y);
+  gl_Position = vec4(aPos * 2.0 - 1.0, 0.0, 1.0);
 }`;
+
+/** The quad's corners, as unit coordinates: two triangles, six vertices. */
+export const QUAD = [0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1];
 
 /**
  * Middle grey in log2. Every tonal operation is anchored somewhere relative to
