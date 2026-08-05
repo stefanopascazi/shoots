@@ -53,7 +53,7 @@ export interface DevelopParam {
   weight: number;
 }
 
-const HSL_CHANNELS = ['Red', 'Orange', 'Yellow', 'Green', 'Aqua', 'Blue', 'Purple', 'Magenta'] as const;
+export const HSL_CHANNELS = ['Red', 'Orange', 'Yellow', 'Green', 'Aqua', 'Blue', 'Purple', 'Magenta'] as const;
 
 /**
  * Inputs at which the point tone curve is sampled, and therefore predicted.

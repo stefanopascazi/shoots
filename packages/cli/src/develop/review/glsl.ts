@@ -56,12 +56,6 @@ void main() {
 /** The quad's corners, as unit coordinates: two triangles, six vertices. */
 export const QUAD = [0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1];
 
-/**
- * Middle grey in log2. Every tonal operation is anchored somewhere relative to
- * this: it is the one luminance a photographer's eye is calibrated on.
- */
-const GREY = 'const float GREY = -2.4739;';
-
 export const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 precision highp sampler2D;
@@ -86,8 +80,21 @@ uniform float uDehaze;
 uniform float uVibrance;
 uniform float uSaturation;
 uniform float uDither;      // 1 on screen, 0 when the frame is being measured
+uniform float uMono;        // 1 when this frame is developed black-and-white
+uniform float uMix[8];      // the black-and-white mix, by hue, each -1..1
+/**
+ * This frame's own white, as log2 luminance before exposure — its 99th
+ * percentile, so one blown speculars does not define it.
+ *
+ * Every region below is placed relative to this rather than to the sensor's
+ * white, and that is not a refinement, it is the difference between the controls
+ * working and not. Measured on a real catalog, a night frame's median sits seven
+ * stops under sensor white and 0.02% of its pixels reach a pivot fixed there:
+ * Highlights had nothing to act on and the screen dropped it as a control that
+ * does nothing. Camera Raw's highlights are the bright part of the *photograph*.
+ */
+uniform float uAnchor;
 
-${GREY}
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
 /**
@@ -107,9 +114,15 @@ const float CLARITY_STOPS   = 0.90;
 const float TEXTURE_STOPS   = 0.80;
 const float DEHAZE_STOPS    = 0.70;
 
-/** Where the recoverable region begins, and where the deep shadows do. */
+/**
+ * Where each region sits, in stops below this frame's own white.
+ *
+ * Middle grey is 2.47 stops down by definition (0.18 of white); the rest are
+ * placed around it the way the panel's four controls divide a histogram.
+ */
 const float HIGHLIGHT_PIVOT = -3.20;
 const float SHADOW_PIVOT    = -4.60;
+const float GREY_BELOW_WHITE = -2.4739;
 
 /**
  * Soft limit for a local-contrast term.
@@ -121,11 +134,67 @@ const float SHADOW_PIVOT    = -4.60;
  */
 float soften(float d, float limit) { return limit * tanh(d / limit); }
 
+/** How far one black-and-white mix slider may push its hue, at full deflection. */
+const float MIX_STOPS = 0.85;
+
+/** Hue in degrees, from linear RGB. Zero saturation returns zero, harmlessly. */
+float hueOf(vec3 c) {
+  float hi = max(max(c.r, c.g), c.b);
+  float lo = min(min(c.r, c.g), c.b);
+  float d = hi - lo;
+  if (d <= 0.0) return 0.0;
+  float h = hi == c.r ? mod((c.g - c.b) / d, 6.0)
+          : hi == c.g ? (c.b - c.r) / d + 2.0
+                      : (c.r - c.g) / d + 4.0;
+  return h * 60.0;
+}
+
+/**
+ * The mix weight at one hue, interpolated between the two nearest sliders.
+ *
+ * Camera Raw's eight channels do not sit at even intervals — red, orange and
+ * yellow are 30 degrees apart while green to aqua is 60 — so the weight has to
+ * be interpolated between neighbours rather than binned. Magenta wraps back
+ * round to red.
+ *
+ * Written out rather than looped over an array on purpose. The loop version
+ * indexed a local array one past its end on the last
+ * iteration: undefined behaviour, and whatever the driver did with it, the whole
+ * monochrome branch stopped taking effect on this machine while the shader still
+ * compiled and linked without a word. Constant indices cannot do that.
+ */
+float mixAt(float h) {
+  if (h <  30.0) return mix(uMix[0], uMix[1], (h -   0.0) / 30.0);
+  if (h <  60.0) return mix(uMix[1], uMix[2], (h -  30.0) / 30.0);
+  if (h < 120.0) return mix(uMix[2], uMix[3], (h -  60.0) / 60.0);
+  if (h < 180.0) return mix(uMix[3], uMix[4], (h - 120.0) / 60.0);
+  if (h < 240.0) return mix(uMix[4], uMix[5], (h - 180.0) / 60.0);
+  if (h < 270.0) return mix(uMix[5], uMix[6], (h - 240.0) / 30.0);
+  if (h < 300.0) return mix(uMix[6], uMix[7], (h - 270.0) / 30.0);
+  return mix(uMix[7], uMix[0], (h - 300.0) / 60.0);
+}
+
 void main() {
   vec3 lin = texture(uImage, vUv).rgb * uWb * exp2(uExposure);
 
+  // Black and white, before anything tonal: from here on the frame is the
+  // photograph being judged, and every control below acts on its luminance.
+  // Weighted by the pixel's own saturation, so a grey wall is not moved by a
+  // slider that exists to separate a red coat from a green one.
+  if (uMono > 0.5) {
+    float peak = max(max(lin.r, lin.g), lin.b);
+    float sat = peak > 0.0 ? (peak - min(min(lin.r, lin.g), lin.b)) / peak : 0.0;
+    lin = vec3(dot(lin, LUMA) * exp2(mixAt(hueOf(lin)) * MIX_STOPS * sat));
+  }
+
   float y = max(dot(lin, LUMA), 1e-7);
   float l = log2(y);
+
+  // The frame's white, carried along by exposure: raising exposure moves the
+  // whole histogram, and the regions have to move with it or a +1 EV frame would
+  // be judged against the darker frame's landmarks.
+  float white = uAnchor + uExposure;
+  float grey = white + GREY_BELOW_WHITE;
 
   // Local contrast. The blurs were taken once, on the untouched frame: white
   // balance and exposure multiply the image by a constant, which is an additive
@@ -140,7 +209,7 @@ void main() {
   // Texture works on the fine scale everywhere; Clarity works on the coarse one
   // and is held back at the two ends, where local contrast turns into haloing
   // against a blown sky or a blocked shadow.
-  float midtones = smoothstep(-7.0, -4.5, l) * (1.0 - smoothstep(-1.6, 0.2, l));
+  float midtones = smoothstep(white - 7.0, white - 4.5, l) * (1.0 - smoothstep(white - 1.6, white + 0.2, l));
   dl += uTexture * TEXTURE_STOPS * fine;
   dl += uClarity * CLARITY_STOPS * coarse * midtones;
 
@@ -151,24 +220,24 @@ void main() {
   // carries the strongest anchor in the model, so showing an approximation of it
   // is worth more than showing nothing, which is what the table did.
   dl += uDehaze * DEHAZE_STOPS * coarse;
-  dl -= uDehaze * 0.45 * (1.0 - smoothstep(-8.0, -3.5, l));
+  dl -= uDehaze * 0.45 * (1.0 - smoothstep(white - 8.0, white - 3.5, l));
 
   // Highlights and Shadows: compress or expand their region, anchored at a
   // pivot, so a negative Highlights pulls the bright end *toward* the pivot
   // instead of translating the whole upper range down. That is what makes it
   // read as recovery rather than as a darker picture.
-  dl += uHighlights * HIGHLIGHT_RANGE * min(max(l - HIGHLIGHT_PIVOT, 0.0), 4.0);
-  dl -= uShadows * SHADOW_RANGE * min(max(SHADOW_PIVOT - l, 0.0), 4.0);
+  dl += uHighlights * HIGHLIGHT_RANGE * min(max(l - (white + HIGHLIGHT_PIVOT), 0.0), 4.0);
+  dl -= uShadows * SHADOW_RANGE * min(max((white + SHADOW_PIVOT) - l, 0.0), 4.0);
 
   // Whites and Blacks: move an endpoint, weighted by a smooth mask so neither
   // has a visible boundary where it stops acting.
-  dl += uWhites * WHITE_STOPS * smoothstep(-2.6, 0.2, l);
-  dl += uBlacks * BLACK_STOPS * (1.0 - smoothstep(-7.5, -3.2, l));
+  dl += uWhites * WHITE_STOPS * smoothstep(white - 2.6, white + 0.2, l);
+  dl += uBlacks * BLACK_STOPS * (1.0 - smoothstep(white - 7.5, white - 3.2, l));
 
   // Contrast, about middle grey. In log this is a straight gain on the distance
   // from grey, which is the shape a photographer means by "more contrast".
   float shaped = l + dl;
-  shaped = GREY + (shaped - GREY) * (1.0 + uContrast * CONTRAST_RANGE);
+  shaped = grey + (shaped - grey) * (1.0 + uContrast * CONTRAST_RANGE);
 
   // Back to linear as a single gain on the three channels: luminance moved, hue
   // and saturation did not.

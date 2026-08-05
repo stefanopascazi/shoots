@@ -14,7 +14,7 @@
 import { intensityKey, withIntensities, type Intensities } from './intensities.js';
 import { wbGains } from './color.js';
 import { predictOne, resolveTreatment } from '../predict.js';
-import { CURVE_KNOTS, curveParamKey, type AsShotMeta } from '../develop/schema.js';
+import { curveFromDevelop, HSL_CHANNELS, type AsShotMeta } from '../develop/schema.js';
 import type { DevelopDataset, DevelopProfile } from '../types.js';
 import type { Ramp, RampSample, SliderUniform } from './client.js';
 
@@ -25,9 +25,6 @@ const SAMPLES = 61;
 
 /** As-shot temperature when the file does not carry one — daylight. */
 const DEFAULT_KELVIN = 5500;
-
-/** How far a knot may sit from identity and still count as "curve untouched". */
-const CURVE_TOLERANCE = 0.5;
 
 /**
  * Camera Raw's ±100 sliders, as the −1..1 the shader takes.
@@ -52,17 +49,35 @@ function toUniforms(develop: Record<string, number>): Record<SliderUniform, numb
   };
 }
 
-/** The point curve as knots, or `[]` when the photographer left it alone. */
+/**
+ * The point curve as knots, or `[]` when the photographer left it alone.
+ *
+ * Built by the *emitter*, not by a second copy of its rules. The regressor fits
+ * each knot on its own and nothing stops it returning one that dips backwards —
+ * on this catalog it produced 64→255, 96→255, 128→132, which renders as a
+ * solarized frame. The emitter forces the outputs non-decreasing before writing
+ * a sidecar, so a preview built any other way shows a photograph Lightroom will
+ * never be asked to make.
+ */
 function toCurve(develop: Record<string, number>): [number, number][] {
+  const flat = curveFromDevelop(develop);
+  if (!flat) return [];
   const knots: [number, number][] = [];
-  let moved = false;
-  for (const knot of CURVE_KNOTS) {
-    const y = develop[curveParamKey(knot)];
-    if (y === undefined || !Number.isFinite(y)) return [];
-    if (Math.abs(y - knot) > CURVE_TOLERANCE) moved = true;
-    knots.push([knot, Math.max(0, Math.min(255, y))]);
-  }
-  return moved ? knots : [];
+  for (let i = 0; i + 1 < flat.length; i += 2) knots.push([flat[i]!, flat[i + 1]!]);
+  return knots;
+}
+
+/**
+ * The black-and-white mix, or null when the frame is being developed in colour.
+ *
+ * Without this a monochrome treatment previews in colour: the branch predicts
+ * eight `GrayMixer` sliders and a conversion, and a preview that ignores both
+ * shows a photograph whose every colour decision has been made and then
+ * discarded. Judging the intensity of a tonal control on the wrong medium is not
+ * a smaller error than judging it on the wrong frame.
+ */
+function toMono(develop: Record<string, number>): number[] | null {
+  return HSL_CHANNELS.map((ch) => (develop[`GrayMixer${ch}`] ?? 0) / 100);
 }
 
 /** White balance as the per-channel linear gain from as-shot to chosen. */
@@ -116,6 +131,7 @@ export function buildRamp(
 
   const fitted = predict(1);
   return {
+    mono: input.treatment === 'bw' ? toMono(fitted) : null,
     curve: toCurve(fitted),
     parametric: [
       (fitted.ParametricHighlights ?? 0) / 100,

@@ -47,6 +47,8 @@ export interface RampSample {
 }
 
 export interface Ramp {
+  /** The eight black-and-white mix sliders, −1..1, or null for a colour frame. */
+  mono: number[] | null;
   /** Point-curve knots as `[x, y]` at 0..255, or `[]` for the identity. */
   curve: [number, number][];
   /** Parametric curve: highlights, lights, darks, shadows, each −1..1. */
@@ -102,8 +104,10 @@ function initGL() {
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(prog));
   gl.useProgram(prog);
   var loc = {};
-  var names = ['uImage', 'uDetail', 'uCurve', 'uWb', 'uDither'].concat(UNIFORMS);
+  var names = ['uImage', 'uDetail', 'uCurve', 'uWb', 'uDither', 'uMono', 'uAnchor'].concat(UNIFORMS);
   for (var i = 0; i < names.length; i++) loc[names[i]] = gl.getUniformLocation(prog, names[i]);
+  // An array uniform is looked up by its first element, never by its bare name.
+  loc.uMix = gl.getUniformLocation(prog, 'uMix[0]');
   gl.uniform1i(loc.uImage, 0);
   gl.uniform1i(loc.uDetail, 1);
   gl.uniform1i(loc.uCurve, 2);
@@ -138,11 +142,17 @@ function selfTest() {
       0, 0, 1, 1,  1, 1, 1, 1
     ])),
     detail: texture(gl, gl.RG32F, gl.RG, gl.FLOAT, 2, 2, new Float32Array(8)),
-    curve: curveTexture(gl, [], [0, 0, 0, 0])
+    curve: curveTexture(gl, [], [0, 0, 0, 0]),
+    anchor: 0
   };
-  draw(probe, { wb: [1, 1, 1], u: {} }, false);
   var px = new Uint8Array(16);
-  gl.readPixels(0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  var read = function () {
+    draw(probe, { wb: [1, 1, 1], u: {} }, false);
+    gl.readPixels(0, 0, 2, 2, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  };
+
+  // 1. Geometry: is the quad where the shader put it?
+  read();
   // readPixels is bottom-up, so row 0 here is the bottom of the image.
   var brightest = function (o) {
     var c = [px[o], px[o + 1], px[o + 2]];
@@ -150,8 +160,22 @@ function selfTest() {
     return c[0] === m && c[1] === m && c[2] === m ? 'white' : c[0] === m ? 'red' : c[1] === m ? 'green' : 'blue';
   };
   var got = [brightest(8), brightest(12), brightest(0), brightest(4)].join(',');
-  var want = 'red,green,blue,white';
-  return got === want ? null : 'corners came back ' + got + ', expected ' + want;
+  if (got !== 'red,green,blue,white') return 'corners came back ' + got + ', expected red,green,blue,white';
+
+  // 2. Monochrome: with the conversion on and a flat mix, three primaries must
+  // come back grey. This is here because it did not, silently — the shader
+  // compiled, linked, reported no error, and rendered every black-and-white
+  // frame in colour. A feature that can fail without saying so has to be asked.
+  probe.ramp.mono = [0, 0, 0, 0, 0, 0, 0, 0];
+  read();
+  for (var p = 0; p < 16; p += 4) {
+    var spread = Math.max(px[p], px[p + 1], px[p + 2]) - Math.min(px[p], px[p + 1], px[p + 2]);
+    if (spread > 2) {
+      return 'the black-and-white conversion is not being applied — a primary came back as ' +
+        px[p] + ',' + px[p + 1] + ',' + px[p + 2] + ' instead of a grey';
+    }
+  }
+  return null;
 }
 
 function texture(gl, internal, format, type, w, h, data) {
@@ -217,9 +241,24 @@ function blur(src, w, h, radius) {
  */
 function detailTexture(gl, rgb, w, h) {
   var logLuma = new Float32Array(w * h);
+  // 256 bins over the sensor's 16 stops: enough to place a percentile within a
+  // sixteenth of a stop, and one pass instead of sorting two million samples.
+  var hist = new Uint32Array(256);
   for (var i = 0; i < w * h; i++) {
     var y = 0.2126 * rgb[i * 3] + 0.7152 * rgb[i * 3 + 1] + 0.0722 * rgb[i * 3 + 2];
-    logLuma[i] = Math.log2(Math.max(y / 65535, 1e-7));
+    var v = Math.log2(Math.max(y / 65535, 1e-7));
+    logLuma[i] = v;
+    hist[Math.min(255, Math.max(0, Math.round((v + 16) * 16)))]++;
+  }
+  // This frame's white: the 99th percentile, not the maximum. A single clipped
+  // speculars or a dead pixel would otherwise define where "the highlights" are
+  // for the whole photograph.
+  var target = w * h * 0.99;
+  var seen = 0;
+  var anchor = 0;
+  for (var b = 0; b < 256; b++) {
+    seen += hist[b];
+    if (seen >= target) { anchor = b / 16 - 16; break; }
   }
   var edge = Math.min(w, h);
   var fine = blur(logLuma, w, h, Math.max(1, Math.round(edge / 250)));
@@ -229,7 +268,7 @@ function detailTexture(gl, rgb, w, h) {
     out[k * 2] = logLuma[k] - fine[k];
     out[k * 2 + 1] = logLuma[k] - coarse[k];
   }
-  return texture(gl, gl.RG32F, gl.RG, gl.FLOAT, w, h, out);
+  return { texture: texture(gl, gl.RG32F, gl.RG, gl.FLOAT, w, h, out), anchor: anchor };
 }
 
 /* ── Curves ─────────────────────────────────────────────────────────────── */
@@ -315,6 +354,12 @@ function draw(frame, sample, dither) {
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, frame.curve);
   gl.uniform3f(G.loc.uWb, sample.wb[0], sample.wb[1], sample.wb[2]);
   gl.uniform1f(G.loc.uDither, dither ? 1 : 0);
+  // The mix belongs to the frame, not to the slider position: a control scales
+  // its own anchors and the black-and-white conversion is not one of them.
+  var mono = frame.ramp && frame.ramp.mono;
+  gl.uniform1f(G.loc.uMono, mono ? 1 : 0);
+  gl.uniform1fv(G.loc.uMix, mono || [0, 0, 0, 0, 0, 0, 0, 0]);
+  gl.uniform1f(G.loc.uAnchor, frame.anchor || 0);
   for (var i = 0; i < SLIDERS.length; i++) gl.uniform1f(G.loc[UNIFORMS[i]], sample.u[SLIDERS[i]] || 0);
   gl.drawArrays(gl.TRIANGLES, 0, 6);
 }
@@ -408,9 +453,25 @@ function visibleChange(frame) {
 
 /* ── Loading ────────────────────────────────────────────────────────────── */
 
+/**
+ * Frame data, fetched under a URL nothing has ever cached.
+ *
+ * Frames are addressed by position and the positions restart at zero on every
+ * run, so /ramp/5 names a different photograph each time — and a browser that
+ * kept the previous one has no way to know. Earlier runs served these with
+ * max-age, and a stored response that has not expired is used *without asking
+ * the server*: no header sent later can reach it, because no request is ever
+ * made. This cost most of an afternoon of debugging a renderer that was correct,
+ * against data from a review that had already ended. Stamping the run into the
+ * query makes every URL new, which no cache can second-guess.
+ */
+function frameUrl(kind, id) {
+  return '/' + kind + '/' + id + '?run=' + encodeURIComponent(DATA.run);
+}
+
 async function loadFrame(step) {
   var gl = G.gl;
-  var responses = await Promise.all([fetch('/pixels/' + step.id), fetch('/ramp/' + step.id)]);
+  var responses = await Promise.all([fetch(frameUrl('pixels', step.id)), fetch(frameUrl('ramp', step.id))]);
   if (!responses[0].ok || !responses[1].ok) throw new Error('frame ' + step.id + ' failed to load');
   var buffers = await Promise.all([responses[0].arrayBuffer(), responses[1].json()]);
   var rgb = new Uint16Array(buffers[0]);
@@ -427,17 +488,20 @@ async function loadFrame(step) {
     rgba[i * 4 + 2] = rgb[i * 3 + 2] / 65535;
     rgba[i * 4 + 3] = 1;
   }
+  var detail = detailTexture(gl, rgb, w, h);
   return {
     step: step,
     width: w,
     height: h,
     ramp: ramp,
+    /** Where this frame's own white sits, in log2 — see uAnchor in the shader. */
+    anchor: detail.anchor,
     // Full float storage. Half would be plenty for the data — scene-linear
     // values keep their precision in the exponent — but 32F is the combination
     // every WebGL2 implementation takes without argument, and this is not the
     // place to be clever about memory.
     image: texture(gl, gl.RGBA32F, gl.RGBA, gl.FLOAT, w, h, rgba),
-    detail: detailTexture(gl, rgb, w, h),
+    detail: detail.texture,
     curve: curveTexture(gl, ramp.curve, ramp.parametric)
   };
 }
@@ -479,6 +543,10 @@ function buildUI() {
         (step.decimals > 0 ? 0.01 : 1) + '" value="' + step.fitted + '">' +
       '<div class="ends"><span>' + esc(fmt(step, step.min)) + '</span><span>' + esc(fmt(step, step.max)) + '</span></div>' +
       '<p class="hint">fitted <b>' + esc(fmt(step, step.fitted)) + '</b> · off <b>' + esc(fmt(step, step.zero)) + '</b></p>' +
+      (frame.change < DATA.threshold
+        ? '<p class="inert">Moving this slider changes the photograph by ' + (frame.change * 100).toFixed(1) +
+          '% — too little to judge by eye. Its fitted gain is small, or this frame has nothing for it to act on.</p>'
+        : '') +
       '<button class="ghost">Reset to fitted</button>';
     asideEl.appendChild(panel);
 
@@ -633,7 +701,7 @@ async function boot() {
   // What the browser did with each candidate, reported back so the terminal
   // does not announce five controls while the screen shows one. Only this side
   // knows: whether a control is worth offering is decided by the render.
-  var report = { renderer: String(G.gl.getParameter(G.gl.RENDERER)), steps: [] };
+  var report = { run: DATA.run, renderer: String(G.gl.getParameter(G.gl.RENDERER)), steps: [] };
   var broken = selfTest();
   report.selfTest = broken || 'ok';
   if (broken) {
@@ -653,25 +721,32 @@ async function boot() {
       report.steps.push({ label: candidates[i].label, dropped: 'failed to load: ' + e.message });
       continue;
     }
-    // A control that does not visibly move its own frame is not offered at all:
-    // a slider that appears to do nothing reads as broken, and the reviewer has
-    // no way to tell that from a control whose anchor is simply small.
+    // How much the control moves its own frame, measured but no longer used to
+    // hide it. Dropping half the controls silently left the screen contradicting
+    // the terminal and gave no way to tell a control that does nothing from a
+    // control that is missing. Every anchored parameter the profile carries is
+    // offered; the ones that barely move say so on their own panel, and the
+    // decision is the reviewer's.
     var change = visibleChange(frame);
     var err = G.gl.getError();
     if (err !== G.gl.NO_ERROR) {
       report.steps.push({ label: candidates[i].label, dropped: 'GL error ' + err });
       continue;
     }
-    if (change < DATA.threshold) {
-      report.steps.push({ label: candidates[i].label, change: change, dropped: 'changes the picture by ' + (change * 100).toFixed(1) + '%' });
-      continue;
-    }
-    report.steps.push({ label: candidates[i].label, change: change, size: frame.width + 'x' + frame.height });
+    frame.change = change;
+    report.steps.push({
+      label: candidates[i].label,
+      change: change,
+      size: frame.width + 'x' + frame.height,
+      // Read back from the linked program, not from the variable that was meant
+      // to set it: the whole point is to find out where the two stop agreeing.
+      mono: (frame.ramp.mono ? 'sent' : 'none') + '/' + String(G.gl.getUniform(G.prog, G.loc.uMono)),
+    });
     kept.push(frame);
   }
   frames = kept;
   if (frames.length === 0) {
-    fail('None of the anchored controls change these photographs enough to be worth judging — close this tab and the fitted values are kept.');
+    fail('No frame could be rendered — close this tab and the fitted values are kept.');
     return;
   }
   for (var k = 0; k < frames.length; k++) chosen[frames[k].step.family] = 1;
@@ -702,15 +777,26 @@ async function boot() {
   // screen back.
   show(0);
 
-  // A picture of what this GPU actually produced, sent home with the report.
-  // Nothing else can answer "is it rendering correctly" from a terminal: the
-  // renderer is in the browser, and a description of a wrong image is not the
-  // image. Small and lossy on purpose — it is evidence, not a deliverable.
+  // A contact sheet of what this GPU actually produced, sent home with the
+  // report. Nothing else can answer "is it rendering correctly" from a terminal:
+  // the renderer is in the browser, and a description of a wrong image is not
+  // the image. Every kept frame, not just the first — the one that was wrong
+  // here was a black-and-white frame rendering in colour, four along.
+  var CELL = 240;
   var shot = document.createElement('canvas');
-  shot.width = 420;
-  shot.height = Math.max(1, Math.round((420 * frames[0].height) / frames[0].width));
-  shot.getContext('2d').drawImage(G.canvas, 0, 0, shot.width, shot.height);
+  shot.width = CELL * Math.min(frames.length, 6);
+  shot.height = CELL;
+  var sheet = shot.getContext('2d');
+  for (var s = 0; s < frames.length && s < 6; s++) {
+    draw(frames[s], sampleAt(frames[s].ramp, chosen[frames[s].step.family]), false);
+    G.gl.finish();
+    var scale = Math.min(CELL / frames[s].width, CELL / frames[s].height);
+    var w = frames[s].width * scale;
+    var h = frames[s].height * scale;
+    sheet.drawImage(G.canvas, s * CELL + (CELL - w) / 2, (CELL - h) / 2, w, h);
+  }
   report.shot = shot.toDataURL('image/jpeg', 0.85);
+  show(at);
   report.canvas = G.canvas.width + 'x' + G.canvas.height + ' shown at ' + G.canvas.style.width + ' x ' + G.canvas.style.height;
   fetch('/diag', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(report) });
 }

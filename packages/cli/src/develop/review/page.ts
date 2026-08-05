@@ -58,7 +58,7 @@ export interface PageStep {
 /** Below this 95th-percentile pixel change, a control is not offered at all. */
 export const REVIEWABLE_THRESHOLD = 0.02;
 
-export function page(steps: readonly PageStep[]): string {
+export function page(steps: readonly PageStep[], run: string): string {
   if (steps.length === 0) return '<!doctype html><p>Nothing to calibrate.</p>';
 
   return `<!doctype html>
@@ -133,6 +133,10 @@ export function page(steps: readonly PageStep[]): string {
   .ends { display:flex; justify-content:space-between; color:var(--muted); font-size:11px;
           font-variant-numeric:tabular-nums; margin-top:2px; }
   .hint { color:var(--muted); font-size:12px; margin:14px 0 0; }
+  /* Shown on a control whose frame barely moves: offered anyway, but honest
+     about it, rather than quietly missing from the screen. */
+  .inert { margin:12px 0 0; padding:9px 11px; border-radius:6px; font-size:12px;
+           background:rgb(190 140 40 / .12); border:1px solid rgb(190 140 40 / .35); color:var(--fg); }
   button { font:inherit; padding:8px 14px; border-radius:6px; border:1px solid var(--line);
            background:var(--panel); color:var(--fg); cursor:pointer; }
   button.ghost { margin-top:16px; align-self:flex-start; }
@@ -173,6 +177,10 @@ export function page(steps: readonly PageStep[]): string {
 <footer hidden></footer>
 <script>
 window.__REVIEW__ = ${JSON.stringify({ steps, threshold: REVIEWABLE_THRESHOLD })};
+// Stamped fresh on every run and echoed back in the report. If the server sees
+// a different one it knows the browser is executing a page it kept from an
+// earlier review, which otherwise looks exactly like a bug in the renderer.
+window.__REVIEW__.run = ${JSON.stringify(run)};
 </script>
 <script>${CLIENT_SCRIPT}</script>
 </body></html>`;

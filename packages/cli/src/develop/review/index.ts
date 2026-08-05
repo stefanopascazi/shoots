@@ -30,7 +30,7 @@ import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { decode } from './preview.js';
-import { page, type PageStep } from './page.js';
+import { page, REVIEWABLE_THRESHOLD, type PageStep } from './page.js';
 import { buildRamp, MAX_SCALE } from './ramp.js';
 import { activeFamilies, intensityKey, type Intensities } from './intensities.js';
 import { FAMILIES, selectFrames } from './select.js';
@@ -191,8 +191,15 @@ export async function review(
   }
   if (loaded.length === 0) return null;
 
-  status(`${loaded.length} frame${loaded.length === 1 ? '' : 's'} ready — the browser renders them on the GPU`);
+  // Not "N controls ready": how many actually appear is decided in the browser,
+  // which drops any whose frame does not visibly move. Announcing a number here
+  // that the screen then contradicts is worse than announcing none.
+  status(`${loaded.length} frame${loaded.length === 1 ? '' : 's'} decoded — the browser renders them and reports back which are worth judging`);
 
+  // Identifies this run's page to itself. Frames are addressed by position and
+  // the positions restart at zero every time, so a page kept from an earlier
+  // review looks identical and behaves like a renderer bug.
+  const run = Date.now().toString(36);
   const timeoutMinutes = options.timeoutMinutes ?? 10;
   return new Promise((resolve) => {
     let settled = false;
@@ -221,9 +228,24 @@ export async function review(
 
     const server = createServer(async (req, res) => {
       const url = new URL(req.url ?? '/', 'http://localhost');
+      // Nothing here may be cached, and the reason is not politeness.
+      //
+      // Frames are addressed by position — `/pixels/3`, `/ramp/3` — and the
+      // positions restart at zero on every run while the photographs behind them
+      // do not. A cached response is therefore a *previous review's* frame
+      // answering for this one. It cost an afternoon: a black-and-white frame
+      // kept rendering in colour because the browser was replaying a ramp from
+      // before the mix existed, and every check ran against the live server and
+      // came back correct. All of this is 127.0.0.1, so re-fetching a 12MB
+      // buffer costs less than one wrong pixel.
       if (url.pathname === '/') {
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-        res.end(page(steps));
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store, no-cache, must-revalidate',
+          pragma: 'no-cache',
+          expires: '0',
+        });
+        res.end(page(steps, run));
         return;
       }
       if (url.pathname === '/save' && req.method === 'POST') {
@@ -249,17 +271,29 @@ export async function review(
         for await (const c of req) chunks.push(c as Buffer);
         try {
           const diag = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+            run?: string;
             renderer?: string;
             selfTest?: string;
             canvas?: string;
             shot?: string;
-            steps?: { label: string; change?: number; size?: string; dropped?: string }[];
+            steps?: { label: string; change?: number; size?: string; dropped?: string; mono?: string }[];
           };
+          if (diag.run !== run) {
+            status(
+              `⚠ the browser is running a page kept from an earlier review (${diag.run ?? 'no stamp'} ≠ ${run}) — ` +
+                'reload with Ctrl-F5. Everything it reports below describes that old page, not this one.',
+            );
+          }
           status(`the browser is rendering on: ${diag.renderer ?? 'unknown'}`);
           if (diag.selfTest) status(`  draw self-test: ${diag.selfTest}`);
           if (diag.canvas) status(`  canvas ${diag.canvas}`);
           for (const s of diag.steps ?? []) {
-            status(s.dropped ? `  ${s.label}: dropped — ${s.dropped}` : `  ${s.label}: ${s.size}, moves ${((s.change ?? 0) * 100).toFixed(1)}%`);
+            status(
+              s.dropped
+                ? `  ${s.label}: not shown — ${s.dropped}`
+                : `  ${s.label}: ${s.size}, moves ${((s.change ?? 0) * 100).toFixed(1)}%${(s.change ?? 0) < REVIEWABLE_THRESHOLD ? ' (offered, but too little to judge)' : ''}` +
+                  (s.mono ? `  [mono ${s.mono}]` : ''),
+            );
           }
           // A frame as the GPU drew it, on disk. Whether the shader is right is
           // not a question a log line can answer.
@@ -292,7 +326,7 @@ export async function review(
         const { data } = item.image;
         res.writeHead(200, {
           'content-type': 'application/octet-stream',
-          'cache-control': 'max-age=3600',
+          'cache-control': 'no-store',
         });
         res.end(Buffer.from(data.buffer, data.byteOffset, data.byteLength));
         return;
@@ -305,7 +339,7 @@ export async function review(
           res.end();
           return;
         }
-        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'max-age=3600' });
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
         res.end(JSON.stringify(item.ramp));
         return;
       }
