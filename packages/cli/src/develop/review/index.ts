@@ -204,6 +204,29 @@ export async function review(
         }
         return;
       }
+      // What the browser made of the frames. Whether a control is reviewable is
+      // decided by the render, and the render is over there — without this the
+      // terminal would report five controls ready while the screen offers one,
+      // and the photographer would have no way to find out which was true.
+      if (url.pathname === '/diag' && req.method === 'POST') {
+        const chunks: Buffer[] = [];
+        for await (const c of req) chunks.push(c as Buffer);
+        try {
+          const diag = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+            renderer?: string;
+            steps?: { label: string; change?: number; size?: string; dropped?: string }[];
+          };
+          status(`the browser is rendering on: ${diag.renderer ?? 'unknown'}`);
+          for (const s of diag.steps ?? []) {
+            status(s.dropped ? `  ${s.label}: dropped — ${s.dropped}` : `  ${s.label}: ${s.size}, moves ${((s.change ?? 0) * 100).toFixed(1)}%`);
+          }
+        } catch {
+          // A malformed report is not a reason to interrupt a review.
+        }
+        res.writeHead(204);
+        res.end();
+        return;
+      }
       // The decoded frame, scene-linear and untouched. Sixteen-bit samples in
       // the machine's own byte order: the server and the browser are the same
       // machine — this listens on 127.0.0.1 and nothing else — so there is no

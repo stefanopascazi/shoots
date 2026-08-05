@@ -87,12 +87,13 @@ export function page(steps: readonly PageStep[]): string {
   #boot { display:grid; place-items:center; padding:40px; color:var(--muted); text-align:center; max-width:52ch; margin:0 auto; }
 
   .stages { position:relative; min-height:0; padding:16px; display:grid; place-items:center; overflow:hidden; }
-  .stage { margin:0; min-height:0; max-height:100%; display:grid; place-items:center; }
+  .stage { margin:0; width:100%; height:100%; min-height:0; display:grid; place-items:center; }
   .stage[hidden] { display:none; }
-  /* Contained, never enlarged. The renderer sets both ceilings inline as
-     min(100%, Npx): the stage's size and the frame's own, together — either one
-     alone lets a portrait frame run out of the bottom of the stage. */
-  #gl { display:block; width:auto; height:auto; border-radius:6px;
+  /* Contained, never enlarged — but sized by the renderer in JavaScript, not
+     here: max-height:100% resolves against a grid item with height:auto, which
+     is indefinite, so the browser drops the constraint and a portrait frame
+     keeps its full height. See fitCanvas(). */
+  #gl { display:block; border-radius:6px;
         box-shadow:0 2px 18px rgb(0 0 0 / .35); cursor:crosshair; }
   img { display:block; width:auto; height:auto; max-width:100%; max-height:100%;
         border-radius:6px; box-shadow:0 2px 18px rgb(0 0 0 / .35); }

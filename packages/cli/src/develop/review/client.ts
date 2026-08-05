@@ -227,17 +227,41 @@ function sampleKnots(knots, x) {
 
 /* ── Rendering ──────────────────────────────────────────────────────────── */
 
+/**
+ * Size the canvas to fit inside the stage, in CSS pixels, computed here.
+ *
+ * This was CSS to begin with and CSS could not do it. A max-height of 100% on a
+ * replaced element resolves against the parent's height, and the stage is a grid
+ * item with an automatic height — indefinite, so the constraint is dropped
+ * entirely. A landscape frame happened to be narrow enough that max-width
+ * alone contained it; a portrait one kept its full 1800px and ran off the bottom
+ * of the screen. Measuring the box and doing the arithmetic is both shorter than
+ * the CSS was and the only version that is true for both orientations.
+ *
+ * Never enlarged: a frame smaller than the stage keeps its own size, so a small
+ * preview stays small and sharp instead of being stretched into mush.
+ */
+function fitCanvas(frame) {
+  // Measured on the stage *container*, never on the stage itself: the stage is
+  // sized by its content, so asking it how much room there is while the canvas
+  // is inside it asks the canvas how big the canvas should be.
+  var style = getComputedStyle(stagesEl);
+  var room = {
+    w: stagesEl.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+    h: stagesEl.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+  };
+  if (!(room.w > 0) || !(room.h > 0)) return;
+  var scale = Math.min(1, room.w / frame.width, room.h / frame.height);
+  G.canvas.style.width = Math.floor(frame.width * scale) + 'px';
+  G.canvas.style.height = Math.floor(frame.height * scale) + 'px';
+}
+
 function draw(frame, sample, dither) {
   var gl = G.gl;
   if (G.canvas.width !== frame.width || G.canvas.height !== frame.height) {
     G.canvas.width = frame.width;
     G.canvas.height = frame.height;
-    // Both ceilings at once. An inline max-width in pixels beats a stylesheet's
-    // max-height:100% on specificity, so a portrait frame obeyed its own height
-    // and ran straight out of the bottom of the stage; min() keeps the stage
-    // and the frame's own size as limits together.
-    G.canvas.style.maxWidth = 'min(100%, ' + frame.width + 'px)';
-    G.canvas.style.maxHeight = 'min(100%, ' + frame.height + 'px)';
+    fitCanvas(frame);
   }
   gl.viewport(0, 0, frame.width, frame.height);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frame.image);
@@ -535,7 +559,14 @@ function show(index) {
   frames[index].stage.appendChild(G.canvas);
   hideLoupe();
   paint(index);
+  // After the move, because the stage it just entered is the one whose room
+  // matters, and on every resize for the same reason.
+  fitCanvas(frames[index]);
 }
+
+window.addEventListener('resize', function () {
+  if (frames.length) fitCanvas(frames[at]);
+});
 
 function fail(message) {
   bootEl.hidden = false;
@@ -551,20 +582,36 @@ async function boot() {
   }
   var candidates = DATA.steps;
   var kept = [];
+  // What the browser did with each candidate, reported back so the terminal
+  // does not announce five controls while the screen shows one. Only this side
+  // knows: whether a control is worth offering is decided by the render.
+  var report = { renderer: String(G.gl.getParameter(G.gl.RENDERER)), steps: [] };
   for (var i = 0; i < candidates.length; i++) {
     bootEl.textContent = 'Preparing ' + candidates[i].label + '… (' + (i + 1) + ' of ' + candidates.length + ')';
     var frame;
     try {
       frame = await loadFrame(candidates[i]);
     } catch (e) {
+      report.steps.push({ label: candidates[i].label, dropped: 'failed to load: ' + e.message });
       continue;
     }
     // A control that does not visibly move its own frame is not offered at all:
     // a slider that appears to do nothing reads as broken, and the reviewer has
     // no way to tell that from a control whose anchor is simply small.
-    if (visibleChange(frame) < DATA.threshold) continue;
+    var change = visibleChange(frame);
+    var err = G.gl.getError();
+    if (err !== G.gl.NO_ERROR) {
+      report.steps.push({ label: candidates[i].label, dropped: 'GL error ' + err });
+      continue;
+    }
+    if (change < DATA.threshold) {
+      report.steps.push({ label: candidates[i].label, change: change, dropped: 'changes the picture by ' + (change * 100).toFixed(1) + '%' });
+      continue;
+    }
+    report.steps.push({ label: candidates[i].label, change: change, size: frame.width + 'x' + frame.height });
     kept.push(frame);
   }
+  fetch('/diag', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(report) });
   frames = kept;
   if (frames.length === 0) {
     fail('None of the anchored controls change these photographs enough to be worth judging — close this tab and the fitted values are kept.');
@@ -577,18 +624,25 @@ async function boot() {
   // five of them on every slider move would cost five times what repainting the
   // one frame being judged costs. Scaled down through a 2D canvas first, so
   // what gets encoded is a 164px thumbnail and not an 1800px frame.
+  bootEl.hidden = true;
+  document.getElementById('main').hidden = false;
+  stripEl.hidden = false;
+  show(0);
+
   var small = document.createElement('canvas');
   var ctx = small.getContext('2d');
   for (var t = 0; t < frames.length; t++) {
     draw(frames[t], sampleAt(frames[t].ramp, 1), true);
+    // finish(), not flush(): drawImage must read a surface the GPU has actually
+    // finished writing, and the two calls are not the same promise.
+    G.gl.finish();
     small.width = 164;
     small.height = Math.max(1, Math.round((164 * frames[t].height) / frames[t].width));
     ctx.drawImage(G.canvas, 0, 0, small.width, small.height);
     frames[t].thumbImg.src = small.toDataURL('image/jpeg', 0.72);
   }
-  bootEl.hidden = true;
-  document.getElementById('main').hidden = false;
-  stripEl.hidden = false;
+  // The strip left the canvas showing the last frame it drew; put the one on
+  // screen back.
   show(0);
 }
 
