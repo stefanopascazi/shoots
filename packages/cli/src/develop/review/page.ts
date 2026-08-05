@@ -86,13 +86,28 @@ export function page(steps: readonly PageStep[]): string {
 
   #boot { display:grid; place-items:center; padding:40px; color:var(--muted); text-align:center; max-width:52ch; margin:0 auto; }
 
-  .stages { position:relative; min-height:0; padding:16px; display:grid; place-items:center; }
+  .stages { position:relative; min-height:0; padding:16px; display:grid; place-items:center; overflow:hidden; }
   .stage { margin:0; min-height:0; max-height:100%; display:grid; place-items:center; }
   .stage[hidden] { display:none; }
-  /* Contained, never enlarged: the inline max-width/max-height carry the render's
-     own pixel size, so a small preview stays small and crisp. */
+  /* Contained, never enlarged. The renderer sets both ceilings inline as
+     min(100%, Npx): the stage's size and the frame's own, together — either one
+     alone lets a portrait frame run out of the bottom of the stage. */
+  #gl { display:block; width:auto; height:auto; border-radius:6px;
+        box-shadow:0 2px 18px rgb(0 0 0 / .35); cursor:crosshair; }
   img { display:block; width:auto; height:auto; max-width:100%; max-height:100%;
         border-radius:6px; box-shadow:0 2px 18px rgb(0 0 0 / .35); }
+
+  /* The loupe: rendered pixels at 1:1, parked in a corner so it never covers
+     what is being examined. The box on the image marks what it is showing. */
+  .loupe { position:absolute; top:20px; right:20px; display:none; border-radius:6px;
+           overflow:hidden; border:1px solid var(--line); background:var(--panel);
+           box-shadow:0 4px 24px rgb(0 0 0 / .5); pointer-events:none; }
+  .loupe canvas { display:block; }
+  .loupe span { position:absolute; left:0; bottom:0; padding:2px 7px; font-size:11px;
+                font-variant-numeric:tabular-nums; color:#fff; background:rgb(0 0 0 / .55);
+                border-top-right-radius:5px; }
+  .loupe-box { position:fixed; display:none; pointer-events:none; z-index:5;
+               border:1px solid rgb(255 255 255 / .9); box-shadow:0 0 0 1px rgb(0 0 0 / .55); }
 
   aside { border-left:1px solid var(--line); padding:20px; overflow-y:auto; display:flex; flex-direction:column; }
   @media (max-width:820px) { aside { border-left:0; border-top:1px solid var(--line); } }

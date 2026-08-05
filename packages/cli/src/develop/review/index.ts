@@ -103,7 +103,12 @@ export async function review(
       .map((r) => ({ file: r.file, features: baseFeatures(r.embedding, r.features, r.asShot) })),
   );
 
-  const size = options.size ?? 900;
+  // Well above what fits on a stage, and deliberately: the loupe shows rendered
+  // pixels at 1:1, so the headroom between this and the screen *is* the
+  // magnification. Calibrating Dehaze or Clarity from a fit-to-window view means
+  // judging haloing at the one scale that averages it away. The cost is paid
+  // once — decode, two blurs, one upload per frame — and never again per slider.
+  const size = options.size ?? 1800;
   const loaded: Loaded[] = [];
   const steps: PageStep[] = [];
   for (const pick of picks) {

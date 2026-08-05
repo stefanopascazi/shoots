@@ -89,6 +89,7 @@ function compile(gl, type, src) {
 
 function initGL() {
   var canvas = document.createElement('canvas');
+  canvas.id = 'gl';
   // preserveDrawingBuffer so a rendered frame survives long enough to be read
   // back for the reviewability test and exported as a film-strip thumbnail.
   var gl = canvas.getContext('webgl2', { alpha: false, antialias: false, preserveDrawingBuffer: true });
@@ -179,7 +180,10 @@ function detailTexture(gl, rgb, w, h) {
     out[k * 2] = logLuma[k] - fine[k];
     out[k * 2 + 1] = logLuma[k] - coarse[k];
   }
-  return texture(gl, gl.RG32F, gl.RG, gl.FLOAT, w, h, out);
+  // Half-float storage from float input: these are log2 differences of about
+  // ±5, so ten bits of mantissa is far more than the eye can be shown, and it
+  // halves what a 1800px frame costs on the GPU.
+  return texture(gl, gl.RG16F, gl.RG, gl.FLOAT, w, h, out);
 }
 
 /* ── Curves ─────────────────────────────────────────────────────────────── */
@@ -228,6 +232,12 @@ function draw(frame, sample, dither) {
   if (G.canvas.width !== frame.width || G.canvas.height !== frame.height) {
     G.canvas.width = frame.width;
     G.canvas.height = frame.height;
+    // Both ceilings at once. An inline max-width in pixels beats a stylesheet's
+    // max-height:100% on specificity, so a portrait frame obeyed its own height
+    // and ran straight out of the bottom of the stage; min() keeps the stage
+    // and the frame's own size as limits together.
+    G.canvas.style.maxWidth = 'min(100%, ' + frame.width + 'px)';
+    G.canvas.style.maxHeight = 'min(100%, ' + frame.height + 'px)';
   }
   gl.viewport(0, 0, frame.width, frame.height);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frame.image);
@@ -352,7 +362,10 @@ async function loadFrame(step) {
     width: w,
     height: h,
     ramp: ramp,
-    image: texture(gl, gl.RGBA32F, gl.RGBA, gl.FLOAT, w, h, rgba),
+    // Half-float, not full: scene-linear values carry their precision in the
+    // exponent, so ten bits of mantissa is a constant 0.05% everywhere —
+    // including the shadows, where a fixed-point buffer would run out first.
+    image: texture(gl, gl.RGBA16F, gl.RGBA, gl.FLOAT, w, h, rgba),
     detail: detailTexture(gl, rgb, w, h),
     curve: curveTexture(gl, ramp.curve, ramp.parametric)
   };
@@ -379,13 +392,8 @@ function buildUI() {
     fig.className = 'stage';
     fig.dataset.index = String(i);
     if (i !== 0) fig.hidden = true;
-    var img = document.createElement('img');
-    img.alt = step.label;
-    img.style.maxWidth = step.width + 'px';
-    img.style.maxHeight = step.height + 'px';
-    fig.appendChild(img);
-    frame.img = img;
     stagesEl.appendChild(fig);
+    frame.stage = fig;
 
     var panel = document.createElement('div');
     panel.className = 'control';
@@ -429,14 +437,90 @@ function buildUI() {
   });
 }
 
+/* ── The loupe ──────────────────────────────────────────────────────────── */
+
 /**
- * Repaint one frame. Synchronous, on the GPU: at ~900px this is a single draw
- * call, so a drag repaints on every input event without a queue behind it.
+ * A window onto the rendered pixels at 1:1, wherever the pointer is.
+ *
+ * **It magnifies nothing.** The frame is decoded well above what fits on screen
+ * and the stage shrinks it to fit; the loupe simply declines to shrink, so what
+ * it shows is pixels that were rendered, not pixels that were invented by
+ * scaling up the ones on screen. That is the whole point for Dehaze and
+ * Clarity — the controls whose damage is haloing and mush at the detail scale,
+ * which is exactly the scale a fit-to-window view averages away. The readout
+ * says how much bigger than the stage that works out to.
+ *
+ * It sits in a corner rather than under the pointer: a loupe centred on the
+ * cursor covers the thing being examined, and a small box on the image marks
+ * what is being shown instead.
+ */
+var loupe = { visible: false, size: 280, x: 0, y: 0, el: null, ctx: null, box: null, label: null };
+
+function initLoupe() {
+  var el = document.createElement('div');
+  el.className = 'loupe';
+  var canvas = document.createElement('canvas');
+  canvas.width = loupe.size;
+  canvas.height = loupe.size;
+  var label = document.createElement('span');
+  el.appendChild(canvas);
+  el.appendChild(label);
+  stagesEl.appendChild(el);
+  var box = document.createElement('div');
+  box.className = 'loupe-box';
+  document.body.appendChild(box);
+  loupe.el = el;
+  loupe.box = box;
+  loupe.label = label;
+  loupe.ctx = canvas.getContext('2d');
+
+  G.canvas.addEventListener('mousemove', function (e) {
+    loupe.x = e.clientX;
+    loupe.y = e.clientY;
+    loupe.visible = true;
+    el.style.display = 'block';
+    box.style.display = 'block';
+    drawLoupe(frames[at]);
+  });
+  G.canvas.addEventListener('mouseleave', hideLoupe);
+}
+
+function hideLoupe() {
+  loupe.visible = false;
+  if (loupe.el) loupe.el.style.display = 'none';
+  if (loupe.box) loupe.box.style.display = 'none';
+}
+
+function drawLoupe(frame) {
+  var rect = G.canvas.getBoundingClientRect();
+  if (!rect.width) return;
+  // Display pixels per rendered pixel. Below 1 the stage is shrinking the
+  // frame, and 1/scale is what the loupe gives back.
+  var scale = rect.width / G.canvas.width;
+  var side = Math.min(loupe.size, G.canvas.width, G.canvas.height);
+  var nx = (loupe.x - rect.left) / scale - side / 2;
+  var ny = (loupe.y - rect.top) / scale - side / 2;
+  var sx = Math.max(0, Math.min(G.canvas.width - side, nx));
+  var sy = Math.max(0, Math.min(G.canvas.height - side, ny));
+  loupe.ctx.clearRect(0, 0, loupe.size, loupe.size);
+  loupe.ctx.drawImage(G.canvas, sx, sy, side, side, 0, 0, side, side);
+  loupe.label.textContent = (1 / scale).toFixed(1) + '× · ' + Math.round(side) + 'px';
+  loupe.box.style.left = (rect.left + sx * scale) + 'px';
+  loupe.box.style.top = (rect.top + sy * scale) + 'px';
+  loupe.box.style.width = (side * scale) + 'px';
+  loupe.box.style.height = (side * scale) + 'px';
+}
+
+/**
+ * Repaint one frame. One draw call, straight onto the canvas the reviewer is
+ * looking at — the canvas lives in the page rather than being encoded into an
+ * image per repaint. At 1800px that encode was 100ms and change, which is the
+ * difference between a slider that tracks a hand and one that lurches after it.
  */
 function paint(index) {
   var frame = frames[index];
   draw(frame, sampleAt(frame.ramp, chosen[frame.step.family]), true);
-  frame.img.src = G.canvas.toDataURL('image/png');
+  if (loupe.visible) drawLoupe(frame);
 }
 
 function show(index) {
@@ -445,6 +529,12 @@ function show(index) {
   for (var i = 0; i < nodes.length; i++) nodes[i].hidden = Number(nodes[i].dataset.index) !== index;
   var thumbs = document.querySelectorAll('.thumb');
   for (var j = 0; j < thumbs.length; j++) thumbs[j].classList.toggle('current', Number(thumbs[j].dataset.go) === index);
+  // One canvas, moved to whichever stage is on screen: five WebGL contexts to
+  // show one photograph at a time would be five times the GPU memory for
+  // nothing, and browsers cap how many a page may hold.
+  frames[index].stage.appendChild(G.canvas);
+  hideLoupe();
+  paint(index);
 }
 
 function fail(message) {
@@ -482,13 +572,19 @@ async function boot() {
   }
   for (var k = 0; k < frames.length; k++) chosen[frames[k].step.family] = 1;
   buildUI();
+  initLoupe();
   // Thumbnails at the fitted values: they are for navigation, and repainting
   // five of them on every slider move would cost five times what repainting the
-  // one frame being judged costs.
+  // one frame being judged costs. Scaled down through a 2D canvas first, so
+  // what gets encoded is a 164px thumbnail and not an 1800px frame.
+  var small = document.createElement('canvas');
+  var ctx = small.getContext('2d');
   for (var t = 0; t < frames.length; t++) {
     draw(frames[t], sampleAt(frames[t].ramp, 1), true);
-    frames[t].thumbImg.src = G.canvas.toDataURL('image/jpeg', 0.72);
-    paint(t);
+    small.width = 164;
+    small.height = Math.max(1, Math.round((164 * frames[t].height) / frames[t].width));
+    ctx.drawImage(G.canvas, 0, 0, small.width, small.height);
+    frames[t].thumbImg.src = small.toDataURL('image/jpeg', 0.72);
   }
   bootEl.hidden = true;
   document.getElementById('main').hidden = false;
