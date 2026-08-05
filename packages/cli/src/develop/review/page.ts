@@ -32,10 +32,15 @@ import { CLIENT_SCRIPT } from './client.js';
 export interface PageStep {
   /** Index into the server's loaded frames. */
   id: number;
-  /** Anchored parameter this control scales, e.g. `Exposure2012`. */
+  /** The control's key, `treatment:parameter` — e.g. `bw:Exposure2012`. */
   family: string;
   /** Human label, e.g. `Exposure`. */
   label: string;
+  /**
+   * Which treatment's anchors this control scales, named for the screen. Empty
+   * when the profile has only one branch to review, where saying so is noise.
+   */
+  treatment: string;
   caption: string;
   unit: string;
   decimals: number;
@@ -119,6 +124,8 @@ export function page(steps: readonly PageStep[]): string {
   #panels { display:contents; }
   .control[hidden] { display:none; }
   .control h2 { margin:0 0 2px; font-size:19px; }
+  .treatment { margin:0 0 2px; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+               color:var(--accent); font-weight:600; }
   .why { margin:0 0 18px; color:var(--muted); font-size:12.5px; }
   output { display:block; font:600 30px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
            font-variant-numeric:tabular-nums; margin-bottom:10px; }

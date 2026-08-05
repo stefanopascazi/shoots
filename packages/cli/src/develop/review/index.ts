@@ -32,15 +32,20 @@ import path from 'node:path';
 import { decode } from './preview.js';
 import { page, type PageStep } from './page.js';
 import { buildRamp, MAX_SCALE } from './ramp.js';
-import { activeFamilies, type Intensities } from './intensities.js';
+import { activeFamilies, intensityKey, type Intensities } from './intensities.js';
 import { FAMILIES, selectFrames } from './select.js';
 import type { LinearImage } from './color.js';
 import type { Ramp } from './client.js';
 import type { DevelopDataset, DevelopProfile } from '../types.js';
+import { resolveTreatment } from '../predict.js';
 import { buildSessionContext, contextFor } from '../develop/session.js';
 import { baseFeatures } from '../develop/assemble.js';
 
-export { applyIntensities, type Intensities } from './intensities.js';
+/** The branches a profile can carry, and what to call them on screen. */
+const TREATMENTS = ['color', 'bw'] as const;
+const TREATMENT_LABEL: Record<string, string> = { color: 'colour', bw: 'black-and-white' };
+
+export { applyIntensities, describeIntensities, type Intensities } from './intensities.js';
 
 export interface ReviewOptions {
   port?: number;
@@ -93,10 +98,6 @@ export async function review(
     return null;
   }
 
-  const anchors = Object.assign({}, ...Object.values(profile.branches).map((b) => b?.anchors ?? {}));
-  const picks = selectFrames(available, anchors);
-  if (picks.length === 0) return null;
-
   // The session mean each frame is predicted against, built from every record
   // exactly as training did — a frame previewed against a different context
   // would not be the frame the profile will actually produce.
@@ -106,6 +107,34 @@ export async function review(
       .map((r) => ({ file: r.file, features: baseFeatures(r.embedding, r.features, r.asShot) })),
   );
 
+  /**
+   * One group of frames per treatment, each judged on its own photographs.
+   *
+   * Merging the branches' anchors and picking from the whole catalog was wrong
+   * twice: `Object.assign` let one branch's anchor for a parameter silently
+   * overwrite the other's, and the frames it then chose were whichever the
+   * catalog has more of. Here the records are split by the treatment the profile
+   * will actually apply to them, and each branch is asked about its own.
+   */
+  const groups = TREATMENTS.map((treatment) => {
+    const anchors = profile.branches[treatment]?.anchors ?? {};
+    const records = available.filter((r) => resolveTreatment(profile, r, 'auto') === treatment);
+    return { treatment, anchors, records, picks: Object.keys(anchors).length ? selectFrames(records, anchors) : [] };
+  }).filter((g) => Object.keys(g.anchors).length > 0);
+
+  // Naming a treatment is only useful when there is more than one to tell apart.
+  const named = groups.filter((g) => g.picks.length > 0).length > 1;
+  for (const group of groups) {
+    if (group.picks.length === 0) {
+      status(
+        group.records.length === 0
+          ? `no ${TREATMENT_LABEL[group.treatment]} photographs in this catalog — its controls keep their fitted gains`
+          : `no ${TREATMENT_LABEL[group.treatment]} frame sits far enough outside the dead zone to judge — its controls keep their fitted gains`,
+      );
+    }
+  }
+  if (groups.every((g) => g.picks.length === 0)) return null;
+
   // Well above what fits on a stage, and deliberately: the loupe shows rendered
   // pixels at 1:1, so the headroom between this and the screen *is* the
   // magnification. Calibrating Dehaze or Clarity from a fit-to-window view means
@@ -114,11 +143,12 @@ export async function review(
   const size = options.size ?? 1800;
   const loaded: Loaded[] = [];
   const steps: PageStep[] = [];
-  for (const pick of picks) {
+  const picks = groups.flatMap((g) => g.picks.map((pick) => ({ pick, treatment: g.treatment })));
+  for (const { pick, treatment } of picks) {
     if (!pick.family) continue; // the control frame has no slider of its own
     const family = FAMILIES.find((f) => f.id === pick.family);
     if (!family) continue;
-    status(`decoding preview ${loaded.length + 1}`);
+    status(`decoding preview ${loaded.length + 1} of ${picks.length}`);
     let image: LinearImage;
     try {
       image = await decode(pick.record.file, size);
@@ -131,7 +161,7 @@ export async function review(
       pick.record.file,
       baseFeatures(pick.record.embedding, pick.record.features, pick.record.asShot),
     );
-    const ramp = buildRamp(profile, initial, { record: pick.record, sessionMean, family: family.id });
+    const ramp = buildRamp(profile, initial, { record: pick.record, sessionMean, family: family.id, treatment });
 
     // Where the slider starts and how far it travels, in the parameter's own
     // units. Whether the control is *worth offering* is decided in the browser
@@ -142,9 +172,12 @@ export async function review(
     const far = ramp.samples[ramp.samples.length - 1]!.value;
     steps.push({
       id: loaded.length,
-      family: family.id,
+      // The key the reviewer's answer is stored under: this branch's anchors,
+      // not the other's.
+      family: intensityKey(treatment, family.id),
       label: family.label,
-      caption: 'the photograph in your catalog this control changes the most',
+      treatment: named ? TREATMENT_LABEL[treatment]! : '',
+      caption: `the ${named ? TREATMENT_LABEL[treatment] + ' ' : ''}photograph in your catalog this control changes the most`,
       unit: family.unit,
       decimals: family.decimals,
       width: image.width,

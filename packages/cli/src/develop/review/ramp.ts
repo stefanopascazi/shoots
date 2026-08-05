@@ -11,7 +11,7 @@
  * client. That is finer than the eye can follow during a drag, and it costs one
  * request per control instead of one per pixel of slider movement.
  */
-import { withIntensities, type Intensities } from './intensities.js';
+import { intensityKey, withIntensities, type Intensities } from './intensities.js';
 import { wbGains } from './color.js';
 import { predictOne, resolveTreatment } from '../predict.js';
 import { CURVE_KNOTS, curveParamKey, type AsShotMeta } from '../develop/schema.js';
@@ -78,6 +78,8 @@ export interface RampInput {
   sessionMean: number[];
   /** Which anchored parameter this control scales, and reads out in. */
   family: string;
+  /** Which branch's anchors it scales — the frame belongs to this treatment. */
+  treatment: string;
 }
 
 /**
@@ -93,8 +95,9 @@ export function buildRamp(
   initial: Intensities,
   input: RampInput,
 ): Ramp {
+  const key = intensityKey(input.treatment, input.family);
   const predict = (scale: number): Record<string, number> =>
-    withIntensities(profile, { ...initial, [input.family]: scale }, () => {
+    withIntensities(profile, { ...initial, [key]: scale }, () => {
       const treatment = resolveTreatment(profile, input.record, 'auto');
       return predictOne(profile, input.record, treatment, input.sessionMean).develop;
     });

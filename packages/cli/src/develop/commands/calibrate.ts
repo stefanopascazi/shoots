@@ -16,7 +16,7 @@
  */
 import path from 'node:path';
 import { loadDataset } from '../dataset/load.js';
-import { applyIntensities, review } from '../review/index.js';
+import { applyIntensities, describeIntensities, review } from '../review/index.js';
 import { existsSync } from 'node:fs';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { developExportPath, developFeedbackPath, developProfilePath } from '@shoots/core';
@@ -108,7 +108,7 @@ export async function runCalibrate(args: CalibrateArgs): Promise<void> {
     }
     applyIntensities(profile, chosen);
     if (!args.dryRun) await writeProfile(profilePath, profile);
-    const shown = Object.entries(chosen).map(([k, v]) => `${k} ${v.toFixed(2)}×`).join(', ');
+    const shown = describeIntensities(chosen);
     if (io.json) printJson({ command: 'develop-calibrate', review: chosen, dryRun: !!args.dryRun, profile: profilePath });
     else printHuman(io, args.dryRun ? `Dry run — would apply ${shown}.` : `Applied ${shown} to ${profilePath}.`);
     return;

@@ -471,6 +471,7 @@ function buildUI() {
     panel.dataset.index = String(i);
     if (i !== 0) panel.hidden = true;
     panel.innerHTML =
+      (step.treatment ? '<p class="treatment">' + esc(step.treatment) + '</p>' : '') +
       '<h2>' + esc(step.label) + '</h2>' +
       '<p class="why">' + esc(step.caption) + '</p>' +
       '<output>' + esc(fmt(step, step.fitted)) + '</output>' +
@@ -501,7 +502,7 @@ function buildUI() {
     thumb.className = 'thumb' + (i === 0 ? ' current' : '');
     thumb.title = step.label;
     thumb.dataset.go = String(i);
-    thumb.innerHTML = '<img alt=""><span>' + esc(step.label) + '</span>';
+    thumb.innerHTML = '<img alt=""><span>' + esc(step.label) + (step.treatment ? ' · ' + esc(step.treatment === 'black-and-white' ? 'B&W' : 'colour') : '') + '</span>';
     thumb.addEventListener('click', function () { show(i); });
     stripEl.appendChild(thumb);
     frame.thumbImg = thumb.querySelector('img');

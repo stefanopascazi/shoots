@@ -12,7 +12,7 @@ import { GROUP_BY_MODES, type GroupBy } from '../train/evaluate.js';
 import { loadDataset } from '../dataset/load.js';
 import { startSteps } from '../../progress.js';
 import { makeIo } from '../../io.js';
-import { applyIntensities, review } from '../review/index.js';
+import { applyIntensities, describeIntensities, review } from '../review/index.js';
 import type { BranchModel } from '../types.js';
 
 export interface TrainArgs {
@@ -193,7 +193,7 @@ export async function runTrain(args: TrainArgs): Promise<void> {
     });
     if (chosen) {
       applyIntensities(profile, chosen);
-      process.stderr.write(`  calibrated: ${Object.entries(chosen).map(([k, v]) => `${k} ${v.toFixed(2)}×`).join(', ')}\n`);
+      process.stderr.write(`  calibrated: ${describeIntensities(chosen)}\n`);
     } else {
       process.stderr.write('  review skipped — keeping the fitted intensities\n');
     }
