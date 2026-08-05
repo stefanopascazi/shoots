@@ -1,0 +1,198 @@
+/**
+ * The develop pipeline, as a shader.
+ *
+ * This replaces a per-channel lookup table, and the replacement is not about
+ * speed — it is about what a lookup table *cannot express*, which turned out to
+ * be most of what the review screen is for:
+ *
+ * - **A table clips.** With 65536 entries it has to end somewhere, so the old
+ *   one clamped scene-linear light to 1.0 before doing anything else. Highlight
+ *   recovery then had nothing left to recover and every positive exposure step
+ *   clipped instantly — the two controls the screen exists to calibrate. In
+ *   float there is no such ceiling: values stay above white until the display
+ *   transform at the very end.
+ * - **A table is per-channel.** The tone controls therefore acted on red, green
+ *   and blue independently, which shifts hue as it moves brightness. Here they
+ *   act on *luminance* and apply one common gain to the three channels, which is
+ *   both what a photographer expects and what every editor does.
+ * - **A table cannot see its neighbours.** Clarity and Texture are local
+ *   contrast, so they were simply not applied at all — two of the eleven
+ *   controls on the screen rendered as no-ops. Here they are an unsharp mask
+ *   over two precomputed scales.
+ *
+ * What is still approximate, stated plainly: Adobe does not document the PV2012
+ * operators, so the shapes below are ours. They are, however, expressed in
+ * physical units — a region gain is in **stops**, a pivot is a **log2 luminance**
+ * — rather than as coefficients on an encoded value, which is what makes them
+ * checkable against Lightroom one control at a time.
+ *
+ * Ordering follows a scene-referred pipeline: everything multiplicative happens
+ * in linear light, the tonal shaping happens in log2 luminance, and only then is
+ * the result handed to a display transform. Curves and colour, which Camera Raw
+ * defines over encoded values, come after it.
+ */
+
+/** A full-screen triangle. `vUv` is flipped so row 0 of the buffer is the top. */
+export const VERTEX_SHADER = `#version 300 es
+out vec2 vUv;
+void main() {
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = vec2(p.x, 1.0 - p.y);
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/**
+ * Middle grey in log2. Every tonal operation is anchored somewhere relative to
+ * this: it is the one luminance a photographer's eye is calibrated on.
+ */
+const GREY = 'const float GREY = -2.4739;';
+
+export const FRAGMENT_SHADER = `#version 300 es
+precision highp float;
+precision highp sampler2D;
+
+in vec2 vUv;
+out vec4 fragColor;
+
+uniform sampler2D uImage;   // scene-linear RGB, as the RAW developer produced it
+uniform sampler2D uDetail;  // r = fine, g = coarse: log2-luma minus its blur
+uniform sampler2D uCurve;   // 256x1: the point curve and the parametric curve, combined
+
+uniform vec3  uWb;          // per-channel white-balance gain, unit luminance
+uniform float uExposure;    // EV
+uniform float uContrast;
+uniform float uHighlights;
+uniform float uShadows;
+uniform float uWhites;
+uniform float uBlacks;
+uniform float uClarity;
+uniform float uTexture;
+uniform float uDehaze;
+uniform float uVibrance;
+uniform float uSaturation;
+uniform float uDither;      // 1 on screen, 0 when the frame is being measured
+
+${GREY}
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+/**
+ * How far each control moves the picture at full deflection.
+ *
+ * In stops, so they can be argued about. Highlights and Shadows compress or
+ * expand their region rather than translating it, so their number is a
+ * proportion of the distance from the pivot; Whites and Blacks translate an
+ * endpoint, so theirs is an absolute shift.
+ */
+const float HIGHLIGHT_RANGE = 0.55;  // proportion of the distance above its pivot
+const float SHADOW_RANGE    = 0.55;
+const float WHITE_STOPS     = 1.10;
+const float BLACK_STOPS     = 1.10;
+const float CONTRAST_RANGE  = 0.45;  // proportion of the distance from middle grey
+const float CLARITY_STOPS   = 0.90;
+const float TEXTURE_STOPS   = 0.80;
+const float DEHAZE_STOPS    = 0.70;
+
+/** Where the recoverable region begins, and where the deep shadows do. */
+const float HIGHLIGHT_PIVOT = -3.20;
+const float SHADOW_PIVOT    = -4.60;
+
+/**
+ * Soft limit for a local-contrast term.
+ *
+ * An unsharp mask applied flat produces halos at strong edges, because that is
+ * exactly where the difference from the blur is largest. tanh leaves small
+ * differences — the texture the control is for — untouched, and rolls the large
+ * ones off.
+ */
+float soften(float d, float limit) { return limit * tanh(d / limit); }
+
+void main() {
+  vec3 lin = texture(uImage, vUv).rgb * uWb * exp2(uExposure);
+
+  float y = max(dot(lin, LUMA), 1e-7);
+  float l = log2(y);
+
+  // Local contrast. The blurs were taken once, on the untouched frame: white
+  // balance and exposure multiply the image by a constant, which is an additive
+  // shift in log — so it cancels in (l - blur) and the detail is invariant under
+  // both. Nothing here has to be recomputed when a slider moves.
+  vec2 detail = texture(uDetail, vUv).rg;
+  float fine = soften(detail.r, 0.55);
+  float coarse = soften(detail.g, 0.75);
+
+  float dl = 0.0;
+
+  // Texture works on the fine scale everywhere; Clarity works on the coarse one
+  // and is held back at the two ends, where local contrast turns into haloing
+  // against a blown sky or a blocked shadow.
+  float midtones = smoothstep(-7.0, -4.5, l) * (1.0 - smoothstep(-1.6, 0.2, l));
+  dl += uTexture * TEXTURE_STOPS * fine;
+  dl += uClarity * CLARITY_STOPS * coarse * midtones;
+
+  // Dehaze: not the physical haze model, and it does not pretend to be. Haze is
+  // a veil — it lifts the black point and flattens contrast at large scale — so
+  // removing it is the inverse of both, plus the saturation the veil was washing
+  // out (applied further down, with the other colour moves). This control
+  // carries the strongest anchor in the model, so showing an approximation of it
+  // is worth more than showing nothing, which is what the table did.
+  dl += uDehaze * DEHAZE_STOPS * coarse;
+  dl -= uDehaze * 0.45 * (1.0 - smoothstep(-8.0, -3.5, l));
+
+  // Highlights and Shadows: compress or expand their region, anchored at a
+  // pivot, so a negative Highlights pulls the bright end *toward* the pivot
+  // instead of translating the whole upper range down. That is what makes it
+  // read as recovery rather than as a darker picture.
+  dl += uHighlights * HIGHLIGHT_RANGE * min(max(l - HIGHLIGHT_PIVOT, 0.0), 4.0);
+  dl -= uShadows * SHADOW_RANGE * min(max(SHADOW_PIVOT - l, 0.0), 4.0);
+
+  // Whites and Blacks: move an endpoint, weighted by a smooth mask so neither
+  // has a visible boundary where it stops acting.
+  dl += uWhites * WHITE_STOPS * smoothstep(-2.6, 0.2, l);
+  dl += uBlacks * BLACK_STOPS * (1.0 - smoothstep(-7.5, -3.2, l));
+
+  // Contrast, about middle grey. In log this is a straight gain on the distance
+  // from grey, which is the shape a photographer means by "more contrast".
+  float shaped = l + dl;
+  shaped = GREY + (shaped - GREY) * (1.0 + uContrast * CONTRAST_RANGE);
+
+  // Back to linear as a single gain on the three channels: luminance moved, hue
+  // and saturation did not.
+  lin *= exp2(shaped) / y;
+
+  // Display transform. sRGB's transfer function gets us to encoded values; the
+  // gentle S on top of it is the base rendering every editor applies and this
+  // preview previously did not, which is why an untouched frame looked flat
+  // here and normal everywhere else.
+  vec3 enc;
+  enc.r = clamp(lin.r, 0.0, 1.0);
+  enc.g = clamp(lin.g, 0.0, 1.0);
+  enc.b = clamp(lin.b, 0.0, 1.0);
+  enc = mix(enc * 12.92, 1.055 * pow(max(enc, 0.0031308), vec3(1.0 / 2.4)) - 0.055,
+            step(0.0031308, enc));
+  const float BASE_CONTRAST = 0.30;
+  enc = mix(enc, enc * enc * (3.0 - 2.0 * enc), BASE_CONTRAST);
+
+  // Saturation and vibrance, on encoded values — which is where Camera Raw's
+  // ±100 means what it means. Vibrance is the same move weighted toward the
+  // *less* saturated pixels, which is what makes it protect skin.
+  float sat = uSaturation + uDehaze * 0.25;
+  if (sat != 0.0 || uVibrance != 0.0) {
+    float grey = dot(enc, LUMA);
+    float peak = max(max(enc.r, enc.g), enc.b);
+    float current = peak > 0.0 ? (peak - min(min(enc.r, enc.g), enc.b)) / peak : 0.0;
+    enc = clamp(vec3(grey) + (enc - grey) * (1.0 + sat + uVibrance * (1.0 - current)), 0.0, 1.0);
+  }
+
+  // The point curve and the parametric curve, combined into one table by the
+  // client. Camera Raw defines both over 0..255 encoded, so this is the right
+  // place for them and the only place they are exact.
+  enc = vec3(texture(uCurve, vec2(enc.r, 0.5)).r,
+             texture(uCurve, vec2(enc.g, 0.5)).r,
+             texture(uCurve, vec2(enc.b, 0.5)).r);
+
+  // A little noise, below one code value: after this much shaping an 8-bit
+  // canvas bands visibly in a clear sky. Off while a frame is being measured, so
+  // the reviewability test is not reading its own dither.
+  float n = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  fragColor = vec4(enc + (n - 0.5) * (uDither / 255.0), 1.0);
+}`;
