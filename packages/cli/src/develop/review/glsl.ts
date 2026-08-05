@@ -64,7 +64,7 @@ in vec2 vUv;
 out vec4 fragColor;
 
 uniform sampler2D uImage;   // scene-linear RGB, as the RAW developer produced it
-uniform sampler2D uDetail;  // r = fine, g = coarse: log2-luma minus its blur
+uniform sampler2D uDetail;  // r = detail band (Texture), g = mid band (Clarity)
 uniform sampler2D uCurve;   // 256x1: the point curve and the parametric curve, combined
 
 uniform vec3  uWb;          // per-channel white-balance gain, unit luminance
@@ -112,7 +112,8 @@ const float BLACK_STOPS     = 1.10;
 const float CONTRAST_RANGE  = 0.45;  // proportion of the distance from middle grey
 const float CLARITY_STOPS   = 0.90;
 const float TEXTURE_STOPS   = 0.80;
-const float DEHAZE_STOPS    = 0.70;
+/** Fraction of the frame's white mixed in (or taken out) at full deflection. */
+const float DEHAZE_VEIL     = 0.45;
 
 /**
  * Where each region sits, in stops below this frame's own white.
@@ -177,6 +178,32 @@ float mixAt(float h) {
 void main() {
   vec3 lin = texture(uImage, vUv).rgb * uWb * exp2(uExposure);
 
+  /**
+   * Dehaze, as the veil it is.
+   *
+   * Haze is light scattered *into* the path: it adds a fraction of a bright
+   * atmospheric colour to everything, which is why a hazy scene has a lifted
+   * black point, less contrast and less saturation. So adding it is a mix toward
+   * that colour and removing it is that mix inverted — the same equation, read
+   * in both directions:
+   *
+   *     add     out = in·(1+v) − v·A        (v < 0)
+   *     remove  out = (in − v·A) / (1 − v)  (v > 0)
+   *
+   * Negative therefore lays white over the picture, which is what negative
+   * Dehaze does and what the previous version did not: it inverted large-scale
+   * local contrast instead, so turning it down produced a glow rather than a
+   * veil. That is Clarity's mechanism, not this one.
+   *
+   * A is the frame's own white. The model is global — real haze thickens with
+   * distance and this does not know depth — so the amount is right and the
+   * distribution is flat.
+   */
+  float veil = uDehaze * DEHAZE_VEIL;
+  float A = exp2(uAnchor + uExposure);
+  lin = veil > 0.0 ? (lin - veil * A) / (1.0 - veil) : lin * (1.0 + veil) - veil * A;
+  lin = max(lin, 0.0);
+
   // Black and white, before anything tonal: from here on the frame is the
   // photograph being judged, and every control below acts on its luminance.
   // Weighted by the pixel's own saturation, so a grey wall is not moved by a
@@ -201,26 +228,18 @@ void main() {
   // shift in log — so it cancels in (l - blur) and the detail is invariant under
   // both. Nothing here has to be recomputed when a slider moves.
   vec2 detail = texture(uDetail, vUv).rg;
-  float fine = soften(detail.r, 0.55);
+  float fine = soften(detail.r, 0.45);
   float coarse = soften(detail.g, 0.75);
 
   float dl = 0.0;
 
-  // Texture works on the fine scale everywhere; Clarity works on the coarse one
-  // and is held back at the two ends, where local contrast turns into haloing
-  // against a blown sky or a blocked shadow.
+  // Two bands, two controls, no overlap: Texture has the detail, Clarity has the
+  // band between detail and shape. Clarity is held back at the two ends, where
+  // local contrast turns into haloing against a blown sky or a blocked shadow;
+  // Texture works everywhere, because detail does.
   float midtones = smoothstep(white - 7.0, white - 4.5, l) * (1.0 - smoothstep(white - 1.6, white + 0.2, l));
   dl += uTexture * TEXTURE_STOPS * fine;
   dl += uClarity * CLARITY_STOPS * coarse * midtones;
-
-  // Dehaze: not the physical haze model, and it does not pretend to be. Haze is
-  // a veil — it lifts the black point and flattens contrast at large scale — so
-  // removing it is the inverse of both, plus the saturation the veil was washing
-  // out (applied further down, with the other colour moves). This control
-  // carries the strongest anchor in the model, so showing an approximation of it
-  // is worth more than showing nothing, which is what the table did.
-  dl += uDehaze * DEHAZE_STOPS * coarse;
-  dl -= uDehaze * 0.45 * (1.0 - smoothstep(white - 8.0, white - 3.5, l));
 
   // Highlights and Shadows: compress or expand their region, anchored at a
   // pivot, so a negative Highlights pulls the bright end *toward* the pivot

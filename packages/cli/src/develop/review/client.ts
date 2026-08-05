@@ -260,13 +260,20 @@ function detailTexture(gl, rgb, w, h) {
     seen += hist[b];
     if (seen >= target) { anchor = b / 16 - 16; break; }
   }
+  // Two bands, not two overlapping halves. The obvious pair — image minus a
+  // small blur, image minus a large one — makes the second contain everything
+  // the first does, so Clarity acted on the fine detail that is Texture's job
+  // and read as texture and contrast at once. Splitting them at the blur
+  // boundary gives each control a frequency range of its own:
+  //   Texture = image - fine        (detail: skin, hair, fabric)
+  //   Clarity = fine - coarse       (the band between detail and shape)
   var edge = Math.min(w, h);
-  var fine = blur(logLuma, w, h, Math.max(1, Math.round(edge / 250)));
-  var coarse = blur(logLuma, w, h, Math.max(4, Math.round(edge / 25)));
+  var fine = blur(logLuma, w, h, Math.max(1, Math.round(edge / 450)));
+  var coarse = blur(logLuma, w, h, Math.max(8, Math.round(edge / 15)));
   var out = new Float32Array(w * h * 2);
   for (var k = 0; k < w * h; k++) {
     out[k * 2] = logLuma[k] - fine[k];
-    out[k * 2 + 1] = logLuma[k] - coarse[k];
+    out[k * 2 + 1] = fine[k] - coarse[k];
   }
   return { texture: texture(gl, gl.RG32F, gl.RG, gl.FLOAT, w, h, out), anchor: anchor };
 }
