@@ -1,10 +1,15 @@
 # shoots — documentation
 
-Scriptable batch automation for professional photography workflows.
+Your own develop style, learned locally and predicted on the next shoot.
 
-`shoots` is an **orchestration layer**, not an editor and not a DAM. It sits *before*
-or *after* Lightroom / Capture One / your culling tool of choice and automates the
-tedious parts around them.
+`shoots` fits a **develop profile** on the catalog you have already edited and predicts
+a per-image starting point for new work, as XMP sidecars your editor reads — with the
+training and the inference on your own machine, and nothing uploaded. Around that sits
+the rest of the shoot: offload, metadata, focus-aware culling, star ratings.
+
+It is an **orchestration layer**, not an editor and not a DAM. It sits *before* or
+*after* Lightroom / Capture One / your culling tool of choice and automates the tedious
+parts around them.
 
 ---
 
@@ -12,6 +17,7 @@ tedious parts around them.
 
 | Page | What it covers |
 | --- | --- |
+| [Direction](./roadmap.md) | Design goals, what is being worked on, and what shoots will not become |
 | [Getting started](./getting-started.md) | Install, `setup`, `doctor`, your first import |
 | [Core concepts](./concepts.md) | Non-destructive rules, exit codes, JSON output, file discovery |
 | [Command reference](./commands/README.md) | Every command, every flag, with examples |

@@ -1,0 +1,102 @@
+# Direction
+
+What `shoots` is trying to be, what is being worked on, and what it will not
+become. This page is intentionally short on dates: it records intent, and intent
+that has not shipped is not a promise.
+
+Current release: **0.6.1**. The tool is pre-1.0 — the commands below are in
+daily use, but the shape of a young one can still change between minor versions.
+What each release asks of you is in the [migration notes](./migrations.md).
+
+---
+
+## Design goals
+
+These are the constraints every feature is measured against. They are not
+expected to change.
+
+| Goal | What it means in practice |
+| --- | --- |
+| **Nothing is destroyed** | Originals are never deleted or overwritten. Edits go to sidecars, rejects are moved and not removed, every mutating command accepts `--dry-run`. |
+| **Everything runs locally** | No cloud, no upload. The models ship to `~/.shoots` and run on your machine, on your photographs. Nothing about a prediction requires a network. |
+| **The CLI stays free** | Every command documented here is free to run, with no subscription. Paid work, if it happens, is addons and studio-scale features alongside the CLI — never a toll on what already works. |
+| **Scriptable before interactive** | Every command speaks `--json` and returns meaningful exit codes. The shell is a front for the CLI, never the only way to do something. |
+| **An orchestration layer, not an editor** | `shoots` sits before and after Lightroom / Capture One and automates the tedium around them. XMP sidecars are the interface. |
+| **Editor-agnostic** | The engine runs with no host editor installed. Any editor plugin is a thin front over it, never a dependency of it. |
+| **Honest about what it knows** | A model that cannot support a prediction says so, and reaches only as far as its evidence carries it. |
+
+## Where it stands
+
+| Area | State |
+| --- | --- |
+| [`import`](./commands/import.md), [`rename`](./commands/rename.md), [`exif`](./commands/exif.md) | Stable. The template engine and the metadata layer are settled. |
+| [`cull`](./commands/cull.md), [`rate`](./commands/rate.md), [`triage`](./commands/triage.md) | Stable. Focus-aware culling and CLIP rating, with review. |
+| [Preference learning](./preference-learning.md) — `embeddings`, `match` | Working end to end: duels in, a personal rating profile out. |
+| [Develop predictor](./develop-predictor.md) — `develop` | The active front. Usable, and the part still moving fastest. |
+| [Pipelines](./pipelines.md), [`schedule`](./commands/schedule.md) | Recent. The YAML surface may still gain steps. |
+
+## Next
+
+The develop predictor is where the work is. In order:
+
+- **Per-frame skill, not per-shoot averages.** 0.6.0 split a profile into a
+  shoot model and an in-shoot model so two frames of the same shoot stop getting
+  the same answer. The in-shoot spread is still below a photographer's own, and
+  closing that gap is the single biggest open problem.
+- **Calibration you can trust by eye.** `develop calibrate --review` judges each
+  correction in real units, on the region it acts on. Extending that until the
+  reviewed result is what a shoot actually needs.
+- **Fewer frames to a useful profile.** Training currently wants a sizeable
+  edited catalog. Lowering that floor is what decides whether the predictor is
+  for everyone or only for photographers with an archive.
+
+## Editors
+
+The predictor speaks to an editor through an **adapter**, and adapters are the
+main axis of growth. There is one today.
+
+| Editor | State |
+| --- | --- |
+| Lightroom Classic, Camera Raw, Bridge | **Supported** — the `acr` adapter, via XMP `crs:` sidecars |
+| darktable | Queued |
+| RawTherapee | Queued |
+| RapidRAW | Queued |
+| ON1 Photo RAW | Queued |
+| Capture One | Queued — the hardest, it does not use XMP for adjustments at all |
+
+Each one is real work rather than a flag: develop settings do not transfer
+between editors, and an exposure of +0.35 means whatever the host's pipeline
+says it means. What the adapter interface buys is that this is the *only* place
+that has to know — the schema, the model and the evaluation stay in one
+vocabulary behind it. The order is not fixed; demand moves it.
+
+## Later
+
+Candidates, not commitments — listed so the intent is visible before any of it
+is built.
+
+- **More rating profiles** for genres the built-ins do not cover.
+- Richer **pipeline steps** — conditionals, and reuse of a pipeline as a step.
+- **Selection help beyond focus**: near-duplicate grouping, eyes-closed and
+  expression checks on the frames culling leaves behind.
+
+## Non-goals
+
+Things that would make `shoots` a different tool, and are therefore out of scope
+whatever the demand:
+
+- **Becoming an editor.** No local masks, no generative fill, no retouching. The
+  deliverable is the best starting point to refine, not a finished image.
+- **Becoming a DAM.** No catalog database, no asset manager, no library UI. Your
+  editor already owns that.
+- **Cloud inference.** Sending photographs to a third party for a better model is
+  not a trade this tool will make. Any account the project ever asks for is for
+  usage analytics and the things that live outside the CLI — never a gate in
+  front of a prediction.
+- **Editing in place.** No feature will ever earn the right to overwrite an
+  original.
+
+---
+
+Disagree with any of it, or need something that is not here?
+[Open an issue](https://github.com/stefanopascazi/shoots/issues).
