@@ -9,7 +9,7 @@ Building, testing and releasing `shoots` from source.
 | Requirement | Notes |
 | --- | --- |
 | **Node.js ≥ 20.9** | Enforced by the root `engines` field |
-| **Bun** | Only for `npm run build:binary` (the single-binary build) |
+| **Bun** | The single-binary build (`build:binary`), the test run (`npm test`), and every root script written in TypeScript: `build:icon`, `build:screens`, `docs:migrations`, `data:pairs`, and the `version` release guard |
 | **Node ≥ 22.5** | Only to run `shoots match` from source — it needs `node:sqlite`. The binary uses Bun's own SQLite and has no such floor. |
 
 `sharp` installs prebuilt libvips binaries automatically via npm. External tools
@@ -36,6 +36,10 @@ scripts/
   prepare-tool-mirror.ts     exiftool archives for the mirror
   prepare-libraw-mirror.ts   LibRaw dcraw_emu, cross-built
   prepare-model-mirror.ts    CLIP ONNX archive + precomputed text embeddings
+
+tools/        Research scripts, not shipped: anchor-probe, shoot-gain,
+              photometric-pairs, label-recovery, missing-link. They answer a
+              question about the model and are kept for the next time it is asked.
 
 assets/       Brand assets: icon (.svg/.ico/.png) + screens/ screenshots, committed
 examples/     Sample pipeline configs
@@ -357,7 +361,13 @@ npm version patch      # or minor / major
 
 That triggers:
 
-- `preversion` → `npm run typecheck && npm run build`
+- `preversion` → `npm run typecheck && npm run build && npm test`, then
+  `npm run docs:migrations -- --check` — a stale `docs/migrations.md` stops the
+  release before the bump
+- `version` → `bun scripts/check-release-version.ts`, which **refuses a number
+  that disagrees with the migration notes**: a release carrying an entry that
+  invalidates a stored profile or dataset cannot go out as a patch, and a note
+  may never name a version newer than the build that would print it
 - the version bump and commit
 - `postversion` → `git push origin main && git push origin --tags`
 
@@ -423,19 +433,34 @@ See [Preference learning](./preference-learning.md).
 
 ---
 
-## Testing changes end to end
+## Testing
+
+```sh
+npm test              # builds the CLI, then `bun test packages/cli/test`
+```
+
+The suite lives in `packages/cli/test` and drives the built CLI as a black box —
+the pipeline loader against the real command definitions, the triage
+mark → sidecar cycle, and the cull review's marks. `preversion` runs it, so a
+failing test blocks a release.
+
+### End to end, by hand
 
 The project rule is: **always verify the end-to-end flow.** A change that
-type-checks is not a change that works.
+type-checks is not a change that works, and the suite covers three flows out of
+a dozen.
 
 ```sh
 npm run build
 
-# A real folder, dry-run first
-node packages/cli/dist/cli.js import ./test/fixtures --dest /tmp/out --dry-run
-node packages/cli/dist/cli.js cull ./test/fixtures --format csv
-node packages/cli/dist/cli.js rate ./test/fixtures --dry-run
+# Point these at a folder of your own photographs — dry-run first
+node packages/cli/dist/cli.js import <folder> --dest /tmp/out --dry-run
+node packages/cli/dist/cli.js cull <folder> --format csv
+node packages/cli/dist/cli.js rate <folder> --dry-run
 node packages/cli/dist/cli.js doctor
+
+# The examples validate against the live command definitions
+node packages/cli/dist/cli.js pipeline examples/wedding-pipeline.yaml --dry-run
 
 # The shell (needs a TTY)
 node packages/cli/dist/cli.js

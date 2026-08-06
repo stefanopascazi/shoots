@@ -89,7 +89,7 @@ similarity, so no text encoder or tokenizer is loaded.
 ```json
 {
   "file": "D:/raw/IMG_0001.CR3",
-  "model": "clip-vit-b32-int8",
+  "model": "onnx-clip/vit-b32-int8-2",
   "profile": "street",
   "stars": 4,
   "scores": { "focus": 0.812, "aesthetic": 0.591 },
@@ -152,7 +152,7 @@ shoots rate ./raw --dry-run
 ★★☆☆☆  IMG_0002.CR3  focus=0.774 aesthetic=0.531  [portrait, indoor]
 ☆☆☆☆☆  IMG_0003.CR3  focus=0.201 aesthetic=0.498  [blurry, motion]
 
-482/482 rated with clip-vit-b32-int8 (profile: street) (dry run, no sidecars written)
+482/482 rated with onnx-clip/vit-b32-int8-2 (profile: street) (dry run, no sidecars written)
 ```
 
 ### Rate a wedding with the matching profile
@@ -216,7 +216,7 @@ ONNX inference holds real memory per parallel job.
 ```json
 {
   "command": "rate",
-  "model": "clip-vit-b32-int8",
+  "model": "onnx-clip/vit-b32-int8-2",
   "profile": "street",
   "dryRun": false,
   "results": [
@@ -228,7 +228,7 @@ ONNX inference holds real memory per parallel job.
       "aspects": [ { "name": "overall", "score": 0.612 } ],
       "keywords": ["street", "urban", "candid"],
       "sidecar": "D:/raw/IMG_0001.CR3.shoots.json",
-      "model": "clip-vit-b32-int8"
+      "model": "onnx-clip/vit-b32-int8-2"
     }
   ],
   "errors": [],

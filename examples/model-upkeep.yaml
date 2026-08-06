@@ -28,7 +28,10 @@ steps:
     with:
       out: ${dataset}
       edited-only: true
-      baseline: embedded-preview
+      # Must match what `develop edit` exports with, or `predict` refuses the
+      # pair — the two renders put the same frame at a different luminance.
+      # `external` is also the accurate one, and what `develop init` defaults to.
+      baseline: external
 
   # 2. Refit the profile on it.
   - id: refit

@@ -209,4 +209,4 @@ clobbering it. `shoots doctor` reports what is actually resolved.
 | No exiftool, `cull` on JPEGs | Works. The aperture column is omitted (it is report context, not a decision input). |
 | No exiftool, `exif` / `rename` | Fails with a clear message — those commands *are* exiftool. |
 | No CLIP model | `rate`, `embeddings` and `develop export` fail with a message pointing at `shoots setup`. |
-| No LibRaw and no `SHOOTS_RAW_DEVELOPER` | `develop export --baseline external` fails; `--baseline embedded-preview` (the default) still works. |
+| No LibRaw and no `SHOOTS_RAW_DEVELOPER` | Anything on `--baseline external` fails — which includes `develop init` and `develop edit`, where it is the default. Fall back to `--baseline embedded-preview`, at the cost described in [the predictor guide](./develop-predictor.md#the-baseline-render--why-it-matters-most). |

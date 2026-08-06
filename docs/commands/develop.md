@@ -483,15 +483,27 @@ something already has it — nobody bookmarks this page, so moving is better tha
 failing. Named with `--review-port`, it fails with the busy port and the flag
 rather than quietly serving somewhere else.
 
-**Clarity and Texture are not shown.** They are local-contrast effects over a
-neighbourhood, not a curve, and this preview cannot reproduce them — a wrong
-version would be worse than none. Exposure and white balance are exact; the tone
-controls are monotone approximations of Camera Raw, faithful in direction and
-ordering but not in numbers. That is enough to answer "too much or too little",
-which is the only question the screen asks.
+**Colour and black-and-white are calibrated separately.** A profile fits them as
+two branches with their own anchors, so each gets its own controls and its own
+frames, drawn from the records that branch will actually apply to. A branch with
+no photographs to show says so and keeps its fitted gains. The treatment is named
+on each control only when there is more than one to tell apart.
 
-One model is trained **per treatment** over `shared + <branch>`, so a
-high-contrast B&W edit and a light colour edit never average into a mush.
+**How faithful the preview is, control by control.** Exposure and white balance
+are exact. The tone controls are monotone approximations of Camera Raw — right in
+direction and ordering, not in numbers. The local-contrast trio is rendered from
+real frequency bands on the GPU: Texture takes the detail band, Clarity the band
+between detail and shape, and Dehaze is a veil mixed toward the frame's own white
+rather than a contrast curve. They are approximations and stay approximations —
+Dehaze in particular knows no depth, so the amount is right and the distribution
+is flat. Enough to answer "too much or too little", which is the only question
+the screen asks.
+
+Each treatment is fitted as **two heads** over `shared + <branch>` — one reading
+the shoot, one reading how far this frame departs from it — so a high-contrast
+B&W edit and a light colour edit never average into a mush, and two frames of the
+same shoot do not come back identical. See
+[the predictor guide](../develop-predictor.md#3-two-heads--the-shoot-and-the-frame-against-it).
 
 ### Each image is described alongside its whole shoot
 
@@ -531,11 +543,11 @@ of parameters dominates — on a real catalog that pinned λ to the top of the g
 and collapsed *every* parameter onto the photographer's mean, which from the
 outside looks like "it predicts the same settings for every photo".
 
-`--lambda auto` therefore picks a λ per parameter, reported in the `λ` column of
-the table and summarised in the branch header:
+`--lambda auto` therefore picks a λ per parameter **and per head**, summarised in
+the branch header — there is no λ column in the table:
 
 ```
-λ per param (auto): 30000×62 100×6
+λ per param (auto): level 30000×62 100×6 | frame 3000×48 100×20
 ```
 
 Everything piling onto the top of the grid means the model cannot read this
@@ -555,7 +567,26 @@ and that alone is enough noise to push unpredictable sliders past the gate.
 skill = 1 − modelMae / baselineMae
 ```
 
-- `skill > 0` → the model beats simply applying your mean edit.
+The table splits that across the two heads:
+
+```
+  param                end-end  ± fold   random    shoot  in-shoot  reach   model MAE
+```
+
+- `end-end` is the skill above, and `> 0` means the model beats simply applying
+  your mean edit. `± fold` is how far it moves between folds — a change smaller
+  than that is not a change. `random` is the same figure on random folds; the gap
+  is session leakage.
+- `shoot` and `in-shoot` say where the skill comes from: reading the shoot, or
+  reading this frame against its neighbours. **`in-shoot` is the one to read** —
+  end-end can look healthy on a model that only reproduces per-shoot averages.
+  The branch header carries the same question for the whole branch, as
+  `within-shoot skill`.
+- `reach` is how far the prediction is stretched back out after ridge shrank it:
+  `1.00` untouched, above that the fit was too timid.
+- Anchored sliders are listed in a **second table** below, with their anchor
+  feature, gain and tail skill. For those, the head columns describe machinery
+  inference does not use — a row reading 0.0% there can be shipping at 0.26.
 - The **headline number** is the weighted skill over the *image-dependent*
   parameters (exposure, WB, contrast, highlights/shadows, dehaze/vibrance).
 - Style-constant parameters (HSL, colour grading) are **expected** to collapse to

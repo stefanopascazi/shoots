@@ -73,6 +73,11 @@ shoots rate ./raw --dry-run
 Note that `cull --dry-run` still *analyzes* (that is the expensive part) — it just
 skips relocating files and writing the `--out` report.
 
+**The exceptions are the low-level `develop` steps.** `develop train`,
+`develop predict` and `develop diagnose` take no `--dry-run` — they are the
+plumbing under `init`, `edit`, `learn` and `refine`, which do, and which is where
+a dry run is worth having.
+
 ---
 
 ## 3. stdout is the result, stderr is the noise
@@ -112,7 +117,10 @@ shoots import E:/DCIM --dest ./raw --json || notify-failure
 
 ## 5. `--json` everywhere it matters
 
-Every command that produces a result supports `--json`. The shape is consistent:
+Every command that produces a result supports `--json`, with the same three
+exceptions as `--dry-run` — `develop train`, `develop predict` and
+`develop diagnose` report to the terminal only; wrap them in `develop init` or
+`develop refine` if you need a machine-readable result. The shape is consistent:
 
 ```jsonc
 {
@@ -145,7 +153,7 @@ Each of these steps announces itself on stderr with a spinner and elapsed time:
 ✓ Scanning — 2421 files (0.3s)
 ⠹ Reading develop settings 1500/2421 — 47.2s
 ✓ Reading capture metadata — 2421 files (74.2s)
-✓ Loading inference model — clip-vit-b32-int8 (1.1s)
+✓ Loading inference model — onnx-clip/vit-b32-int8-2 (1.1s)
 ```
 
 Which phases appear depends on the command:
@@ -294,9 +302,12 @@ packages/
   core/       Pipeline engine, templating, file discovery, job queue, checksums, provisioning.
   imaging/    exiftool wrapper, sharp thumbnails, Laplacian blur + focus-map analysis.
   inference/  QualityModel interface, ONNX CLIP backend, aesthetics, keywords, profiles.
+  match/      Duels → Bradley-Terry ranking → a linear-embedding rating profile.
 ```
 
-Dependency direction: `cli → core / imaging / inference`, and `imaging → core`.
+Dependency direction: `cli → core / imaging / inference / match`, and
+`imaging → core`. `match` deliberately does **not** depend on `inference`: it
+never loads an ML runtime, only numbers `embeddings` handed it.
 
-`core`, `imaging` and `inference` never depend on `cli` or Ink. They are usable
-headlessly, from a library, or from a future REST layer, unchanged.
+None of them depends on `cli` or Ink. They are usable headlessly, from a library,
+or from a future REST layer, unchanged.

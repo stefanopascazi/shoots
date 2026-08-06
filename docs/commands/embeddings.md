@@ -121,7 +121,7 @@ shoots embeddings ./sample
 IMG_0001.CR3  dim=512  aspects=7  seed=0.573  [street, urban, candid]
 IMG_0002.CR3  dim=512  aspects=7  seed=0.541  [portrait, indoor]
 
-2/2 embedded with clip-vit-b32-int8 (dim 512)
+2/2 embedded with onnx-clip/vit-b32-int8-2 (dim 512)
 ```
 
 ### Feed the preference-learning pipeline
@@ -143,7 +143,7 @@ Full walkthrough: [Preference learning](../preference-learning.md).
 ```json
 {
   "command": "embeddings",
-  "model": "clip-vit-b32-int8",
+  "model": "onnx-clip/vit-b32-int8-2",
   "dim": 512,
   "results": [
     {

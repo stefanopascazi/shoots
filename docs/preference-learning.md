@@ -135,6 +135,9 @@ what it already knows.
 - **~500–800** — where profiles typically start behaving sensibly.
 - **More is better**, with diminishing returns.
 
+`train` refuses outright below **10** duels — not a useful target, just the point
+below which the fit is noise rather than taste.
+
 Duels are cheap: a few hundred is fifteen minutes. Judge quickly and instinctively
 — your first reaction is the signal you want to capture. Overthinking a pair adds
 noise, and `space` is always available.

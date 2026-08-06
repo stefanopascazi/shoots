@@ -80,10 +80,13 @@ steps:
     with:
       mark: true
       mark-label: reject
+      threshold: 100             # Laplacian variance; tune per camera/subject
 
   - id: develop
     run: develop edit
     args: ${raw}
+    with:
+      treatment: auto
 ```
 
 Run it — after looking at what it will do:

@@ -82,7 +82,7 @@ them permanently beyond `calibrate`. `feedback` now decides that by comparing
 **when the prediction was made** against **when the photograph entered training**,
 so re-measuring an unchanged prediction stays the clean held-out measurement it
 always was. See
-[`develop refine`](./develop.md#running-it-once-per-developed-shoot).
+[`develop refine`](./develop.md#shoots-develop-refine).
 
 What a repeat still does is **refit the model on identical data**, and a refit
 writes a whole new profile — which discards the calibration offsets measured

@@ -68,7 +68,8 @@ shoots cull D:/Shoots/2026/smith-wedding --dest D:/Shoots/2026/smith-wedding/rej
 shoots rate D:/Shoots/2026/smith-wedding --profile wedding --write-xmp
 ```
 
-Every mutating command accepts `--dry-run`. Every command accepts `--json`.
+Every mutating command accepts `--dry-run` and `--json` — bar the three low-level
+`develop` steps, see [Core concepts](./concepts.md#2---dry-run-on-every-mutating-command).
 Nothing is ever deleted.
 
 ---
@@ -82,16 +83,25 @@ shoots
 ├── exif         batch read/write EXIF·IPTC·XMP via exiftool
 ├── cull         focus-aware blur detection; relocate or review rejects
 ├── rate         0–5 star ratings + keywords via the ONNX CLIP model
+├── triage       the marks cull and rate recorded, before they reach a sidecar
+│   ├── list        what is pending
+│   ├── apply       write the pending marks into sidecars
+│   └── clean       drop marks, or just the orphaned ones
 ├── embeddings   profile-neutral CLIP export for preference learning
 ├── match        learn your eye from duels → a personal rating profile
 │   ├── import      an embeddings bundle → the duel database
 │   ├── serve       the duel UI at 127.0.0.1:4576
 │   └── train       Bradley-Terry + ridge → ~/.shoots/profiles/<name>.json
 ├── develop      personal develop-setting predictor
-│   ├── export      build a training dataset from an edited catalog
-│   ├── train       fit a per-catalog develop profile
-│   ├── predict     apply a profile → predicted crs vector / XMP sidecar
-│   └── diagnose    style-clustering diagnostic
+│   ├── init        edited catalog → a fitted profile (export + train)
+│   ├── edit        a new shoot → XMP sidecars (export + predict)
+│   ├── refine      after you developed it: feedback + learn + calibrate
+│   ├── status      what this machine holds
+│   ├── clean       drop the per-shoot working files
+│   └── …           export · train · predict · feedback · learn · calibrate ·
+│                   diagnose · refresh-targets — the steps the three above wrap
+├── pipeline     run a YAML pipeline: shoots commands in order, sharing variables
+├── schedule     run `develop refine` unattended via cron / Task Scheduler
 ├── setup        provision exiftool + LibRaw + the inference model
 ├── doctor       environment health check
 ├── update       self-update the standalone binary

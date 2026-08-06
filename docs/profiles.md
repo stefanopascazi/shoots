@@ -189,7 +189,7 @@ apply to that normalized score exactly as with a built-in profile.
   "type": "linear-embedding",
   "name": "my-eye",
   "description": "Learned from 800 duels, June 2026",
-  "embeddingModel": "clip-vit-b32-int8",   // guards the embedding space
+  "embeddingModel": "onnx-clip/vit-b32-int8-2",   // guards the embedding space
   "dim": 512,
   "weights": [ /* 512 floats */ ],
   "bias": -0.14,
@@ -235,9 +235,12 @@ error: unknown rating profile 'foo' (available: street, generic, portrait, wildl
 ## Profiles in the pipeline config
 
 ```yaml
-- type: rate
-  profile: wedding
-  output: xmp
+- id: first-pass-rating
+  run: rate
+  args: ${raw}
+  with:
+    profile: wedding
+    mark: true        # or `write-xmp: true` if nothing writes a sidecar after it
 ```
 
 See [Pipelines](./pipelines.md).

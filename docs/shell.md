@@ -224,7 +224,7 @@ Originals preserved as *_original backups (exiftool default).
 ❯ /rate @raw/ --profile wedding --mark
 ★★★★☆  IMG_0001.CR3  focus=0.812 aesthetic=0.591  [wedding, ceremony]
 ...
-431/431 rated with clip-vit-b32-int8 (profile: wedding)
+431/431 rated with onnx-clip/vit-b32-int8-2 (profile: wedding)
 marked 431 files — `shoots develop edit` or `shoots triage apply` writes them into sidecars
 
 ❯ /triage apply @raw/

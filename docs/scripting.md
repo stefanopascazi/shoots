@@ -45,7 +45,8 @@ log lines on stderr. Nothing ever waits for input.
 
 ## JSON shapes
 
-Every command follows the same skeleton:
+Every command that speaks JSON follows the same skeleton — `develop train`,
+`develop predict` and `develop diagnose` do not, and report to the terminal only:
 
 ```jsonc
 {
@@ -155,7 +156,7 @@ SHOOTS_HOME=/opt/shoots-home
 Do not hand-write a crontab entry for `develop refine`. It needs a shoot path,
 and which paths are still valid changes every time you move, re-edit or clean a
 shoot — plus re-running it on an unchanged shoot is actively harmful (see
-[`shoots schedule`](./commands/schedule.md#why-unchanged-is-skipped-and-why-it-matters)).
+[`shoots schedule`](./commands/schedule.md#why-unchanged-is-skipped)).
 `shoots schedule install` registers one entry that resolves the paths at run time
 and skips whatever has not changed, on cron and on the Windows Task Scheduler
 alike:
