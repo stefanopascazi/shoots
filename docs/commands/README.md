@@ -101,7 +101,7 @@ shoots rate <path> [--model onnx] [--profile <name>] [--mark] [--write-xmp]
                    [--concurrency 4] [--dry-run] [--json]
 
 shoots triage list  [<path>] [--json]
-shoots triage apply <path> [--editor acr] [--redo] [--dry-run] [--json]
+shoots triage apply <path> [--editor acr|rapidraw] [--redo] [--dry-run] [--json]
 shoots triage clean [--orphans] [--dry-run] [--json]
 
 # ── ML tooling ────────────────────────────────────────────────────────────────

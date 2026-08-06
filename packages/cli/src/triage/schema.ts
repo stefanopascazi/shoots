@@ -107,12 +107,6 @@ export function needsApplying(record: TriageRecord, sidecar: string): boolean {
   return !sameSidecar(record.applied.sidecar, sidecar);
 }
 
-/** The sidecar that belongs beside a photograph, by the ACR/Lightroom convention. */
-export function besideSidecar(file: string): string {
-  const parsed = path.parse(path.resolve(file));
-  return path.join(parsed.dir, `${parsed.name}.xmp`);
-}
-
 /**
  * Parse one JSONL line into a record, or null when it is unusable.
  *

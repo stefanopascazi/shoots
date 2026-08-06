@@ -221,7 +221,10 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
     // folder, so count them rather than just naming the step. Counted off the
     // store, never by scanning the catalog: a dry run prints its plan and stops,
     // and pointing one at a drive root must not turn into a silent full walk.
-    const pending = args.applyMarks === false ? 0 : await countPendingUnder(targetPath);
+    const adapter = resolveAdapter(args.editor ?? DEFAULT_EDITOR);
+    const sidecarFor = (file: string): string =>
+      adapter.sidecarPathFor!(file, path.dirname(path.resolve(file)));
+    const pending = args.applyMarks === false ? 0 : await countPendingUnder(targetPath, sidecarFor);
     const plan = {
       command: 'develop-edit' as const,
       dryRun: true,

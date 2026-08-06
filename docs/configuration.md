@@ -166,8 +166,16 @@ Partial overrides merge over the defaults, so remapping one label leaves the res
 alone. Unknown keys and empty values are rejected outright, before anything is
 written — a shoot half-labelled in the wrong vocabulary is worse than an error.
 
-`<editor>` is the `--editor` id (`acr` today). Switching editors later means
-editing one file, not re-culling.
+`<editor>` is the `--editor` id — `acr` or `rapidraw`. Switching editors later
+means editing one file, not re-culling.
+
+The defaults differ by editor, because the editors do. Lightroom matches a label
+by name against a *localized* set, so `acr` defaults to Adobe's English colours
+(`Red`, `Green`, `Yellow`, `Purple`) and an Italian install wants an override.
+RapidRAW stores the label as a `color:<name>` tag against a fixed enum, so
+`rapidraw` defaults to its five lowercase names (`red`, `green`, `yellow`,
+`purple`) and overriding it means choosing a *different* colour, not translating
+the same one.
 
 ---
 

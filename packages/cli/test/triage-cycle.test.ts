@@ -254,6 +254,119 @@ describe('a develop write landing on an annotated sidecar', () => {
   });
 });
 
+/**
+ * The same cycle through a second editor.
+ *
+ * Two things are under test that the ACR run cannot see. First, that `--editor`
+ * reaches the whole path — the mark store is editor-agnostic, so a triage run
+ * that quietly kept writing `.xmp` would still pass every assertion above.
+ * Second, that develop settings and annotations can share one file: RapidRAW
+ * keeps both in the same `.rrdata`, so the write that lands second is the one
+ * that gets to eat the first.
+ *
+ * No `xmpTest` guard: not needing exiftool is the point.
+ */
+describe('the same cycle, through RapidRAW', () => {
+  /** RapidRAW keeps the extension: `IMG_0001.jpg` → `IMG_0001.jpg.rrdata`. */
+  const rrdata = (sandbox: Sandbox, day: string): string =>
+    path.join(sandbox.catalog, '2026', day, 'IMG_0001.jpg.rrdata');
+
+  test('writes .rrdata beside each photograph and no .xmp anywhere', async () => {
+    const sandbox = await makeSandbox();
+    try {
+      await cli(sandbox, 'cull', sandbox.catalog, ...ALL_BLURRY, '--mark');
+      const { code, out } = await cli(sandbox, 'triage', 'apply', sandbox.catalog, '--editor', 'rapidraw');
+      expect(code).toBe(0);
+      expect(out).toContain('2 sidecar(s) written');
+
+      for (const day of ['2026-08-02', '2026-08-03']) {
+        expect(existsSync(rrdata(sandbox, day))).toBe(true);
+        // The ACR convention must not have leaked through.
+        expect(existsSync(sidecar(sandbox, day))).toBe(false);
+      }
+    } finally {
+      await sandbox.dispose();
+    }
+  });
+
+  test('the label lands as a color: tag in RapidRAW vocabulary', async () => {
+    const sandbox = await makeSandbox();
+    try {
+      await cli(sandbox, 'cull', sandbox.catalog, ...ALL_BLURRY, '--mark');
+      await cli(sandbox, 'triage', 'apply', sandbox.catalog, '--editor', 'rapidraw');
+
+      const written = JSON.parse(await readFile(rrdata(sandbox, '2026-08-02'), 'utf8'));
+      expect(written.tags).toContain('color:red'); // lowercase, not Adobe's "Red"
+      expect(written.version).toBe(1);
+    } finally {
+      await sandbox.dispose();
+    }
+  });
+
+  test('a develop write into the same file keeps the marks it finds there', async () => {
+    const sandbox = await makeSandbox();
+    try {
+      await cli(sandbox, 'cull', sandbox.catalog, ...ALL_BLURRY, '--mark');
+      await cli(sandbox, 'triage', 'apply', sandbox.catalog, '--editor', 'rapidraw');
+
+      const target = rrdata(sandbox, '2026-08-02');
+      const { rapidrawAdapter } = await import('../src/develop/adapters/rapidraw/index.js');
+      await rapidrawAdapter.writeEdit!(
+        {
+          develop: { Exposure2012: 0.35, Contrast2012: 12, Temperature: 6200 },
+          treatment: 'color',
+          asShot: { tempAsShot: 5200, tintAsShot: null, iso: 400, exposureComp: 0, camera: 'EOS R' },
+        },
+        target,
+      );
+
+      const written = JSON.parse(await readFile(target, 'utf8'));
+      expect(written.adjustments.exposure).toBeCloseTo(0.35, 4);
+      expect(written.adjustments.contrast).toBe(12);
+      // 6200 K against a 5200 K capture is a warming, so the slider goes positive.
+      expect(written.adjustments.temperature).toBeGreaterThan(0);
+      // …and the label the cull recorded is still there.
+      expect(written.tags).toContain('color:red');
+    } finally {
+      await sandbox.dispose();
+    }
+  });
+
+  test('the marks survive in the other order too', async () => {
+    const sandbox = await makeSandbox();
+    try {
+      const target = rrdata(sandbox, '2026-08-03');
+      const { rapidrawAdapter } = await import('../src/develop/adapters/rapidraw/index.js');
+      // Develop first, annotations after: `triage apply` must merge into the
+      // prediction rather than template over it.
+      await rapidrawAdapter.writeEdit!({ develop: { Contrast2012: 30 }, treatment: 'color' }, target);
+
+      await cli(sandbox, 'cull', sandbox.catalog, ...ALL_BLURRY, '--mark');
+      await cli(sandbox, 'triage', 'apply', sandbox.catalog, '--editor', 'rapidraw');
+
+      const written = JSON.parse(await readFile(target, 'utf8'));
+      expect(written.adjustments.contrast).toBe(30);
+      expect(written.tags).toContain('color:red');
+    } finally {
+      await sandbox.dispose();
+    }
+  });
+
+  test('a B&W prediction is refused rather than flattened to a desaturation', async () => {
+    const sandbox = await makeSandbox();
+    try {
+      const { rapidrawAdapter } = await import('../src/develop/adapters/rapidraw/index.js');
+      const attempt = rapidrawAdapter.writeEdit!(
+        { develop: { Exposure2012: 0.2 }, treatment: 'bw' },
+        rrdata(sandbox, '2026-08-02'),
+      );
+      expect(attempt).rejects.toThrow(/black-and-white/);
+    } finally {
+      await sandbox.dispose();
+    }
+  });
+});
+
 describe('triage clean', () => {
   xmpTest('drops what was applied and collects orphans', async () => {
     const sandbox = await makeSandbox();

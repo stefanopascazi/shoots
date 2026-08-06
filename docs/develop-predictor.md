@@ -10,17 +10,44 @@ Command reference: [`shoots develop`](./commands/develop.md).
 ## Scope — read this first
 
 **What it does:** predicts the *global look* as an Adobe Camera Raw (process 2012)
-develop vector, and writes it as an `.xmp` sidecar.
+develop vector, and writes it into a sidecar the target editor reads.
 
 **What it does not do:** local masks, generative edits, retouching, or a finished
 edit. The goal is **the best starting point to refine**, not a delivered image.
 
 **It is editor-agnostic.** The engine runs without any host editor installed. An
 **adapter** decides how an edit is read and written, selected with `--editor`.
-There is one today — `acr`, the default — which speaks XMP `crs:` sidecars and is
-read by Lightroom Classic, Camera Raw and Bridge. Capture One does *not* read
-develop adjustments from XMP and will need an adapter of its own. Plugins for
-specific editors are thin fronts over this same engine, not a dependency of it.
+Plugins for specific editors are thin fronts over this same engine, not a
+dependency of it.
+
+| `--editor` | Sidecar | Notes |
+| --- | --- | --- |
+| `acr` (default) | `<name>.xmp` | XMP `crs:`, read by Lightroom Classic, Camera Raw and Bridge |
+| `rapidraw` | `<name.ext>.rrdata` | JSON; needs no exiftool on either side |
+
+Capture One does *not* read develop adjustments from XMP and will need an adapter
+of its own.
+
+### What the RapidRAW adapter cannot carry
+
+The canonical vocabulary is ACR's, so a non-Adobe adapter translates into it —
+and translation has edges worth knowing about before you trust a number.
+
+- **No black-and-white.** RapidRAW has no grayscale mode and no channel mixer, so
+  the `bw` branch has nowhere to land. `--treatment bw --editor rapidraw` is
+  refused rather than flattened into a desaturation.
+- **White balance is relative.** RapidRAW states it as a shift in mired against
+  the as-shot temperature. Reading an edit therefore needs the RAW's own Kelvin,
+  which is why the WB target is completed during the capture pass rather than the
+  sidecar read.
+- **Geared sliders round-trip approximately.** Shadows is 1.5× ACR's, Tint 1/1.5×,
+  the HSL hues 0.75×. Shadows also saturates, so an ACR value past ±67 comes back
+  clipped.
+- **The parametric curve is dropped.** RapidRAW's point and parametric curves are
+  mutually exclusive — only one renders — so a prediction writes the point curve
+  and pins `curveMode`.
+- **Masks, crop, lens corrections and LUTs are never predicted**, and never
+  touched: the emitter amends the existing `.rrdata` rather than templating it.
 
 ---
 

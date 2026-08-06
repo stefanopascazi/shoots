@@ -113,6 +113,7 @@ shoots develop edit <path> [options]
 | --- | --- | --- |
 | `--profile <file>` | the one `init` wrote | Profile to apply |
 | `--treatment <t>` | `auto` | `auto` \| `color` \| `bw` |
+| `--editor <id>` | `acr` | Which editor to read from and write to: `acr` \| `rapidraw` |
 | `--camera-profile <name>` | catalog's own | Base rendering to assume and write out |
 | `--baseline <mode>` | `external` | Must match the profile's, or `predict` refuses |
 | `--force` | off | Overwrite sidecars that already carry a real edit |
@@ -193,6 +194,7 @@ shoots develop export <path> --out <file> [options]
 | Option | Default | Description |
 | --- | --- | --- |
 | `--out <file>` | **required** | Write the JSONL dataset here |
+| `--editor <id>` | `acr` | Which editor's develop settings to read: `acr` \| `rapidraw` |
 | `--baseline <mode>` | `embedded-preview` | Baseline render strategy: `embedded-preview` \| `external` |
 | `--edited-only` | off | Only run the expensive embedding/render on files that actually carry develop settings |
 | `--model <kind>` | `onnx` | Inference backend |
@@ -622,9 +624,10 @@ shoots develop predict --data <file> --profile <file> [options]
 | `--data <file>` | **required** | Dataset from `develop export` (the **new** set) |
 | `--profile <file>` | **required** | Profile JSON from `develop train` |
 | `--treatment <t>` | `auto` | Which branch to apply: `auto` \| `color` \| `bw` |
+| `--editor <id>` | `acr` | Which editor's format to write predictions in: `acr` \| `rapidraw` |
 | `--camera-profile <name>` | catalog's own | Base rendering to assume and write out |
 | `--out <file>` | stdout | Write predictions JSON here |
-| `--xmp <dir>` | — | Also write a Lightroom-readable `.xmp` sidecar per image into this dir |
+| `--xmp <dir>` | — | Also write an editor-readable sidecar per image into this dir (`.xmp` for `acr`, `.rrdata` for `rapidraw`) |
 
 `--treatment` is a genuine creative choice at inference time — at train time it is
 read off the edit, but for a new frame nobody has decided colour vs B&W yet.

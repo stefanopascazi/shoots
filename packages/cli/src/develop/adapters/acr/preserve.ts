@@ -18,6 +18,8 @@
  * tags whose re-injection has its own failure modes.
  */
 import { existsSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { readMetadata, writeMetadata } from '@shoots/imaging';
 
 /**
@@ -69,4 +71,20 @@ export async function mergeIntoSidecar(sidecarPath: string, tags: PreservedTags)
   // `_original` backup next to every photograph is noise the photographer did
   // not ask for. The photographs themselves are never touched by this path.
   await writeMetadata([sidecarPath], tags, { overwriteOriginal: true });
+}
+
+/** An empty sidecar for annotations to be merged into, when none exists yet. */
+const EMPTY_XMP = `<?xml version="1.0" encoding="UTF-8"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""/>
+ </rdf:RDF>
+</x:xmpmeta>
+`;
+
+/** Create a minimal sidecar when there is none, so exiftool has a file to merge into. */
+export async function ensureSidecar(sidecarPath: string): Promise<void> {
+  if (existsSync(sidecarPath)) return;
+  await mkdir(path.dirname(sidecarPath), { recursive: true });
+  await writeFile(sidecarPath, EMPTY_XMP, 'utf8');
 }

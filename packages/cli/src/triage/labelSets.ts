@@ -34,8 +34,23 @@ const ACR_LABELS: LabelSet = {
   'second-pass': 'Purple',
 };
 
+/**
+ * RapidRAW's five, which are an enum rather than free text: it stores the label
+ * as a `color:<name>` tag and colours the swatch by matching that name against
+ * its own `COLOR_LABELS` list. Lowercase, and not localized — so unlike the ACR
+ * set this one is a truth rather than a default, and overriding it mostly means
+ * choosing which of the five a semantic label lands on.
+ */
+const RAPIDRAW_LABELS: LabelSet = {
+  reject: 'red',
+  select: 'green',
+  review: 'yellow',
+  'second-pass': 'purple',
+};
+
 const BUILTIN: Record<string, LabelSet> = {
   acr: ACR_LABELS,
+  rapidraw: RAPIDRAW_LABELS,
 };
 
 export class LabelSetError extends Error {}

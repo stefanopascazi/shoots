@@ -27,9 +27,13 @@ import type { CliIo } from '../../io.js';
 export type ProgressFn = (done: number, total: number) => void;
 
 /**
- * exiftool tag → value, as {@link EditAdapter.annotate} emits them. Array values
- * feed list-type tags (Subject/Keywords) one element at a time rather than as a
- * single joined string.
+ * What {@link EditAdapter.writeMarks} actually wrote, for reporting only.
+ *
+ * Deliberately loose, and deliberately never read back: the keys are whatever
+ * names make sense to the photographer looking at `--json` or the summary line —
+ * `XMP:Rating` for ACR, `rating` / `tags` for RapidRAW. It was once the *input*
+ * to the write, which made exiftool's tag vocabulary a load-bearing part of the
+ * interface and left every non-Adobe adapter parsing it back out.
  */
 export type AnnotationTags = Record<string, string | number | readonly (string | number)[]>;
 
@@ -76,6 +80,16 @@ export interface PredictedEdit {
    * default, which is how a style learned on Adobe Color lands on Adobe Standard.
    */
   render?: { profile?: string; look?: string; lookXml?: string };
+  /**
+   * The capture metadata the values were decoded against.
+   *
+   * The canonical vocabulary states white balance in absolute Kelvin, which only
+   * means something next to the temperature the camera recorded. An editor whose
+   * own WB control is *relative* to as-shot — RapidRAW's is, in mired — cannot
+   * write the prediction without it, and re-reading it from the RAW would be a
+   * second exiftool pass over data the caller already holds.
+   */
+  asShot?: AsShotMeta;
 }
 
 export interface EditAdapter {
@@ -102,6 +116,13 @@ export interface EditAdapter {
    *
    * `edits` is passed back in because the WB anchor depends on what the edit
    * says about white balance.
+   *
+   * The map is live, and callers read it only after this call returns — so an
+   * adapter whose stored edit is *relative to the capture* may finish filling in
+   * the affected {@link EditRecord} entries here. RapidRAW's white balance is
+   * exactly that: a shift in mired against the as-shot temperature, which cannot
+   * become an absolute Kelvin until the camera has been asked what it shot at,
+   * and asking is precisely the expensive pass this method already is.
    */
   readCapture(
     files: string[],
@@ -124,19 +145,38 @@ export interface EditAdapter {
   sidecarPathFor?(sourceFile: string, outputDir: string): string;
 
   /**
-   * Translate canonical triage marks (`cull` / `rate` decisions) into this
-   * editor's own annotation tags, as exiftool tag→value pairs.
+   * Merge canonical triage marks (`cull` / `rate` decisions) into the sidecar at
+   * `sidecarPath`, creating it when it does not exist yet. Returns what was
+   * written, for reporting only.
    *
    * Separate from {@link writeEdit} because annotations and develop settings
-   * live in different namespaces and have different owners: `crs:` is templated
-   * wholesale, whereas a label or a rating is merged into whatever the sidecar
-   * already holds. Keeping them apart is what lets a develop prediction land on
-   * a file without erasing the star rating somebody gave it yesterday.
+   * have different owners: a prediction may be templated wholesale, whereas a
+   * label or a rating is merged into whatever the sidecar already holds. Keeping
+   * them apart is what lets a develop prediction land on a file without erasing
+   * the star rating somebody gave it yesterday.
+   *
+   * The adapter owns the whole write — creation, merge and serialization —
+   * rather than returning tags for a shared writer to apply. It has to: the two
+   * editors do not even agree on what a sidecar *is*, one being RDF that
+   * exiftool merges into and the other a JSON document to be read, amended and
+   * rewritten. A shared writer could only ever have been one of the two.
    *
    * `labels` arrives resolved (built-in set plus the user's override) so the
    * adapter never reads configuration itself.
    */
-  annotate?(marks: TriageMarks, labels: LabelSet): AnnotationTags;
+  writeMarks?(marks: TriageMarks, labels: LabelSet, sidecarPath: string): Promise<AnnotationTags>;
+
+  /**
+   * Provision whatever this adapter needs before a batch of writes, returning
+   * false when it could not be had. Absent ⇒ nothing to provision.
+   *
+   * Called once before a write loop rather than per file, because that is where
+   * a several-megabyte download belongs. Without it every caller had to know
+   * that writing happens to go through exiftool — true of ACR, false of an
+   * adapter whose sidecar is a JSON file, which would have paid for a tool it
+   * never invokes.
+   */
+  ensureWritable?(io: CliIo): Promise<boolean>;
 
   /** True when this source can only be read — no emit path exists or is safe. */
   readonly ingestOnly?: boolean;

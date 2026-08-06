@@ -94,7 +94,7 @@ shoots triage apply <path> [options]
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--editor <id>` | `acr` | Whose label vocabulary to write in |
+| `--editor <id>` | `acr` | Whose vocabulary and sidecar format to write in: `acr` (`.xmp`, needs exiftool) or `rapidraw` (`.rrdata`, does not) |
 | `--redo` | off | Also rewrite marks already applied once |
 | `--dry-run` | off | Report what would be written, write nothing |
 | `--json` | off | Machine-readable JSON on stdout |

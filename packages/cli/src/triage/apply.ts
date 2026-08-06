@@ -1,31 +1,25 @@
 /**
  * The one place triage marks become files on disk.
  *
- * `cull` and `rate` record fragments and touch nothing; this module reconstructs
- * them in the target editor's vocabulary and merges them into a sidecar. Two
- * callers reach it: `develop edit`, which has just written its `crs:` template
- * and wants the annotations merged on top, and `shoots triage apply`, for the
- * photographer who culls and rates without ever running a prediction.
+ * `cull` and `rate` record fragments and touch nothing; this module decides
+ * *which* of them are owed a sidecar and hands each to the adapter, which owns
+ * the write. Two callers reach it: `develop edit`, which has just written its
+ * develop template and wants the annotations merged on top, and `shoots triage
+ * apply`, for the photographer who culls and rates without ever running a
+ * prediction.
+ *
+ * Nothing here knows what a sidecar looks like. It used to: the merge went
+ * through exiftool and the empty file it created was RDF, which made every
+ * non-Adobe editor a special case of Adobe. Ownership now stops at the adapter
+ * boundary, and this module is the bookkeeping either side of it.
  *
  * Marks are consumed softly on success (see store.ts) — applied, not deleted.
  */
-import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { mergeIntoSidecar } from '../develop/adapters/acr/preserve.js';
-import type { EditAdapter } from '../develop/adapters/types.js';
+import type { AnnotationTags, EditAdapter } from '../develop/adapters/types.js';
 import { resolveLabelSet, type LabelSet } from './labelSets.js';
 import { needsApplying, type TriageRecord } from './schema.js';
 import { consumeMarks, readMarks } from './store.js';
-
-/** An empty sidecar for annotations to be merged into, when none exists yet. */
-const EMPTY_XMP = `<?xml version="1.0" encoding="UTF-8"?>
-<x:xmpmeta xmlns:x="adobe:ns:meta/">
- <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-  <rdf:Description rdf:about=""/>
- </rdf:RDF>
-</x:xmpmeta>
-`;
 
 export interface ApplyOptions {
   /** Rewrite marks that already reached a sidecar (default: pending only). */
@@ -61,7 +55,7 @@ export async function applyMarks(
   options: ApplyOptions = {},
 ): Promise<ApplyResult> {
   const result: ApplyResult = { applied: [], skipped: [], errors: [] };
-  if (!adapter.annotate) return result;
+  if (!adapter.writeMarks) return result;
 
   const marks = await readMarks(files);
   if (marks.size === 0) return result;
@@ -76,22 +70,29 @@ export async function applyMarks(
     const sidecar = sidecarFor(file);
     if (!options.includeApplied && !needsApplying(record, sidecar)) continue;
 
-    const tags = adapter.annotate(record.marks, labels);
+    // A dry run must not reach the adapter at all: the write and the decision of
+    // what to write are one call there, and they are one call because the two
+    // editors disagree on what a sidecar even is. So the preview is reconstructed
+    // from the marks instead — it says what would be written, not how.
+    if (options.dryRun) {
+      const preview = previewMarks(record, labels);
+      if (Object.keys(preview).length === 0) result.skipped.push(file);
+      else result.applied.push({ file, sidecar, tags: preview });
+      continue;
+    }
+
+    let tags: AnnotationTags;
+    try {
+      tags = await adapter.writeMarks(record.marks, labels, sidecar);
+    } catch (err) {
+      result.errors.push({ file, error: err instanceof Error ? err.message : String(err) });
+      continue;
+    }
     if (Object.keys(tags).length === 0) {
       result.skipped.push(file);
       continue;
     }
-
-    if (!options.dryRun) {
-      try {
-        await ensureSidecar(sidecar);
-        await mergeIntoSidecar(sidecar, tags);
-      } catch (err) {
-        result.errors.push({ file, error: err instanceof Error ? err.message : String(err) });
-        continue;
-      }
-      consumed.set(file, sidecar);
-    }
+    consumed.set(file, sidecar);
     result.applied.push({ file, sidecar, tags });
   }
 
@@ -99,11 +100,19 @@ export async function applyMarks(
   return result;
 }
 
-/** Create a minimal sidecar when there is none, so exiftool has a file to merge into. */
-async function ensureSidecar(sidecarPath: string): Promise<void> {
-  if (existsSync(sidecarPath)) return;
-  await mkdir(path.dirname(sidecarPath), { recursive: true });
-  await writeFile(sidecarPath, EMPTY_XMP, 'utf8');
+/**
+ * What a `--dry-run` reports, in the canonical vocabulary rather than the
+ * editor's. Deliberately not routed through the adapter: asking it to describe a
+ * write without performing one would be a second code path that only ever runs
+ * under a flag, which is the kind that quietly stops matching the first.
+ */
+function previewMarks(record: TriageRecord, labels: LabelSet): AnnotationTags {
+  const preview: AnnotationTags = {};
+  const label = record.marks.label ?? (record.marks.reject ? 'reject' : undefined);
+  if (label) preview['label'] = labels[label];
+  if (typeof record.marks.stars === 'number') preview['rating'] = record.marks.stars;
+  if (record.marks.keywords?.length) preview['keywords'] = record.marks.keywords;
+  return preview;
 }
 
 /**

@@ -14,7 +14,6 @@ import { scanFiles } from '@shoots/core';
 import { DEFAULT_EDITOR, EDITOR_IDS, resolveAdapter } from '../develop/adapters/registry.js';
 import { logError, logVerbose, makeIo, markFailure, oneLine, printHuman, printJson } from '../io.js';
 import { startPhase } from '../progress.js';
-import { ensureExiftoolReady } from '../tools.js';
 import { applyMarks } from '../triage/apply.js';
 import { resolveLabelSet, LabelSetError } from '../triage/labelSets.js';
 import { isPending } from '../triage/schema.js';
@@ -51,7 +50,7 @@ export function registerTriageCommand(program: Command): void {
 
   triage
     .command('apply')
-    .description('Write the pending marks into XMP sidecars next to the photographs')
+    .description('Write the pending marks into sidecars next to the photographs')
     .argument('<path>', 'folder whose marks should be written out')
     .option('--editor <id>', `whose label vocabulary to write in: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--redo', 'also rewrite marks already applied once')
@@ -123,7 +122,7 @@ async function runApply(targetPath: string, options: ApplyOptions): Promise<void
     return;
   }
   const adapter = resolveAdapter(editorId);
-  if (!adapter.annotate) {
+  if (!adapter.writeMarks) {
     logError(`the '${editorId}' adapter cannot write annotations (read-only source)`);
     process.exitCode = 2;
     return;
@@ -148,7 +147,9 @@ async function runApply(targetPath: string, options: ApplyOptions): Promise<void
     return;
   }
 
-  if (!options.dryRun && !(await ensureExiftoolReady(io))) return;
+  // Whatever this editor needs in order to be written to — exiftool for ACR,
+  // nothing at all for an adapter whose sidecar is a JSON file.
+  if (!options.dryRun && adapter.ensureWritable && !(await adapter.ensureWritable(io))) return;
 
   // Sidecars land next to the photographs — the same convention `develop edit`
   // uses, and the only place Lightroom looks for a RAW's sidecar.
@@ -171,7 +172,11 @@ async function runApply(targetPath: string, options: ApplyOptions): Promise<void
     });
   } else {
     for (const a of result.applied) {
-      const tags = Object.entries(a.tags).map(([k, v]) => `${k.replace(/^XMP:/, '')}=${Array.isArray(v) ? v.join('/') : String(v)}`);
+      // Adapters name what they wrote in their own terms — `XMP:Rating` for ACR,
+      // a bare `rating` for RapidRAW. The group prefix is noise to the reader.
+      const tags = Object.entries(a.tags).map(
+        ([k, v]) => `${k.replace(/^[A-Za-z]+:/, '')}=${Array.isArray(v) ? v.join('/') : String(v)}`,
+      );
       printHuman(io, `${path.basename(a.file)}  →  ${path.basename(a.sidecar)}  ${tags.join(' ')}`);
     }
     printHuman(

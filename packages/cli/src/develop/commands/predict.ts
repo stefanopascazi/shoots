@@ -15,7 +15,6 @@ import { buildSessionContext, contextFor, soloSessionCount } from '../develop/se
 import { baseFeatures } from '../develop/assemble.js';
 import { applyMarks, countPending } from '../../triage/apply.js';
 import { makeIo } from '../../io.js';
-import { ensureExiftoolReady } from '../../tools.js';
 import type { DevelopProfile } from '../types.js';
 
 export interface PredictArgs {
@@ -125,15 +124,25 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     let replaced = 0;
     for (const p of predictions) if (existsSync(sidecarFor(p.file))) replaced++;
 
-    // Both the preserve-and-remerge write and the mark application go through
-    // exiftool. Neither runs on a clean directory with no marks, so only pay the
-    // provisioning when one of them is actually about to happen — but pay it
-    // before the first write, not 300 sidecars in.
+    // Whatever the adapter needs in order to write — for ACR that is exiftool,
+    // which both the preserve-and-remerge write and the mark application go
+    // through. Neither runs on a clean directory with no marks, so only pay for
+    // it when one of them is actually about to happen, and pay before the first
+    // write rather than 300 sidecars in.
     const pending = args.applyMarks === false ? 0 : await countPending(files, sidecarFor);
-    if ((replaced > 0 || pending > 0) && !(await ensureExiftoolReady(makeIo({})))) return;
+    if ((replaced > 0 || pending > 0) && adapter.ensureWritable && !(await adapter.ensureWritable(makeIo({})))) {
+      return;
+    }
 
+    // The white balance a prediction states is an absolute Kelvin, which only
+    // means something beside the temperature the camera recorded. An adapter
+    // whose own WB control is relative to as-shot needs both.
+    const asShotFor = new Map(usable.map((r) => [r.file, r.asShot]));
     for (const p of predictions) {
-      await adapter.writeEdit!({ develop: p.develop, treatment: p.treatment, render: p.render }, sidecarFor(p.file));
+      await adapter.writeEdit!(
+        { develop: p.develop, treatment: p.treatment, render: p.render, asShot: asShotFor.get(p.file) },
+        sidecarFor(p.file),
+      );
     }
     process.stderr.write(
       args.xmpBeside

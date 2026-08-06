@@ -61,14 +61,14 @@ The develop predictor is where the work is. In order:
 ## Editors
 
 The predictor speaks to an editor through an **adapter**, and adapters are the
-main axis of growth. There is one today.
+main axis of growth.
 
 | Editor | State |
 | --- | --- |
 | Lightroom Classic, Camera Raw, Bridge | **Supported** — the `acr` adapter, via XMP `crs:` sidecars |
+| RapidRAW | **Supported** — the `rapidraw` adapter, via `.rrdata` JSON sidecars. No B&W: the app has no grayscale mode |
 | darktable | Queued |
 | RawTherapee | Queued |
-| RapidRAW | Queued |
 | ON1 Photo RAW | Queued |
 | Capture One | Queued — the hardest, it does not use XMP for adjustments at all |
 
@@ -77,6 +77,14 @@ between editors, and an exposure of +0.35 means whatever the host's pipeline
 says it means. What the adapter interface buys is that this is the *only* place
 that has to know — the schema, the model and the evaluation stay in one
 vocabulary behind it. The order is not fixed; demand moves it.
+
+RapidRAW was the first test of that claim, and it held: JSON instead of RDF,
+white balance stated relative to the capture instead of absolutely, no
+black-and-white branch at all, and no exiftool on either side. None of it reached
+past the adapter's own directory. What it *did* expose was that triage had an
+Adobe assumption baked into shared code — the annotation write went through
+exiftool and the sidecar it created was RDF — so an adapter now owns that write
+too, and the marks and the develop settings can share one file safely.
 
 ## Later
 

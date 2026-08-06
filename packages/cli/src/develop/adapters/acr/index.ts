@@ -14,8 +14,9 @@ import type { CliIo } from '../../../io.js';
 import type { LabelSet } from '../../../triage/labelSets.js';
 import type { TriageMarks } from '../../../triage/schema.js';
 import type { AnnotationTags, EditAdapter, EditRecord, ProgressFn } from '../types.js';
+import { ensureExiftoolReady } from '../../../tools.js';
 import { buildXmpSidecar } from './emit.js';
-import { mergeIntoSidecar, readPreserved } from './preserve.js';
+import { ensureSidecar, mergeIntoSidecar, readPreserved } from './preserve.js';
 import {
   CRS_TAG_ARGS,
   META_TAGS,
@@ -113,7 +114,7 @@ export const acrAdapter: EditAdapter = {
   sidecarPathFor(sourceFile, outputDir) {
     return path.join(outputDir, `${path.parse(sourceFile).name}.xmp`);
   },
-  annotate(marks: TriageMarks, labels: LabelSet): AnnotationTags {
+  async writeMarks(marks: TriageMarks, labels: LabelSet, sidecarPath: string): Promise<AnnotationTags> {
     const tags: AnnotationTags = {};
     // Rejection with no label of its own still has to show up somewhere the
     // photographer can filter on: Lightroom's own reject flag is catalog-only
@@ -122,6 +123,11 @@ export const acrAdapter: EditAdapter = {
     if (label) tags['XMP:Label'] = labels[label];
     if (typeof marks.stars === 'number') tags['XMP:Rating'] = marks.stars;
     if (marks.keywords?.length) tags['XMP:Subject'] = marks.keywords;
+    if (Object.keys(tags).length === 0) return tags;
+    await ensureSidecar(sidecarPath);
+    await mergeIntoSidecar(sidecarPath, tags);
     return tags;
   },
+  // Both the preserve-and-remerge write and the mark merge go through exiftool.
+  ensureWritable: ensureExiftoolReady,
 };

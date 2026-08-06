@@ -27,7 +27,6 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { triageHome, triageShootPath } from '@shoots/core';
 import {
-  besideSidecar,
   mergeMarks,
   needsApplying,
   parseRecord,
@@ -165,8 +164,16 @@ export async function readMarks(files: readonly string[]): Promise<Map<string, T
  * photograph whether it has a mark. The difference does not show on a shoot
  * folder and is the whole answer on a drive root, where the walk is minutes of
  * silence and the store is milliseconds.
+ *
+ * `sidecarFor` comes from the caller's adapter because "already applied" is a
+ * question about a particular file: a mark written into `IMG_1.xmp` is still
+ * owed to `IMG_1.CR3.rrdata`. This used to assume the ACR spelling, which made
+ * the count answer for the wrong editor as soon as there was a second one.
  */
-export async function countPendingUnder(targetPath: string): Promise<number> {
+export async function countPendingUnder(
+  targetPath: string,
+  sidecarFor: (file: string) => string,
+): Promise<number> {
   const root = path.resolve(targetPath);
   const prefix = root.endsWith(path.sep) ? root : root + path.sep;
   let pending = 0;
@@ -176,7 +183,7 @@ export async function countPendingUnder(targetPath: string): Promise<number> {
       // Assumes the beside-the-photograph convention, which is what both callers
       // of this count (`develop edit`, `triage apply`) use. A mark applied
       // somewhere else still counts as owed — see needsApplying.
-      if (needsApplying(record, besideSidecar(key))) pending++;
+      if (needsApplying(record, sidecarFor(key))) pending++;
     }
   }
   return pending;
