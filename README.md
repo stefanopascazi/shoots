@@ -41,8 +41,10 @@ speaks `--json` and honours `--dry-run`, so it drops straight into scripts, cron
 ### Editors
 
 Develop settings are not portable between hosts, so each editor gets its own adapter.
-**Lightroom Classic, Camera Raw and Bridge are supported today**; darktable, RawTherapee,
-RapidRAW, ON1 Photo RAW and Capture One are queued. See
+**Lightroom Classic, Camera Raw and Bridge are supported today.**
+[RapidRAW](https://github.com/CyberTimon/RapidRAW) is implemented and works end to
+end, with its numeric mapping still being compared against real edits; darktable,
+RawTherapee, ON1 Photo RAW and Capture One are queued. See
 [Direction](./docs/roadmap.md).
 
 <p align="center">
@@ -105,3 +107,18 @@ part, is not permitted under this license.
 
 Copyright © 2026 Stefano Pascazi. All commercial rights are reserved by the
 copyright holder. For a commercial license, contact stefanopascazi@gmail.com.
+
+### Interoperability and third parties
+
+`shoots` reads and writes other applications' sidecar formats. That is
+interoperation, not derivation: no third-party source is copied, linked or
+redistributed, and none of the projects below is affiliated with or endorses this
+one.
+
+| Project | License | How it is used |
+| --- | --- | --- |
+| [RapidRAW](https://github.com/CyberTimon/RapidRAW) | AGPL-3.0 | The `rapidraw` adapter writes its `.rrdata` sidecar format. Its own ACR preset importer documented the slider gearing the adapter reproduces |
+| Adobe Camera Raw / XMP `crs:` | — | The `acr` adapter writes the sidecar format Lightroom Classic, Camera Raw and Bridge read |
+
+Runtime dependencies fetched into `~/.shoots` (exiftool, LibRaw, the CLIP model)
+carry their own licenses, each permitting commercial use and redistribution.

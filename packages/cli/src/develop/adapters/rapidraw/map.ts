@@ -5,13 +5,20 @@
  * vocabularies line up lives here, so ingest and emit can never drift apart and
  * the whole mapping is testable against one real `.rrdata`.
  *
- * On provenance: RapidRAW ships its own ACR→RapidRAW preset importer
- * (`src-tauri/src/preset_converter.rs`), and the scale factors below agree with
- * it — 1.5 on Shadows, 1.5 on Tint, 0.75 on the HSL hues, 150 mired of white
- * balance travel. Those are measurable facts about their pipeline, not something
- * we get to choose: a different constant would simply render differently. The
- * code is ours; RapidRAW is AGPL-3.0 and none of it is copied or linked here.
- * Interoperating with a file format needs neither.
+ * On provenance: RapidRAW (https://github.com/CyberTimon/RapidRAW, AGPL-3.0)
+ * ships its own ACR→RapidRAW preset importer (`src-tauri/src/preset_converter.rs`),
+ * and the scale factors below agree with it — 1.5 on Shadows, 1.5 on Tint, 0.75
+ * on the HSL hues, 150 mired of white balance travel. Those are measurable facts
+ * about their pipeline, not something we get to choose: a different constant
+ * would simply render differently. The code here is ours; none of theirs is
+ * copied, linked or redistributed. Interoperating with a file format needs
+ * neither.
+ *
+ * On confidence: those factors come from a *preset importer*, which is an
+ * approximation of a rendering, not a colorimetric match — and they have not yet
+ * been checked against real edits side by side. Shadows ×1.5 is the one to
+ * re-measure first if predictions come back consistently too bright in the
+ * shadows. See docs/develop-predictor.md.
  */
 import { HSL_CHANNELS } from '../../develop/schema.js';
 

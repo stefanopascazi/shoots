@@ -66,7 +66,7 @@ main axis of growth.
 | Editor | State |
 | --- | --- |
 | Lightroom Classic, Camera Raw, Bridge | **Supported** — the `acr` adapter, via XMP `crs:` sidecars |
-| RapidRAW | **Supported** — the `rapidraw` adapter, via `.rrdata` JSON sidecars. No B&W: the app has no grayscale mode |
+| [RapidRAW](https://github.com/CyberTimon/RapidRAW) | **Implemented, calibration open** — the `rapidraw` adapter, via `.rrdata` JSON sidecars. Works end to end; the numeric mapping is still being compared against real edits. No B&W: the app has no grayscale mode |
 | darktable | Queued |
 | RawTherapee | Queued |
 | ON1 Photo RAW | Queued |
@@ -85,6 +85,15 @@ past the adapter's own directory. What it *did* expose was that triage had an
 Adobe assumption baked into shared code — the annotation write went through
 exiftool and the sidecar it created was RDF — so an adapter now owns that write
 too, and the marks and the develop settings can share one file safely.
+
+The open half is calibration, and it is worth stating plainly rather than
+discovering: a profile is learned from *your* catalog, which today means
+Lightroom, so the numbers are ACR's and the adapter converts them with factors
+borrowed from RapidRAW's own preset importer. On top of that, ACR sliders are
+offsets from a base rendering (a camera profile plus a Look) that RapidRAW has no
+equivalent of. Expect a systematic shift, not a faithful transfer — see the
+[develop predictor guide](./develop-predictor.md) for how to tell the two apart.
+Closing this means measuring against real edits, not reading more source.
 
 ## Later
 
