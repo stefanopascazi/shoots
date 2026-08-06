@@ -252,8 +252,9 @@ RAW files are **never demosaiced**. Wherever pixels are needed (`cull` scoring,
 preview** with exiftool. It is fast, it is what the camera itself judged the frame
 to look like, and it avoids shipping a RAW engine.
 
-The one exception is `develop export --baseline external`, which deliberately
-wants a *neutral* render and shells out to LibRaw's `dcraw_emu`.
+The one exception is the `external` baseline, which deliberately wants a
+*neutral* render and shells out to LibRaw's `dcraw_emu`. It is not a corner case:
+`develop init` and `develop edit` default to it.
 
 ---
 

@@ -23,7 +23,7 @@ shoots setup [options]
 | Dependency | Installed to | Needed by |
 | --- | --- | --- |
 | **exiftool** | `~/.shoots/bin/exiftool/<version>/` | `exif`, `rename`, `cull` (RAW), `rate --write-xmp`, `embeddings`, `develop export` |
-| **LibRaw** (`dcraw_emu`) | `~/.shoots/bin/libraw/<version>/` | `develop export --baseline external` |
+| **LibRaw** (`dcraw_emu`) | `~/.shoots/bin/libraw/<version>/` | Anything on `--baseline external` — which is the **default** for `develop init` and `develop edit` |
 | **CLIP model** (ONNX int8) | `~/.shoots/models/clip/<version>/` | `rate`, `embeddings`, `develop export` |
 
 Each archive is downloaded from a mirror on GitHub Releases and verified against a
@@ -127,7 +127,7 @@ Not every dependency is fatal:
 
 | Situation | Handling |
 | --- | --- |
-| **LibRaw mirror not configured** | **Warning**, not an error. Only `develop export --baseline external` needs it, and `SHOOTS_RAW_DEVELOPER` can substitute. Exit code stays `0`. |
+| **LibRaw mirror not configured** | **Warning**, not an error. Only the `external` baseline needs it, and `SHOOTS_RAW_DEVELOPER` can substitute. Exit code stays `0` — but note that baseline is what `develop init` and `develop edit` default to, so the develop predictor will fail later without one. |
 | **Model mirror not configured** | **Warning**, not an error. Non-ML commands are unaffected. |
 | **exiftool downloaded but not runnable** | **Error**, exit `1`. On macOS/Linux this almost always means Perl is missing — exiftool is a Perl distribution there. |
 | **Download or checksum failure** | **Error**, exit `1`. |

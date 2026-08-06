@@ -396,9 +396,11 @@ you have already discarded.
 
 In order of impact:
 
-1. **Switch the baseline.** `embedded-preview` bakes in the camera's picture
-   style; `--baseline external` gives a neutral render. This is the single largest
-   lever.
+1. **Check the baseline.** `embedded-preview` bakes in the camera's picture
+   style; `external` gives a neutral render, and it is the single largest lever.
+   `develop init` already defaults to `external`, so this applies to a dataset
+   built by hand with `develop export`, or one exported before that default
+   changed — `develop status` says which yours carries.
 2. **Run `develop diagnose`.** If clustered skill clearly beats pooled skill, your
    catalog holds several distinct looks and one pooled model is averaging them
    into mush. Split the catalog.
@@ -407,6 +409,18 @@ In order of impact:
    there may be no style to learn — a legitimate finding, not a bug.
 
 Full guidance: [Develop predictor](./develop-predictor.md#when-the-result-is-weak).
+
+### Every frame in a shoot gets the same prediction
+
+Read the **`in-shoot`** column of `develop train`, and the `within-shoot skill`
+in the branch header. A healthy headline with `in-shoot` near zero means the model
+has learned your shoots rather than your photographs, and the headline cannot
+show that on its own.
+
+If in-shoot skill is real but the predictions still barely move, the model is
+being timid rather than blind: raise `--boldness` (0 → 1) and `--anchor-gain`, and
+judge the result in your editor — the skill scores fall as boldness rises, by
+design. `develop calibrate --review` sets that intensity by eye, without a refit.
 
 ### `baseline "external" needs a RAW developer`
 
