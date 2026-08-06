@@ -57,7 +57,7 @@ export const COMMANDS: CommandSpec[] = [
   {
     name: 'develop',
     summary: 'Personal develop-setting predictor (local "Lightroom AI", global look): export → train → predict',
-    usage: '/develop export <path> --out <f> [--edited-only] · train --data <f> --name <n> --out <f> · predict --data <f> --profile <f> [--xmp <dir>] · diagnose --data <f>',
+    usage: '/develop export <path> --out <f> [--edited-only] · train --data <f> --name <n> --out <f> · predict --data <f> --profile <f> [--sidecars <dir>] · diagnose --data <f>',
   },
   {
     name: 'pipeline',

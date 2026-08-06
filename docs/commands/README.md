@@ -128,7 +128,7 @@ shoots develop train  --data <f> --name <n> --out <f> [--lambda auto|<n>] [--fol
                       [--boldness 0] [--anchor-gain 1] [--review] [--all]
 shoots develop predict --data <f> --profile <f> [--treatment auto|color|bw]
                                                 [--camera-profile <name>]
-                                                [--out <f>] [--xmp <dir>]
+                                                [--out <f>] [--sidecars <dir>]
 shoots develop feedback --predictions <f> [--out <f>] [--journal <f>|--no-journal]
                                           [--min-moved <n>] [--json]
 shoots develop refine <shoot> [--measure-only] [--dry-run] [--json]

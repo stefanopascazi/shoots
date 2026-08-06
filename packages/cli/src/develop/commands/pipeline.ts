@@ -231,7 +231,7 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
       shoot: folder,
       steps: [
         { step: 'export', path: targetPath, out: datasetPath, baseline: args.baseline },
-        { step: 'predict', profile: profilePath, xmp: path.resolve(targetPath), out: predictionPath },
+        { step: 'predict', profile: profilePath, sidecars: path.resolve(targetPath), out: predictionPath },
         { step: 'apply-marks', pending },
       ],
     };
@@ -287,11 +287,11 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
     treatment: args.treatment,
     editor: args.editor,
     cameraProfile: args.cameraProfile,
-    xmp: path.resolve(targetPath),
+    sidecars: path.resolve(targetPath),
     // A shoot is a tree of dated folders, and a sidecar only works where its RAW
     // is. Without this every subfolder's sidecars pile up flat in the root, and
     // same-named frames from two days overwrite each other.
-    xmpBeside: true,
+    besideSource: true,
     out: predictionPath,
     applyMarks: args.applyMarks,
   });

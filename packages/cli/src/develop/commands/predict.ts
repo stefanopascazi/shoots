@@ -1,8 +1,9 @@
 /**
  * `develop predict` — apply a develop profile to a new develop-export dataset.
  *
- * Emits predicted crs develop vectors as JSON, and optionally writes a
- * Lightroom-readable `.xmp` sidecar per image (a non-destructive starting point).
+ * Emits predicted crs develop vectors as JSON, and optionally writes one
+ * editor-readable sidecar per image (a non-destructive starting point) through
+ * the adapter, which decides both the format and the filename.
  */
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -26,20 +27,27 @@ export interface PredictArgs {
   /** Base rendering to assume and to write out, overriding the catalog's own. */
   cameraProfile?: string;
   out?: string;
-  xmp?: string;
+  /**
+   * Directory to write one editor-readable sidecar per image into.
+   *
+   * Not `xmp`: the extension is the adapter's business — `.xmp` for ACR,
+   * `.rrdata` for RapidRAW — and naming the field after one of them is how the
+   * ACR assumption used to spread through code that had no business knowing.
+   */
+  sidecars?: string;
   /**
    * Write each sidecar next to its own photograph instead of flat into {@link
-   * xmp}.
+   * sidecars}.
    *
    * A catalog is a tree — `<shoot>/2026-08-02/`, `<shoot>/2026-08-03/` — and a
    * sidecar only works where its RAW is, so `develop edit` needs this. Flattening
    * also collides: two days both holding `IMG_0001.CR3` produce one
    * `IMG_0001.xmp`, and the second silently wins.
    *
-   * `develop predict --xmp <dir>` keeps the flat behaviour on purpose: there the
-   * directory is a scratch space you compare treatments in, not a catalog.
+   * `develop predict --sidecars <dir>` keeps the flat behaviour on purpose: there
+   * the directory is a scratch space you compare treatments in, not a catalog.
    */
-  xmpBeside?: boolean;
+  besideSource?: boolean;
   /**
    * Merge pending `cull` / `rate` marks into the sidecars just written
    * (default). This is the last stop in the shoot: cull → rate → develop, and
@@ -114,12 +122,12 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     process.stderr.write(`Rendering: ${label} (${count} images)${caveat}\n`);
   }
 
-  if (args.xmp) {
+  if (args.sidecars) {
     const adapter = resolveAdapter(args.editor ?? DEFAULT_EDITOR);
     assertCanEmit(adapter);
-    if (!args.xmpBeside) await mkdir(args.xmp, { recursive: true });
+    if (!args.besideSource) await mkdir(args.sidecars, { recursive: true });
     const sidecarFor = (file: string): string =>
-      adapter.sidecarPathFor!(file, args.xmpBeside ? path.dirname(path.resolve(file)) : args.xmp!);
+      adapter.sidecarPathFor!(file, args.besideSource ? path.dirname(path.resolve(file)) : args.sidecars!);
     const files = predictions.map((p) => p.file);
     let replaced = 0;
     for (const p of predictions) if (existsSync(sidecarFor(p.file))) replaced++;
@@ -145,18 +153,18 @@ export async function runPredict(args: PredictArgs): Promise<void> {
       );
     }
     process.stderr.write(
-      args.xmpBeside
-        ? `Wrote ${predictions.length} ${adapter.id} sidecars next to the photographs, under ${args.xmp}\n`
-        : `Wrote ${predictions.length} ${adapter.id} sidecars to ${args.xmp}\n`,
+      args.besideSource
+        ? `Wrote ${predictions.length} ${adapter.id} sidecars next to the photographs, under ${args.sidecars}\n`
+        : `Wrote ${predictions.length} ${adapter.id} sidecars to ${args.sidecars}\n`,
     );
     // The sidecar is named after the image, so a second run with a different
     // --treatment lands on the same files. Say so: the colour set silently
     // becoming the B&W set is a surprising way to lose work.
     if (replaced > 0) {
       process.stderr.write(
-        args.xmpBeside
+        args.besideSource
           ? `  (${replaced} sidecars already existed and were rewritten — their ratings, labels and keywords were preserved)\n`
-          : `  (${replaced} replaced sidecars already in that directory — use a separate --xmp dir per treatment)\n`,
+          : `  (${replaced} replaced sidecars already in that directory — use a separate --sidecars dir per treatment)\n`,
       );
     }
 

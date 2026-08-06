@@ -82,4 +82,26 @@ export const MIGRATIONS: ReadonlyArray<Migration> = [
         'that no longer exists.',
     ],
   },
+  {
+    version: '0.7.0',
+    title: 'Rename `--xmp` to `--sidecars` in your scripts (the old flag still works, and warns)',
+    required: false,
+    affects: [],
+    summary:
+      '`shoots develop predict --xmp <dir>` was named after the file it wrote, back when ' +
+      'there was only one editor to write for. There are two now: `--editor rapidraw` ' +
+      'emits `.rrdata` JSON, and a flag called `--xmp` producing something that is not ' +
+      'XMP is a lie the next adapter would have to keep telling. It is `--sidecars <dir>` ' +
+      'from this release, and the adapter decides the format and the filename.',
+    steps: [],
+    notes: [
+      '`--xmp` still works. It prints a deprecation warning, is hidden from `--help`, and ' +
+        'will be removed in a later release — nothing breaks today.',
+      'Passing both is an error only when they name different directories, which is the ' +
+        'one case where guessing would write your sidecars somewhere you did not ask for.',
+      'Nothing stored changes: no profile, no dataset, no re-export, no retrain.',
+      '`develop edit --dry-run --json` renamed the same key inside its plan, from `xmp` ' +
+        'to `sidecars`. Only a script parsing that plan is affected.',
+    ],
+  },
 ];

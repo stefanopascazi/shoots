@@ -32,7 +32,9 @@
  * `shoots embeddings`); train/predict/diagnose are pure maths over the exported
  * dataset — formerly the standalone `tools/develop`, now folded into the CLI.
  */
-import type { Command } from 'commander';
+import path from 'node:path';
+import { Option, type Command } from 'commander';
+import { logError, logWarn } from '../io.js';
 import { BASELINES, runDevelopExport } from '../develop/export.js';
 import { DEFAULT_EDITOR, EDITOR_IDS } from '../develop/adapters/registry.js';
 import { runRefreshTargets } from '../develop/commands/refresh.js';
@@ -170,11 +172,25 @@ export function registerDevelopCommand(program: Command): void {
     .option('--out <file>', 'write predictions JSON here (default: stdout)')
     .option('--editor <id>', `which editor's format to write predictions in: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--camera-profile <name>', "base rendering to assume and write out, overriding the catalog's own")
-    .option('--xmp <dir>', 'also write an editor-readable sidecar per image into this dir')
-    .action((opts) => runPredict({
-      data: opts.data, profile: opts.profile, treatment: opts.treatment,
-      editor: opts.editor, cameraProfile: opts.cameraProfile, out: opts.out, xmp: opts.xmp,
-    }));
+    .option('--sidecars <dir>', 'also write an editor-readable sidecar per image into this dir')
+    // `--xmp` named the ACR adapter's file extension, which stopped being true
+    // the moment a second adapter wrote `.rrdata`. Kept as an alias rather than
+    // removed: it is in people's scripts, and a flag that vanishes costs more
+    // than one that warns. `--xmp` is hidden from help so it stops spreading.
+    .addOption(new Option('--xmp <dir>', 'deprecated alias for --sidecars').hideHelp())
+    .action((opts) => {
+      if (opts.xmp && opts.sidecars && path.resolve(opts.xmp) !== path.resolve(opts.sidecars)) {
+        logError('--xmp and --sidecars name different directories; --xmp is the deprecated alias, pass only --sidecars');
+        process.exitCode = 2;
+        return;
+      }
+      if (opts.xmp) logWarn('--xmp is deprecated and will be removed; use --sidecars (it is no longer always XMP)');
+      return runPredict({
+        data: opts.data, profile: opts.profile, treatment: opts.treatment,
+        editor: opts.editor, cameraProfile: opts.cameraProfile, out: opts.out,
+        sidecars: opts.sidecars ?? opts.xmp,
+      });
+    });
 
   develop
     .command('feedback')
