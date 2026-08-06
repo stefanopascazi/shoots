@@ -1,6 +1,6 @@
 # shoots installer for Windows (PowerShell 5.1+).
 #
-#   irm https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.ps1 | iex
+#   irm https://www.shoots-ai.com/install.ps1 | iex
 #
 # Downloads the latest release binary, verifies its SHA-256, installs it to
 # %USERPROFILE%\.shoots\bin and adds that to your user PATH. Override with the

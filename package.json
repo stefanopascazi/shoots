@@ -23,6 +23,7 @@
     "build:screens": "bun scripts/capture-screens.tsx",
     "docs:migrations": "bun scripts/generate-migrations-doc.ts",
     "data:pairs": "bun tools/photometric-pairs/index.ts",
+    "stats:downloads": "node scripts/download-stats.mjs",
     "preversion": "npm run typecheck && npm run build && npm test && npm run docs:migrations -- --check",
     "version": "bun scripts/check-release-version.ts",
     "postversion": "git push origin main && git push origin --tags"

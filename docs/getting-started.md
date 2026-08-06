@@ -8,13 +8,13 @@ target machine.
 ### macOS / Linux
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.sh | bash
+curl -fsSL https://www.shoots-ai.com/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.ps1 | iex
+irm https://www.shoots-ai.com/install.ps1 | iex
 ```
 
 The installer:
@@ -33,7 +33,7 @@ The installer:
 
 ```sh
 SHOOTS_INSTALL_DIR=/usr/local/bin \
-  curl -fsSL https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.sh | bash
+  curl -fsSL https://www.shoots-ai.com/install.sh | bash
 ```
 
 Both installers always fetch the **latest** release. To install a specific

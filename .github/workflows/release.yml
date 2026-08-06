@@ -110,8 +110,16 @@ jobs:
           cd artifacts
           sha256sum shoots-* > SHA256SUMS.txt
 
+      # The installers ship as release assets too, not just as files on main:
+      # www.shoots-ai.com/install.sh redirects here, and GitHub's per-asset
+      # download_count is what tells us how many people ran the install command.
+      # Attached outside artifacts/ so they stay out of SHA256SUMS.txt, which
+      # covers the binaries the installer itself verifies.
       - uses: softprops/action-gh-release@v2
         with:
           body: ${{ steps.changelog.outputs.content }}
-          files: artifacts/*
+          files: |
+            artifacts/*
+            install.sh
+            install.ps1
           fail_on_unmatched_files: true

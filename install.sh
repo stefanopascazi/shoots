@@ -1,7 +1,7 @@
 #!/bin/sh
 # shoots installer for macOS / Linux.
 #
-#   curl -fsSL https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.sh | bash
+#   curl -fsSL https://www.shoots-ai.com/install.sh | bash
 #
 # Downloads the latest release binary for your OS/arch, verifies its SHA-256,
 # installs it to ~/.shoots/bin and adds that to your PATH. Override the target

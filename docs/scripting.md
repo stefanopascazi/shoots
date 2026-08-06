@@ -209,7 +209,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install shoots
-        run: curl -fsSL https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.sh | bash
+        run: curl -fsSL https://www.shoots-ai.com/install.sh | bash
 
       - name: Cache ~/.shoots
         uses: actions/cache@v4

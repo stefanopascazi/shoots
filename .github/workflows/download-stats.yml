@@ -1,0 +1,57 @@
+name: download-stats
+
+# GitHub's download_count is cumulative and has no history: query it today and
+# you learn the total, never the growth. This snapshots it once a day onto an
+# orphan `stats` branch, so the trend exists from now on. Nothing is written to
+# main, and the branch shares no history with it.
+
+on:
+  schedule:
+    # 03:17 UTC — off the hour, where GitHub's scheduler is least congested.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read today's counts
+        id: counts
+        env:
+          # Authenticated: 5000 requests/hour instead of 60.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: echo "row=$(node scripts/download-stats.mjs --jsonl)" >> "$GITHUB_OUTPUT"
+
+      - name: Append to the stats branch
+        env:
+          ROW: ${{ steps.counts.outputs.row }}
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # switch --orphan empties the working tree, so the counts are already
+          # captured in $ROW by the previous step.
+          if git ls-remote --exit-code --heads origin stats >/dev/null 2>&1; then
+            git fetch origin stats
+            git switch stats
+          else
+            git switch --orphan stats
+          fi
+
+          # Re-running on the same day replaces that day's line instead of
+          # adding a second one, so manual dispatches stay idempotent.
+          today=$(printf '%s' "$ROW" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).date')
+          touch downloads.jsonl
+          grep -v "\"date\":\"$today\"" downloads.jsonl > tmp.jsonl || true
+          printf '%s\n' "$ROW" >> tmp.jsonl
+          mv tmp.jsonl downloads.jsonl
+
+          git add downloads.jsonl
+          git diff --staged --quiet || git commit -m "chore(stats): download counts for $today"
+          git push origin stats

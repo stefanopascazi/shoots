@@ -56,13 +56,13 @@ Install the standalone binary — no Node.js required.
 **macOS / Linux**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.sh | bash
+curl -fsSL https://www.shoots-ai.com/install.sh | bash
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://raw.githubusercontent.com/stefanopascazi/shoots/main/install.ps1 | iex
+irm https://www.shoots-ai.com/install.ps1 | iex
 ```
 
 Or grab the binary for your platform from the
