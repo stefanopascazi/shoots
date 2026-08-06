@@ -4,7 +4,7 @@ What `shoots` is trying to be, what is being worked on, and what it will not
 become. This page is intentionally short on dates: it records intent, and intent
 that has not shipped is not a promise.
 
-Current release: **0.6.1**. The tool is pre-1.0 — the commands below are in
+Current release: **0.6.2**. The tool is pre-1.0 — the commands below are in
 daily use, but the shape of a young one can still change between minor versions.
 What each release asks of you is in the [migration notes](./migrations.md).
 
@@ -33,22 +33,30 @@ expected to change.
 | [`cull`](./commands/cull.md), [`rate`](./commands/rate.md), [`triage`](./commands/triage.md) | Stable. Focus-aware culling and CLIP rating, with review. |
 | [Preference learning](./preference-learning.md) — `embeddings`, `match` | Working end to end: duels in, a personal rating profile out. |
 | [Develop predictor](./develop-predictor.md) — `develop` | The active front. Usable, and the part still moving fastest. |
-| [Pipelines](./pipelines.md), [`schedule`](./commands/schedule.md) | Recent. The YAML surface may still gain steps. |
+| [Pipelines](./pipelines.md), [`schedule`](./commands/schedule.md) | Recent. The YAML surface may still gain steps — there are no conditionals yet. |
+| [`setup`](./commands/setup.md), [`doctor`](./commands/doctor.md), [`update`](./commands/update.md), [`release-notes`](./commands/release-notes.md) | Stable. Provisioning, self-update and the migration notes that apply to your machine. |
 
 ## Next
 
 The develop predictor is where the work is. In order:
 
-- **Per-frame skill, not per-shoot averages.** 0.6.0 split a profile into a
-  shoot model and an in-shoot model so two frames of the same shoot stop getting
-  the same answer. The in-shoot spread is still below a photographer's own, and
-  closing that gap is the single biggest open problem.
-- **Calibration you can trust by eye.** `develop calibrate --review` judges each
-  correction in real units, on the region it acts on. Extending that until the
-  reviewed result is what a shoot actually needs.
-- **Fewer frames to a useful profile.** Training currently wants a sizeable
-  edited catalog. Lowering that floor is what decides whether the predictor is
-  for everyone or only for photographers with an archive.
+- **Per-frame skill, not per-shoot averages.** *Shipped in 0.6.0*: a profile is
+  two models added together, one reading the shoot and one reading only how far
+  this frame departs from it, so two frames of the same shoot stop getting the
+  same answer. **Still open**: the in-shoot spread remains below a
+  photographer's own, and closing that gap is the single biggest problem left.
+  Black-and-white is the weakest branch by a wide margin (in-shoot skill ~4%
+  against ~16% for colour).
+- **Calibration you can trust by eye.** *Shipped through 0.6.2*:
+  `develop calibrate --review` judges one correction at a time in real units, on
+  the region it acts on, rendered on the GPU as a viewport with a loupe; colour
+  and black-and-white are now calibrated separately on their own photographs
+  instead of one number decided on colour frames alone. **Still open**: the
+  preview approximates the host's pipeline rather than reproducing it, so it
+  answers *how much*, not *exactly what Lightroom will show*.
+- **Fewer frames to a useful profile.** Not started. Training still wants a
+  sizeable edited catalog, and lowering that floor is what decides whether the
+  predictor is for everyone or only for photographers with an archive.
 
 ## Editors
 
@@ -75,7 +83,10 @@ vocabulary behind it. The order is not fixed; demand moves it.
 Candidates, not commitments — listed so the intent is visible before any of it
 is built.
 
-- **More rating profiles** for genres the built-ins do not cover.
+None of these has been started.
+
+- **More rating profiles** for genres the five built-ins (`street`, `generic`,
+  `portrait`, `wildlife`, `wedding`) do not cover.
 - Richer **pipeline steps** — conditionals, and reuse of a pipeline as a step.
 - **Selection help beyond focus**: near-duplicate grouping, eyes-closed and
   expression checks on the frames culling leaves behind.
