@@ -4,7 +4,7 @@ What `shoots` is trying to be, what is being worked on, and what it will not
 become. This page is intentionally short on dates: it records intent, and intent
 that has not shipped is not a promise.
 
-Current release: **0.6.2**. The tool is pre-1.0 — the commands below are in
+Current release: **0.7.\***. The tool is pre-1.0 — the commands below are in
 daily use, but the shape of a young one can still change between minor versions.
 What each release asks of you is in the [migration notes](./migrations.md).
 
