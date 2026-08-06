@@ -10,6 +10,11 @@ Questo file e' il contesto operativo rapido per agenti AI che lavorano su Shoots
   redistribuzione commerciale (es. MIT, BSD, Apache-2.0, Artistic/GPL per binari eseguiti
   come processo esterno). Verificare la licenza PRIMA di introdurre una nuova dipendenza;
   in caso di dubbio, scartarla o cercare un'alternativa.
+- E' stato aggiunto un documento /docs/roadmap.md che contiene tutto ciò che è stato fatto, 
+  quello che faremo e la direzione futura.
+  Questo documento deve essere costantemente aggiornato, senza essere prolissi
+  e comunque micro feature non devono neanche essere documentate
+  perchè si tratta di un documento di sintesi del progetto e non un changelog
 
 ## Convenzioni di lavoro
 
