@@ -15,9 +15,12 @@ develop vector, and writes it as an `.xmp` sidecar.
 **What it does not do:** local masks, generative edits, retouching, or a finished
 edit. The goal is **the best starting point to refine**, not a delivered image.
 
-**It is editor-agnostic.** The engine runs without any host editor installed. XMP
-sidecars are the interface — Lightroom, Bridge and Capture One read them. Plugins
-for specific editors are thin fronts over this same engine, not a dependency of it.
+**It is editor-agnostic.** The engine runs without any host editor installed. An
+**adapter** decides how an edit is read and written, selected with `--editor`.
+There is one today — `acr`, the default — which speaks XMP `crs:` sidecars and is
+read by Lightroom Classic, Camera Raw and Bridge. Capture One does *not* read
+develop adjustments from XMP and will need an adapter of its own. Plugins for
+specific editors are thin fronts over this same engine, not a dependency of it.
 
 ---
 
@@ -62,8 +65,8 @@ split toning.
 
 The 8-channel grayscale mixer.
 
-One ridge model is trained **per treatment** over `shared + <branch>`, so a
-high-contrast B&W edit and a light colour edit never average into a mush.
+A model is trained **per treatment** over `shared + <branch>`, so a high-contrast
+B&W edit and a light colour edit never average into a mush.
 
 ### Captured but not predicted
 
@@ -82,7 +85,7 @@ The exact list, ranges, branches and loss weights live in
 
 ---
 
-## Two design decisions
+## Design decisions
 
 ### 1. Deltas, not absolutes
 
@@ -108,23 +111,81 @@ parameters (HSL, colour grading) to collapse to your mean.
 > If you always apply the same subtle orange-shift to skin tones, "predict the
 > mean" is the right answer and there is no image-dependent signal to find.
 
+### 3. Two heads — the shoot, and the frame against it
+
+Each treatment is fitted as **two** ridge models whose outputs are added:
+
+- a **level** head, from the mean photometric description of the whole shoot,
+  predicting where that shoot's slider sits;
+- a **frame** head, from how far this photograph departs from that mean,
+  predicting how far its slider should depart from the shoot's.
+
+Fitted as one regression they do not coexist. The shoot average is a
+near-noiseless predictor of that shoot's own offset, so ridge spends its budget
+there and the per-frame columns come out at a tenth of their honest size — a
+frame shot into the sun and one in open shade came back identical. Splitting the
+heads buys **separate gates** (a slider can have an unpredictable per-shoot level
+and a well-predicted per-frame response, or the reverse), **separate λ**, and a
+**de-shrinking slope per head** that puts back the reach ridge cost.
+
+This landed in **0.6.0** and it invalidates older profiles — see the
+[migration notes](./migrations.md).
+
+### 4. Anchored corrections — for the sliders a mean cannot serve
+
+A shrunk regression is timid exactly where the correction needs to be large: a
+frame wanting −1.5 stops comes back with −0.14, and de-shrinking cannot fix a
+prediction that is flat. Some sliders are therefore predicted as a **correction
+toward a target** instead:
+
+```
+slider = ȳ + gain · (x − x̄)
+```
+
+`x` is one measured property of *this* photograph, `x̄`/`ȳ` are your own averages,
+and `gain` is the **unshrunk** slope. A frame far from your typical scene gets a
+proportionally large correction by arithmetic, without the fit having ever seen a
+frame that extreme. It is worse on average — an unshrunk slope always is — so the
+trade is measured per parameter, on the frames it is meant to serve, before it is
+taken. `train` lists these separately, with the anchor feature, the gain and the
+tail skill; the head columns above do not describe them.
+
+Two flags govern how far all of this travels, on `train`, `learn`, `refine` and
+`init`:
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--boldness <0..1>` | `0` | How far predictions may travel. `0` is safest averages, `1` moves the sliders. Skill scores *fall* as this rises — the number to judge it by is what your editor shows, not the report. |
+| `--anchor-gain <n>` | `1` | Multiplies every anchored correction. Your gain differs per shoot, so this is the intensity knob you actually want. |
+
 ---
 
 ## The go/no-go GATE
 
 `shoots develop train` reports, per parameter:
 
-- the held-out **MAE of the model**,
-- the MAE of the **"apply my average edit"** baseline,
-- a **skill** score: `1 − modelMae / baselineMae`,
-- the **ridge strength λ** that parameter was fitted with.
+| Column | Meaning |
+| --- | --- |
+| **end-end** | The skill of the whole model: `1 − modelMae / baselineMae` against "apply my average edit", on shoots it has never seen. `> 0` is a win. |
+| **± fold** | How far end-end moves between held-out folds. A change smaller than this is not a change. |
+| **random** | The same skill with random folds instead of held-out sessions. The gap is session leakage. |
+| **shoot** | How much of end-end comes from reading the *shoot*. |
+| **in-shoot** | How much comes from reading THIS frame against its neighbours. |
+| **reach** | How far the prediction is stretched back out after ridge shrank it. `1.00` is untouched; above that the fit was too timid. |
+| **model MAE** | The held-out error itself. |
 
-`skill > 0` means the model beats simply applying your mean edit.
+Rows are tagged `[never moves]`, `[constant]` (the level was gated) or
+`[flat within a shoot]` (the frame head was gated).
 
-λ is chosen **per parameter**, because exposure and the HSL sliders do not want
-the same amount of shrinkage and one shared λ is picked by an average the
-unpredictable majority dominates. The gate pays for that search: λ is re-chosen
-inside each held-out fold, so no parameter is scored on the split that picked it.
+**`in-shoot` is the column to read.** end-end can look healthy on a model that
+only ever reproduces per-shoot averages; in-shoot is what decides whether a
+backlit frame and one in open shade come back with different numbers.
+
+λ is no longer a report column. It is chosen **per parameter and per head**,
+because exposure and the HSL sliders do not want the same amount of shrinkage and
+one shared λ is picked by an average the unpredictable majority dominates. The
+gate pays for that search: λ is re-chosen inside each held-out fold, so no
+parameter is scored on the split that picked it.
 
 By default the report lists the parameters that carry the look, and closes with a
 count of the ones it left out. Pass **`--all`** to see every parameter instead —
@@ -154,6 +215,11 @@ and you want to see what its skill actually was.
 If it is not clearly positive on a real catalog, **stop**. The signal is too weak
 to build on, and the first thing to reconsider is the baseline render strategy.
 
+Alongside it the branch reports a **within-shoot skill** — the same question
+asked of frames from the same shoot only. A healthy headline with a
+`within-shoot` near zero is a model that has learned your shoots, not your
+photographs.
+
 ---
 
 ## The baseline render — why it matters most
@@ -161,7 +227,11 @@ to build on, and the first thing to reconsider is the baseline render strategy.
 The photometric features must come from a render of the image **before** the edit.
 Get this wrong and everything downstream is noise.
 
-### `--baseline embedded-preview` (default)
+**`develop init` and `develop edit` default to `external`** — the good one. Only
+the bare `develop export` still defaults to `embedded-preview`, so a hand-built
+pipeline is the one place you have to say which you want.
+
+### `--baseline embedded-preview`
 
 Uses the RAW's embedded JPEG preview.
 
@@ -231,7 +301,8 @@ result.
 
 ```sh
 # once, from a catalog you have already developed
-shoots develop init ~/Catalogs/2025-edited
+# --review opens the screen that sets how hard each correction pushes
+shoots develop init ~/Catalogs/2025-edited --review
 
 # per shoot — sidecars land next to the photographs
 shoots develop edit ~/Shoots/2026-07-new
@@ -281,6 +352,16 @@ keep**, and only `develop feedback` measures it.
   Dehaze                             14·    7%       22%           6.02    +1.30
 ```
 
+- **kept** — left untouched. The product metric; held-out skill is its proxy.
+- **journey** — how much of the move the prediction already made. Negative means
+  it landed further off than leaving the slider alone.
+- **offset** — the mean *signed* correction. A parameter you always nudge the
+  same way is a missing constant, not a modelling failure.
+
+It compares against whatever the file says today, so run it on a shoot you
+actually developed *from* the sidecars — otherwise the gap is two independent
+opinions rather than the model's error.
+
 It accumulates, and it has to. A per-parameter rate over six images is noise, so
 the table has a floor under it — which means one shoot of ten photographs can
 never fill it in. Every run is therefore recorded in
@@ -309,6 +390,28 @@ left and the loop converges.
 The offsets sit beside the model rather than inside it: `--reset` removes them,
 `--dry-run` shows the decision first, `predict` reports how many it carries, and
 a retrain invalidates them out loud.
+
+#### Setting the intensity by eye — `--review`
+
+The journal answers "how wrong was it", which needs a shoot you have already
+developed. `--review` answers the question you have before that: **how hard
+should this correction push?**
+
+```sh
+shoots develop train --data train.jsonl --name my-style --review
+shoots develop calibrate --review     # re-open it later, no refit
+```
+
+It serves a local page that renders your own photographs on the GPU with one
+anchored correction applied at a time, in real units, on the region that
+correction acts on — a viewport with a loupe, not a contact sheet. Colour and
+black-and-white are calibrated separately, on frames drawn from the records each
+branch will actually apply to, and a branch with no photographs to show says so
+and keeps its fitted gains.
+
+The preview is deliberately an **approximation of the host's pipeline**, not a
+reproduction of it. It exists to judge *how much*, not to develop a photograph.
+`--review-port` and `--review-timeout` control the server; `0` waits forever.
 
 Most of the value so far has been on **gated** parameters — those where the model
 lost to "apply my average edit" and emits the photographer's constant instead. A
@@ -347,25 +450,18 @@ comparable across a refit; and standardization stays unweighted, so a corrected
 shoot cannot redefine the constant a gated parameter emits. A refit does
 invalidate any calibration — the offsets described a model that no longer
 exists — so the order is refit → develop → `feedback` → `calibrate`.
-
-- **kept** — left untouched. The product metric; held-out skill is its proxy.
-- **journey** — how much of the move the prediction already made. Negative means
-  it landed further off than leaving the slider alone.
-- **offset** — the mean *signed* correction. A parameter you always nudge the
-  same way is a missing constant, not a modelling failure.
-
-It compares against whatever the file says today, so run it on a shoot you
-actually developed *from* the sidecars — otherwise the gap is two independent
-opinions rather than the model's error.
+`shoots develop refine <shoot>` runs that order for you.
 
 ---
 
 ## When the result is weak
 
-### 1. Switch the baseline
+### 1. Check the baseline
 
 `embedded-preview` → `external` is the largest single improvement available, and
-the first thing to try.
+the first thing to check. `develop init` already defaults to `external`, so this
+applies to a dataset built by hand with `develop export`, or to one exported
+before that default changed — `develop status` says which baseline yours carries.
 
 ```sh
 shoots develop export ~/Catalogs/2025-edited --edited-only \
@@ -431,13 +527,21 @@ Minutes instead of hours — see
   point list a photographer can drag. A curve whose shape lives between the knots
   is approximated; the RGB channel curves are not predicted at all.
 - **Global look only.** No local adjustments, no masks, no AI subject selection.
-- **One profile per style.** The model has no per-image style routing; at
-  inference you choose the treatment.
+- **One profile per style.** The model has no per-image style routing. The
+  treatment branch is picked per file (`--treatment auto`, the default, reads it
+  from the edit), but choosing *between two of your own looks* is not something
+  it does — train one profile per look.
+- **The review preview approximates the host's pipeline.** Every control on the
+  calibration screen is a model of the slider, not Camera Raw's implementation of
+  it. Good enough to set an intensity; not a proof of what Lightroom will show.
 
 ---
 
 ## See also
 
 - [`shoots develop`](./commands/develop.md) — full command reference
+- [Migration notes](./migrations.md) — what a release asks of an existing profile
 - [Configuration](./configuration.md) — `SHOOTS_RAW_DEVELOPER`, `SHOOTS_LIBRAW`
 - `packages/cli/src/develop/develop/schema.ts` — the exact target vector
+- `packages/cli/src/develop/train/train.ts` — the two heads
+- `packages/cli/src/develop/train/anchor.ts` — the anchored corrections
