@@ -31,3 +31,5 @@ Questo file e' il contesto operativo rapido per agenti AI che lavorano su Shoots
 - I commit devono seguire sempre la semantic release.
 - Never include your signature in commits or commit descriptions.
 - usa sempre e solamente testi in inglese per la UI
+- Ad ogni nuova funzione va creato il suo unitTest
+- Ad ogni modifica, va verificato anche il suo unitTest
