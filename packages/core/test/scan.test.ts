@@ -107,4 +107,63 @@ describe('scanFiles', () => {
   test('rejects when the root does not exist', async () => {
     expect(scanFiles(path.join(root, 'missing'))).rejects.toThrow();
   });
+
+  test('a single-file root that is not an image comes back empty', async () => {
+    expect(await scanFiles(path.join(root, 'notes.txt'))).toEqual([]);
+  });
+});
+
+/**
+ * The scan reads directories several at a time and asks for metadata several at
+ * a time, which is what makes it bearable on a network share. Neither may lose a
+ * file, however the pool happens to schedule them.
+ */
+describe('scanFiles under concurrency', () => {
+  let deep: string;
+
+  beforeAll(async () => {
+    deep = await mkdtemp(path.join(tmpdir(), 'shoots-scan-deep-'));
+    // A flat folder wider than any sensible pool, so the metadata pass has to
+    // queue rather than fire everything at once.
+    for (let i = 0; i < 250; i++) {
+      await writeFile(path.join(deep, `flat_${String(i).padStart(3, '0')}.jpg`), 'x');
+    }
+    // And a chain deeper than the pool is wide: bounding per level rather than
+    // globally would either deadlock this or blow the ceiling wide open.
+    let nested = deep;
+    for (let level = 0; level < 40; level++) {
+      nested = path.join(nested, `level_${level}`);
+      await mkdir(nested, { recursive: true });
+      await writeFile(path.join(nested, `deep_${level}.cr3`), 'x');
+    }
+  });
+
+  afterAll(async () => {
+    await rm(deep, { recursive: true, force: true });
+  });
+
+  test('finds every file in a wide flat folder', async () => {
+    const found = await scanFiles(deep, { recursive: false });
+    expect(found).toHaveLength(250);
+    expect(found.every((f) => f.size === 1)).toBe(true);
+  });
+
+  test('reaches the bottom of a chain deeper than the pool is wide', async () => {
+    const found = await scanFiles(deep, { extensions: ['cr3'] });
+    expect(found).toHaveLength(40);
+    expect(found.map((f) => f.name)).toContain('deep_39.cr3');
+  });
+
+  test('answers the same however many requests are allowed in flight', async () => {
+    const serial = await scanFiles(deep, { concurrency: 1 });
+    const parallel = await scanFiles(deep, { concurrency: 64 });
+    expect(parallel.map((f) => f.path)).toEqual(serial.map((f) => f.path));
+    expect(parallel).toHaveLength(290);
+  });
+
+  test('counts every match exactly once, whatever order the pool visits them in', async () => {
+    const counts: number[] = [];
+    const found = await scanFiles(deep, { onProgress: (n) => counts.push(n) });
+    expect(counts).toEqual(Array.from({ length: found.length }, (_, i) => i + 1));
+  });
 });
