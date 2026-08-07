@@ -34,6 +34,7 @@
  */
 import path from 'node:path';
 import { Option, type Command } from 'commander';
+import { defaultModelConcurrency } from '@shoots/core';
 import { logError, logWarn } from '../io.js';
 import { BASELINES, runDevelopExport } from '../develop/export.js';
 import { DEFAULT_EDITOR, EDITOR_IDS } from '../develop/adapters/registry.js';
@@ -64,7 +65,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--baseline <mode>', `baseline render: ${BASELINES.join(' | ')}`, 'external')
     .option('--everything', 'export every file, not only those carrying an edit')
     .option('--model <kind>', 'inference backend', 'onnx')
-    .option('--concurrency <n>', 'max parallel jobs', '4')
+    .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
     .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--lambda <n>', "ridge strength, or 'auto' to pick one per parameter", 'auto')
     .option('--folds <k>', 'cross-validation folds', (v) => parseInt(v, 10), 5)
@@ -91,7 +92,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--camera-profile <name>', "base rendering to assume and write out, overriding the catalog's own")
     .option('--baseline <mode>', `baseline render: ${BASELINES.join(' | ')}`, 'external')
     .option('--model <kind>', 'inference backend', 'onnx')
-    .option('--concurrency <n>', 'max parallel jobs', '4')
+    .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
     .option('--editor <id>', `which editor's format to read/write: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--force', 'overwrite sidecars that already carry a real edit')
     .option('--no-apply-marks', 'leave pending cull/rate marks in the store instead of writing them into the sidecars')
@@ -119,7 +120,7 @@ export function registerDevelopCommand(program: Command): void {
     .description('Export a develop-prediction training dataset (CLIP + colour features + crs targets)')
     .argument('<path>', 'folder (or single file) of RAW/edited images carrying develop settings')
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
-    .option('--concurrency <n>', 'max parallel jobs', '4')
+    .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
     .option('--no-cache', 're-embed every frame instead of reusing what a previous run worked out')
     .requiredOption('--out <file>', 'write the JSONL dataset to this path (one record per line + a trailing meta line)')
     .option('--baseline <mode>', `baseline render strategy: ${BASELINES.join(' | ')}`, 'embedded-preview')

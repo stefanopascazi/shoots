@@ -69,6 +69,8 @@ export {
   type ProgressListener,
 } from './jobs/JobQueue.js';
 
+export { defaultImageConcurrency, defaultModelConcurrency } from './jobs/concurrency.js';
+
 export {
   parsePipelineConfig,
   loadPipelineConfig,

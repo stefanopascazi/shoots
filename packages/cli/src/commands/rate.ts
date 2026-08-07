@@ -15,7 +15,7 @@ import { writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Command } from 'commander';
-import { JobQueue, scanFiles } from '@shoots/core';
+import { defaultModelConcurrency, JobQueue, scanFiles } from '@shoots/core';
 import { writeXmpSidecar } from '@shoots/imaging';
 import {
   createQualityModel,
@@ -76,7 +76,7 @@ export function registerRateCommand(program: Command): void {
     .option('--profile <name>', `rating profile: ${PROFILE_NAMES.join(' | ')} | a learned profile in ~/.shoots/profiles`, DEFAULT_PROFILE_NAME)
     .option('--write-xmp', 'write XMP sidecars via exiftool instead of JSON sidecars')
     .option('--mark', 'record stars and keywords as a triage mark instead of a sidecar; `develop edit` or `triage apply` writes them out later')
-    .option('--concurrency <n>', 'max parallel scoring jobs', '4')
+    .option('--concurrency <n>', 'max parallel scoring jobs', String(defaultModelConcurrency()))
     .option('--no-cache', 're-embed every frame instead of reusing what a previous run worked out')
     .option('--dry-run', 'score and report, but write no sidecars')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -136,7 +136,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     files.map((f) => f.path),
     { enabled: options.cache !== false },
   );
-  const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
+  const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, defaultModelConcurrency()) });
   const progress = await startProgress(io, files.length, 'Rating');
 
   const outcomes = await queue.run(

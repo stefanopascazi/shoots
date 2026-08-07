@@ -198,7 +198,7 @@ shoots develop export <path> --out <file> [options]
 | `--baseline <mode>` | `embedded-preview` | Baseline render strategy: `embedded-preview` \| `external` |
 | `--edited-only` | off | Only run the expensive embedding/render on files that actually carry develop settings |
 | `--model <kind>` | `onnx` | Inference backend |
-| `--concurrency <n>` | `4` | Max parallel jobs |
+| `--concurrency <n>` | half the logical CPUs, capped at 8 | Max parallel jobs |
 | `--no-cache` | off | Re-embed every frame instead of reusing what a previous run worked out ([`shoots cache`](./cache.md)) |
 | `--json` | off | Machine-readable JSON on stdout |
 | `--verbose` | off | Verbose logging on stderr |

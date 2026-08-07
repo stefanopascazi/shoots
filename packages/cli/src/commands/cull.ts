@@ -10,7 +10,7 @@ import { statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Command } from 'commander';
-import { JobQueue, scanFiles } from '@shoots/core';
+import { defaultImageConcurrency, JobQueue, scanFiles } from '@shoots/core';
 import {
   DEFAULT_BLUR_THRESHOLD,
   DEFAULT_FOCUS_THRESHOLD,
@@ -70,7 +70,7 @@ export function registerCullCommand(program: Command): void {
     .option('--mark-keepers <name>', `also label the keepers: ${SEMANTIC_LABELS.join(' | ')}`)
     .option('--format <fmt>', 'report format: json | csv', 'json')
     .option('--out <file>', 'write the report to a file instead of stdout')
-    .option('--concurrency <n>', 'max parallel analyses', '4')
+    .option('--concurrency <n>', 'max parallel analyses', String(defaultImageConcurrency()))
     .option('--no-cache', 're-measure every frame instead of reusing what a previous run worked out')
     .option('--dry-run', 'analyze and report, but skip copying and report-file writes')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -182,7 +182,7 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
     { enabled: options.cache !== false },
   );
 
-  const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
+  const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, defaultImageConcurrency()) });
   const progress = await startProgress(io, files.length, 'Culling');
 
   const outcomes = await queue.run(

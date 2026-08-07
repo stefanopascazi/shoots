@@ -29,7 +29,7 @@ import path from 'node:path';
 import { existsSync, createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { once } from 'node:events';
-import { JobQueue, scanFiles } from '@shoots/core';
+import { defaultModelConcurrency, JobQueue, scanFiles } from '@shoots/core';
 import {
   extractColorFeatures,
   COLOR_FEATURE_NAMES,
@@ -268,7 +268,7 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     workFiles.map((f) => f.path),
     { enabled: options.cache !== false },
   );
-  const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
+  const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, defaultModelConcurrency()) });
   const progress = await startProgress(io, workFiles.length, 'Develop-export');
   /** Distinct Looks seen, name → the editor's own serialization. */
   const looks = new Map<string, string>();

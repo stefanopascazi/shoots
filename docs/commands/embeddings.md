@@ -40,7 +40,7 @@ learned profile can then refuse to be applied to a mismatched backend.
 | `--previews <mode>` | `auto` | When to generate browser previews in bundle mode: `auto` (RAW only) \| `always` \| `never` |
 | `--preview-size <px>` | `1024` | Max preview edge in bundle mode |
 | `--preview-quality <q>` | `82` | JPEG quality for previews (1–100) |
-| `--concurrency <n>` | `4` | Max parallel embedding jobs |
+| `--concurrency <n>` | half the logical CPUs, capped at 8 | Max parallel embedding jobs |
 | `--no-cache` | off | Re-embed every frame instead of reusing what a previous run worked out ([`shoots cache`](./cache.md)) |
 | `--json` | off | Machine-readable JSON on stdout |
 | `--verbose` | off | Verbose logging on stderr |

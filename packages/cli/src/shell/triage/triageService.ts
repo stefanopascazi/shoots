@@ -17,7 +17,7 @@
  */
 import { statSync } from 'node:fs';
 import path from 'node:path';
-import { JobQueue, scanFiles } from '@shoots/core';
+import { defaultImageConcurrency, JobQueue, scanFiles } from '@shoots/core';
 import { readMetadata, type FocusMap } from '@shoots/imaging';
 import { analyzeBlurCached } from '../../cache/blur.js';
 import { DerivedCache } from '../../cache/store.js';
@@ -119,7 +119,7 @@ export async function runTriage(targetPath: string, options: TriageOptions): Pro
   const cache = await DerivedCache.open(files.map((f) => f.path), { enabled: options.cache !== false });
   const classifyOptions = { threshold: options.threshold, focusThreshold: options.focusThreshold };
 
-  const queue = new JobQueue({ concurrency: options.concurrency ?? 4 });
+  const queue = new JobQueue({ concurrency: options.concurrency ?? defaultImageConcurrency() });
   let done = 0;
   const outcomes = await queue.run(
     files,

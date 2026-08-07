@@ -75,6 +75,10 @@ export function registerImportCommand(program: Command): void {
     .option('--dry-run', 'show planned actions without executing them')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
+    // Left at 4 while the analysis commands scale with the machine: this queue
+    // is not waiting on the CPU, it is waiting on a card reader, and a single
+    // sequential device does not go faster for being asked more at once. Raising
+    // it would need measuring against real hardware, which has not been done.
     .option('--concurrency <n>', 'max parallel file operations', '4')
     .action(runImport);
 }
