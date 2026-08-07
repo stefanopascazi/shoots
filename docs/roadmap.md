@@ -35,6 +35,7 @@ expected to change.
 | [Develop predictor](./develop-predictor.md) — `develop` | The active front. Usable, and the part still moving fastest. |
 | [Pipelines](./pipelines.md), [`schedule`](./commands/schedule.md) | Recent. The YAML surface may still gain steps — there are no conditionals yet. |
 | [`setup`](./commands/setup.md), [`doctor`](./commands/doctor.md), [`update`](./commands/update.md), [`release-notes`](./commands/release-notes.md) | Stable. Provisioning, self-update and the migration notes that apply to your machine. |
+| Test suite | Every package carries unit tests (`packages/*/test`), run together by `npm test`; `npm run test:unit` skips the build and the subprocess suites. |
 
 ## Next
 
