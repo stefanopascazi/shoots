@@ -24,7 +24,32 @@ permissions:
   contents: write
 
 jobs:
+  # Gate the whole release on the suite before any binary is built or published.
+  # Once, on one runner: the code under test is platform-independent, and the
+  # per-OS risk that is real — a binary that lost its embedded bundle — is what
+  # the version check in `build` covers instead.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in sync with ci.yml and the locally tested version.
+          bun-version: 1.3.14
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:

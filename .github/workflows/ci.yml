@@ -1,8 +1,12 @@
 name: ci
 
-# Fast feedback on every push to main and every PR: typecheck + build only.
+# Fast feedback on every push to main and every PR: typecheck, build, test.
 # Standalone binaries are NOT built here — that happens on release tags
 # (see release.yml). Keeps main green without the per-OS binary matrix cost.
+#
+# The suite needs no network and no provisioned tools: the handful of tests that
+# write XMP skip themselves when exiftool is absent (see packages/cli/test/
+# fixtures.ts), which on a fresh runner is every one of them.
 
 on:
   push:
@@ -20,6 +24,15 @@ jobs:
           node-version: 22
           cache: npm
 
+      # The test runner is bun, not node — `npm test` shells out to `bun test`.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in sync with release.yml and the locally tested version.
+          bun-version: 1.3.14
+
       - run: npm ci
       - run: npm run typecheck
+      # `npm test` builds too. Kept as its own step so a build break is reported
+      # as one, instead of arriving as a wall of module-resolution failures.
       - run: npm run build
+      - run: npm test
