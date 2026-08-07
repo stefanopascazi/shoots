@@ -5,6 +5,11 @@
 #   shoots pipeline examples/model-upkeep.yaml --var catalog=D:/Photos
 #   shoots pipeline examples/model-upkeep.yaml --from refit   # resume after a fix
 #
+# On macOS / Linux, point `work` at your own home — the default below is the
+# Windows spelling of the same directory:
+#
+#   shoots pipeline examples/model-upkeep.yaml --var work=/home/you/.shoots/develop
+#
 # `export → train` is always run together and always with the same paths, which
 # is exactly the kind of repetition a pipeline file is for.
 version: 2
@@ -13,7 +18,11 @@ name: model-upkeep
 vars:
   catalog: D:/Photos
   shoot: D:/Shoots/2026/smith-wedding/raw
-  work: ${env:USERPROFILE}/.shoots/develop
+  # A placeholder like the two above, not a lookup. `${env:USERPROFILE}` was the
+  # obvious spelling and the wrong one: that variable does not exist off Windows,
+  # and an unset one is a load error — so the file refused to parse anywhere else,
+  # including on the machine that runs the tests.
+  work: C:/Users/you/.shoots/develop
   dataset: ${work}/export/export.jsonl
   profile: ${work}/profile/export.json
 

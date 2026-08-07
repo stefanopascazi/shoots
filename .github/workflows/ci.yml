@@ -4,9 +4,12 @@ name: ci
 # Standalone binaries are NOT built here — that happens on release tags
 # (see release.yml). Keeps main green without the per-OS binary matrix cost.
 #
-# The suite needs no network and no provisioned tools: the handful of tests that
-# write XMP skip themselves when exiftool is absent (see packages/cli/test/
-# fixtures.ts), which on a fresh runner is every one of them.
+# The tests that write XMP skip themselves when exiftool is absent (see
+# packages/cli/test/fixtures.ts), which on a bare runner is all seven of them.
+# The distro package is installed and pointed at rather than provisioning the
+# pinned one: what those tests exercise is sidecar writing, not the download,
+# and `shoots setup` would put a GitHub Releases fetch in front of every PR.
+# Nothing else in the suite needs the network or a provisioned tool.
 
 on:
   push:
@@ -16,8 +19,13 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      SHOOTS_EXIFTOOL: /usr/bin/exiftool
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install exiftool
+        run: sudo apt-get update && sudo apt-get install -y libimage-exiftool-perl
 
       - uses: actions/setup-node@v4
         with:
