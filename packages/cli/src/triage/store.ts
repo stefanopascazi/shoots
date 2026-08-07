@@ -83,6 +83,12 @@ async function storeFiles(): Promise<string[]> {
     .map((e) => path.join(home, e.name));
 }
 
+/** The cheap identity tripwire carried with a record: what `stat` would report. */
+export interface MarkedFileStats {
+  size: number;
+  mtimeMs: number;
+}
+
 /**
  * Marks for one shoot, open for writing.
  *
@@ -105,18 +111,32 @@ export class TriageStore {
   /**
    * Record what a producer decided about one file. Marks merge field by field,
    * so `rate` adding stars does not erase the rejection `cull` found.
+   *
+   * `stats` is the tripwire data (see the identity note above) when the caller
+   * already holds it — every batch command scanned the file to find it, so the
+   * size and mtime are in hand and a second stat per photograph is a round trip
+   * bought for nothing. On a network catalog those round trips are the marking
+   * pass. Omit it and the file is stat'd here instead.
    */
-  async mark(file: string, marks: TriageMarks, source: MarkSource, provenance: Omit<MarkProvenance, 'at'>): Promise<void> {
+  async mark(
+    file: string,
+    marks: TriageMarks,
+    source: MarkSource,
+    provenance: Omit<MarkProvenance, 'at'>,
+    stats?: MarkedFileStats,
+  ): Promise<void> {
     const key = path.resolve(file);
     const existing = this.records.get(key);
-    let size = existing?.size ?? 0;
-    let mtimeMs = existing?.mtimeMs ?? 0;
-    try {
-      const info = await stat(key);
-      size = info.size;
-      mtimeMs = info.mtimeMs;
-    } catch {
-      // The file vanished between analysis and marking; keep whatever we had.
+    let size = stats?.size ?? existing?.size ?? 0;
+    let mtimeMs = stats?.mtimeMs ?? existing?.mtimeMs ?? 0;
+    if (!stats) {
+      try {
+        const info = await stat(key);
+        size = info.size;
+        mtimeMs = info.mtimeMs;
+      } catch {
+        // The file vanished between analysis and marking; keep whatever we had.
+      }
     }
     this.records.set(key, {
       file: key,
@@ -197,23 +217,43 @@ export async function readAllMarks(): Promise<Map<string, Map<string, TriageReco
 }
 
 /**
- * Follow a file that moved, so its marks move with it. Called by whoever
+ * Follow files that moved, so their marks move with them. Called by whoever
  * relocates or renames — see the identity note at the top of this file.
- * Silently does nothing when the file carried no marks.
+ * Returns how many marks were actually followed; files that carried none are
+ * silently skipped, as is a move whose source and destination are the same.
+ *
+ * Takes the whole set at once rather than one pair at a time, because the unit
+ * of work here is a store *file*: following one mark means reading and
+ * rewriting every store on the machine. Called per file, renaming a 2000-frame
+ * shoot did that 2000 times over — quadratic in the size of the shoot, for a
+ * job that is one pass.
  */
-export async function moveMarks(from: string, to: string): Promise<void> {
-  const fromKey = path.resolve(from);
-  const toKey = path.resolve(to);
-  if (fromKey === toKey) return;
-  for (const storePath of await storeFiles()) {
-    const records = await loadFile(storePath);
-    const record = records.get(fromKey);
-    if (!record) continue;
-    records.delete(fromKey);
-    records.set(toKey, { ...record, file: toKey });
-    await persist(storePath, records);
-    return;
+export async function moveMarks(moves: ReadonlyMap<string, string>): Promise<number> {
+  const pending = new Map<string, string>();
+  for (const [from, to] of moves) {
+    const fromKey = path.resolve(from);
+    const toKey = path.resolve(to);
+    if (fromKey !== toKey) pending.set(fromKey, toKey);
   }
+  if (pending.size === 0) return 0;
+
+  let moved = 0;
+  for (const storePath of await storeFiles()) {
+    if (pending.size === 0) break; // every mark is placed; the rest cannot match
+    const records = await loadFile(storePath);
+    let touched = false;
+    for (const [fromKey, toKey] of pending) {
+      const record = records.get(fromKey);
+      if (!record) continue;
+      records.delete(fromKey);
+      records.set(toKey, { ...record, file: toKey });
+      pending.delete(fromKey);
+      touched = true;
+      moved++;
+    }
+    if (touched) await persist(storePath, records);
+  }
+  return moved;
 }
 
 /**

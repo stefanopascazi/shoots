@@ -29,7 +29,7 @@ import {
   printJson,
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
-import { relocate } from '../relocate.js';
+import { relocateAll } from '../relocate.js';
 import { ensureExiftoolReady } from '../tools.js';
 import { TriageStore } from '../triage/store.js';
 import { isSemanticLabel, SEMANTIC_LABELS, type SemanticLabel } from '../triage/schema.js';
@@ -212,6 +212,10 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   if (options.mark && !options.dryRun) {
     const store = await TriageStore.open(scanRoot);
     const tool = `cull@${VERSION}`;
+    // The scan already reported each file's size and mtime; handing them over
+    // spares the store a stat per photograph, which on a network catalog is the
+    // whole cost of marking.
+    const statsByFile = new Map(files.map((f) => [f.path, { size: f.size, mtimeMs: f.mtime.getTime() }]));
     for (const result of results) {
       const isReject = result.verdict === 'blurry';
       if (!isReject && !keeperLabel) continue;
@@ -230,6 +234,7 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
           threshold,
           focusThreshold: focusRescue ? focusThreshold : null,
         },
+        statsByFile.get(result.file),
       );
       marked++;
     }
@@ -241,16 +246,11 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   // Keepers (sharp, incl. shallow-DoF rescues) are never touched. Move by
   // default; --copy leaves the originals in place. Requires --dest.
   const move = !options.copy;
-  const relocated: { source: string; dest: string }[] = [];
+  let relocated: { source: string; dest: string }[] = [];
   if (destRoot && !options.dryRun) {
-    for (const result of blurry) {
-      try {
-        const to = await relocate(scanRoot, result.file, destRoot, { move });
-        relocated.push({ source: result.file, dest: to });
-      } catch (err) {
-        errors.push({ file: result.file, error: `${move ? 'move' : 'copy'} failed: ${err instanceof Error ? err.message : String(err)}` });
-      }
-    }
+    const outcome = await relocateAll(scanRoot, blurry.map((r) => r.file), destRoot, { move });
+    relocated = outcome.relocated;
+    errors.push(...outcome.errors);
     logVerbose(io, `${move ? 'Moved' : 'Copied'} ${relocated.length} rejects under ${destRoot}`);
   }
 

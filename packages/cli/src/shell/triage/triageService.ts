@@ -19,7 +19,7 @@ import { statSync } from 'node:fs';
 import path from 'node:path';
 import { JobQueue, scanFiles } from '@shoots/core';
 import { analyzeBlur, readMetadata, type FocusMap } from '@shoots/imaging';
-import { relocate } from '../../relocate.js';
+import { relocate, relocateAll } from '../../relocate.js';
 import { TriageStore } from '../../triage/store.js';
 import type { SemanticLabel } from '../../triage/schema.js';
 import { VERSION } from '../../version.js';
@@ -144,12 +144,19 @@ export async function runTriage(targetPath: string, options: TriageOptions): Pro
   // their own, since they arrive minutes apart at human pace.
   const store = mark && !dryRun ? await TriageStore.open(root) : null;
 
+  // Rejects are collected and relocated together after the pass: moving them one
+  // at a time follows their triage marks one at a time, and each of those is a
+  // rewrite of every store file on the machine.
+  const toRelocate: string[] = [];
+
   for (const o of outcomes) {
     if (!o.ok || !o.value) {
       failed.push({ file: o.item.path, error: o.error?.message ?? 'unknown error' });
       continue;
     }
     const r = o.value;
+    // The scan already reported both; the store need not stat the file again.
+    const stats = { size: o.item.size, mtimeMs: o.item.mtime.getTime() };
     if (r.rescued) {
       review.push({
         file: r.file,
@@ -162,15 +169,21 @@ export async function runTriage(targetPath: string, options: TriageOptions): Pro
     } else if (r.verdict === 'sharp') {
       autoSharp++; // keeper — left exactly where it is
       if (store && mark?.keepers) {
-        await store.mark(r.file, { reject: false, label: mark.keepers }, 'cull', provenance(r, false));
+        await store.mark(r.file, { reject: false, label: mark.keepers }, 'cull', provenance(r, false), stats);
       }
     } else {
       if (!dryRun) {
-        if (store) await store.mark(r.file, { reject: true, label: mark!.label }, 'cull', provenance(r, false));
-        else await relocate(root, r.file, dest!, { move });
+        if (store) await store.mark(r.file, { reject: true, label: mark!.label }, 'cull', provenance(r, false), stats);
+        else toRelocate.push(r.file);
       }
       autoBlurry++;
     }
+  }
+  if (toRelocate.length > 0) {
+    const outcome = await relocateAll(root, toRelocate, dest!, { move });
+    // A frame that would not move is reported rather than aborting the pass —
+    // the same treatment its analysis failing would have got.
+    failed.push(...outcome.errors);
   }
   await store?.save();
 

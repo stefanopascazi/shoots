@@ -202,12 +202,16 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
   if (options.mark && !options.dryRun && rated.length > 0) {
     const store = await TriageStore.open(targetPath);
     const tool = `rate@${VERSION}`;
+    // Size and mtime came back with the scan; re-stat'ing every photograph here
+    // buys nothing and costs a round trip each on a network catalog.
+    const statsByFile = new Map(files.map((f) => [f.path, { size: f.size, mtimeMs: f.mtime.getTime() }]));
     for (const r of rated) {
       await store.mark(
         r.file,
         { stars: r.stars, keywords: r.keywords },
         'rate',
         { tool, profile: profile.name, model: model.name, focus: r.focus, aesthetic: r.aesthetic, aspects: r.aspects },
+        statsByFile.get(r.file),
       );
       marked++;
     }

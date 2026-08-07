@@ -111,8 +111,6 @@ async function runRename(targetPath: string, options: RenameOptions): Promise<vo
     try {
       await fsRename(temp, entry.dest);
       renamed.push({ source: entry.source, dest: entry.dest });
-      // Triage marks are keyed by path: a rename nobody reports orphans them.
-      await moveMarks(entry.source, entry.dest);
       logVerbose(io, `renamed ${entry.source} → ${entry.dest}`);
     } catch (err) {
       // Roll the file back to its original name rather than leaving temp litter.
@@ -125,6 +123,11 @@ async function runRename(targetPath: string, options: RenameOptions): Promise<vo
       errors.push({ source: entry.source, error: err instanceof Error ? err.message : String(err) });
     }
   }
+
+  // Triage marks are keyed by path: a rename nobody reports orphans them. Done
+  // once for the whole batch — per file it is a full store rewrite each time.
+  const followed = await moveMarks(new Map(renamed.map((r) => [r.source, r.dest])));
+  if (followed > 0) logVerbose(io, `Followed ${followed} triage marks to their new names`);
 
   if (io.json) {
     printJson({

@@ -111,6 +111,32 @@ describe('TriageStore.mark', () => {
     expect(record.mtimeMs).toBeGreaterThan(0);
   });
 
+  test('takes the tripwire from the caller when it already has it', async () => {
+    // The scan reported these; a second stat per photograph is a round trip
+    // bought for nothing, and on a network catalog it is the whole pass.
+    const file = await photo('IMG_1.cr3');
+    const store = await TriageStore.open(catalog);
+    await store.mark(file, { reject: true }, 'cull', { tool: 'cull@test' }, { size: 4242, mtimeMs: 1700000000000 });
+    await store.save();
+
+    const record = (await readMarks([file])).get(file)!;
+    expect(record.size).toBe(4242);
+    expect(record.mtimeMs).toBe(1700000000000);
+  });
+
+  test('records the given tripwire even for a file that is gone', async () => {
+    // The batch commands hand over what the scan saw; a frame relocated between
+    // the scan and the marking pass must not lose its size and mtime to that.
+    const gone = path.join(catalog, 'gone.cr3');
+    const store = await TriageStore.open(catalog);
+    await store.mark(gone, { reject: true }, 'cull', { tool: 'cull@test' }, { size: 99, mtimeMs: 5 });
+    await store.save();
+
+    const record = (await readMarks([gone])).get(gone)!;
+    expect(record.size).toBe(99);
+    expect(record.mtimeMs).toBe(5);
+  });
+
   test('still records a mark for a file that has already vanished', async () => {
     const gone = path.join(catalog, 'gone.cr3');
     await markOne(catalog, gone, { reject: true });
@@ -219,12 +245,14 @@ describe('countPendingUnder', () => {
 });
 
 describe('moveMarks', () => {
+  const one = (from: string, to: string): Map<string, string> => new Map([[from, to]]);
+
   test('follows a file that was relocated', async () => {
     const from = await photo('IMG_1.cr3');
     const to = path.join(catalog, 'keep', 'IMG_1.cr3');
     await markOne(catalog, from, { reject: true });
 
-    await moveMarks(from, to);
+    expect(await moveMarks(one(from, to))).toBe(1);
     expect((await readMarks([from])).size).toBe(0);
     expect((await readMarks([to])).get(to)!.marks).toEqual({ reject: true });
   });
@@ -233,19 +261,65 @@ describe('moveMarks', () => {
     const from = await photo('IMG_1.cr3');
     const to = path.join(catalog, 'IMG_9.cr3');
     await markOne(catalog, from, { stars: 3 });
-    await moveMarks(from, to);
+    await moveMarks(one(from, to));
     expect((await readMarks([to])).get(to)!.file).toBe(to);
   });
 
   test('does nothing for a file that carried no marks', async () => {
-    await expect(moveMarks(path.join(catalog, 'a.cr3'), path.join(catalog, 'b.cr3'))).resolves.toBeUndefined();
+    expect(await moveMarks(one(path.join(catalog, 'a.cr3'), path.join(catalog, 'b.cr3')))).toBe(0);
   });
 
   test('is a no-op when the path did not actually change', async () => {
     const file = await photo('IMG_1.cr3');
     await markOne(catalog, file, { reject: true });
-    await moveMarks(file, path.join(catalog, '.', 'IMG_1.cr3'));
+    expect(await moveMarks(one(file, path.join(catalog, '.', 'IMG_1.cr3')))).toBe(0);
     expect((await readMarks([file])).size).toBe(1);
+  });
+
+  test('follows a whole batch in one pass', async () => {
+    // What a rename does: every file in the shoot changes name at once. The
+    // point is that they all arrive, whatever order the stores are read in.
+    const files = await Promise.all(['a.cr3', 'b.cr3', 'c.cr3'].map((n) => photo(n)));
+    for (const f of files) await markOne(catalog, f, { stars: 2 });
+    const moves = new Map(files.map((f) => [f, path.join(catalog, `renamed_${path.basename(f)}`)]));
+
+    expect(await moveMarks(moves)).toBe(3);
+    expect((await readMarks(files)).size).toBe(0);
+    for (const to of moves.values()) {
+      expect((await readMarks([to])).get(to)!.marks).toEqual({ stars: 2 });
+    }
+  });
+
+  test('follows marks that live in different shoots', async () => {
+    // Two shoots are two store files, and a batch spanning both has to visit
+    // both — an early return after the first hit would strand the second.
+    const day1 = await photo('day1/IMG_1.cr3');
+    const day2 = await photo('day2/IMG_2.cr3');
+    await markOne(path.join(catalog, 'day1'), day1, { reject: true });
+    await markOne(path.join(catalog, 'day2'), day2, { stars: 5 });
+
+    const moves = new Map([
+      [day1, path.join(catalog, 'day1', 'moved_1.cr3')],
+      [day2, path.join(catalog, 'day2', 'moved_2.cr3')],
+    ]);
+    expect(await moveMarks(moves)).toBe(2);
+    for (const [, to] of moves) expect((await readMarks([to])).has(to)).toBe(true);
+  });
+
+  test('moves only what it was given, leaving the rest of the shoot alone', async () => {
+    const stays = await photo('stays.cr3');
+    const goes = await photo('goes.cr3');
+    await markOne(catalog, stays, { stars: 1 });
+    await markOne(catalog, goes, { stars: 4 });
+
+    const to = path.join(catalog, 'gone.cr3');
+    expect(await moveMarks(one(goes, to))).toBe(1);
+    expect((await readMarks([stays])).get(stays)!.marks).toEqual({ stars: 1 });
+    expect((await readMarks([to])).get(to)!.marks).toEqual({ stars: 4 });
+  });
+
+  test('accepts an empty batch', async () => {
+    expect(await moveMarks(new Map())).toBe(0);
   });
 });
 
