@@ -15,7 +15,8 @@
   "scripts": {
     "build": "npm run build -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/match -w @shoots/cli",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run build -w @shoots/cli && bun test packages/cli/test --timeout 120000",
+    "test": "npm run build -w @shoots/cli && bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/cli/test --timeout 120000",
+    "test:unit": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/cli/test/unit",
     "clean": "node -e \"for (const p of ['core','imaging','inference','match','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
     "shoots": "node packages/cli/dist/cli.js",
     "build:binary": "bun scripts/build-binary.ts",
