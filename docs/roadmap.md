@@ -35,7 +35,7 @@ expected to change.
 | [Develop predictor](./develop-predictor.md) — `develop` | The active front. Usable, and the part still moving fastest. |
 | [Pipelines](./pipelines.md), [`schedule`](./commands/schedule.md) | Recent. The YAML surface may still gain steps — there are no conditionals yet. |
 | [`setup`](./commands/setup.md), [`doctor`](./commands/doctor.md), [`update`](./commands/update.md), [`release-notes`](./commands/release-notes.md) | Stable. Provisioning, self-update and the migration notes that apply to your machine. |
-| [`cache`](./commands/cache.md) | New. Commands reuse the numbers they derive — measurements now, embeddings next — so a re-run costs nothing. Derived values only, never image data, under a ceiling. |
+| [`cache`](./commands/cache.md) | New. `cull`, `rate`, `embeddings` and `develop export` share the measurements and embeddings they derive, so a re-run — or a second `--profile` — costs nothing. Derived values only, never image data, under a ceiling. |
 | Test suite | Every package carries unit tests (`packages/*/test`), run together by `npm test`; `npm run test:unit` skips the build and the subprocess suites. |
 
 ## Next

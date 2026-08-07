@@ -24,5 +24,20 @@ export function blurProducer(maxDimension: number): string {
   return `blur@1:d${maxDimension}`;
 }
 
+/**
+ * CLIP image embedding, plus the sharpness and statistics that come off the
+ * same decode.
+ *
+ * `modelName` already carries the archive version (`onnx-clip/vit-b32-int8-2`),
+ * so re-quantizing or re-exporting the encoder namespaces itself. What the
+ * leading version covers is everything around the weights: the preprocessing
+ * crop, the normalization constants, the L2 step.
+ *
+ * v1 — shortest edge to 224, centre crop, CLIP mean/std, L2-normalized output.
+ */
+export function clipProducer(modelName: string): string {
+  return `clip@1:${modelName}`;
+}
+
 /** Every producer prefix in use, for pruning entries nothing reads any more. */
-export const PRODUCER_PREFIXES = ['blur@'] as const;
+export const PRODUCER_PREFIXES = ['blur@', 'clip@'] as const;

@@ -27,6 +27,7 @@ Backed by a local ONNX **CLIP** model (`vit-b32-int8`) running on
 | `--mark` | off | Record stars and keywords as a triage mark instead of writing a sidecar |
 | `--write-xmp` | off | Write `.xmp` sidecars via exiftool instead of JSON sidecars |
 | `--concurrency <n>` | `4` | Max parallel scoring jobs |
+| `--no-cache` | off | Re-embed every frame instead of reusing what a previous run worked out ([`shoots cache`](./cache.md)) |
 | `--dry-run` | off | Score and report, but write no sidecars |
 | `--json` | off | Machine-readable JSON on stdout |
 | `--verbose` | off | Verbose logging on stderr |

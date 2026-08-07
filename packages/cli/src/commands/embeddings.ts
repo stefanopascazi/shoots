@@ -40,6 +40,8 @@ import {
   printJson,
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
+import { DerivedCache } from '../cache/store.js';
+import { assessCached } from '../cache/quality.js';
 import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 
 type PreviewMode = 'auto' | 'always' | 'never';
@@ -48,6 +50,7 @@ const PREVIEW_MODES: PreviewMode[] = ['auto', 'always', 'never'];
 interface EmbeddingsOptions {
   model: string;
   concurrency: string;
+  cache?: boolean;
   out?: string;
   previews: string;
   previewSize: string;
@@ -81,6 +84,7 @@ export function registerEmbeddingsCommand(program: Command): void {
     .argument('<path>', 'folder (or single file) to embed')
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
     .option('--concurrency <n>', 'max parallel embedding jobs', '4')
+    .option('--no-cache', 're-embed every frame instead of reusing what a previous run worked out')
     .option('--out <dir>', 'write a self-contained bundle (embeddings.json + previews/) to this directory')
     .option('--previews <mode>', 'when to generate browser previews in --out mode: auto (RAW only) | always | never', 'auto')
     .option('--preview-size <px>', 'max preview edge in bundle mode', '1024')
@@ -160,13 +164,19 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
   const previewQuality = parsePositiveInt(options.previewQuality, 82);
 
   await model.init();
+  // Shares its entries with `rate` and `develop export`: all three want the same
+  // embedding of the same frames, and until now all three computed it.
+  const cache = await DerivedCache.open(
+    files.map((f) => f.path),
+    { enabled: options.cache !== false },
+  );
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
   const progress = await startProgress(io, files.length, previewFor.size > 0 ? 'Embedding + previews' : 'Embedding');
 
   const outcomes = await queue.run(
     files,
     async (file): Promise<EmbeddingResult> => {
-      const assessment = await model.assess({ path: file.path });
+      const assessment = await assessCached(cache, model, file);
       if (!assessment.embedding) {
         throw new Error('backend produced no embedding (unsupported model?)');
       }
@@ -200,6 +210,11 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
   );
 
   progress.stop();
+  await cache.save();
+  logVerbose(
+    io,
+    `Cache: ${cache.counters.hits} hits, ${cache.counters.misses} misses, ${cache.counters.stale} stale`,
+  );
   await model.dispose();
 
   const embedded = outcomes.filter((o) => o.ok).map((o) => o.value!);

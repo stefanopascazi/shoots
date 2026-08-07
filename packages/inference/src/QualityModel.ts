@@ -10,6 +10,7 @@
  *   can choose their own decode strategy (e.g. the ONNX backend will want to
  *   preprocess to a fixed tensor size itself).
  */
+import type { AestheticStats, LaplacianResult } from '@shoots/imaging';
 import type { RatingProfile } from './profiles.js';
 
 export interface ImageInput {
@@ -52,12 +53,59 @@ export interface QualityAssessment {
   embedding?: number[];
 }
 
+/**
+ * What a backend has to look at pixels to obtain, separated from what it can
+ * work out afterwards.
+ *
+ * The split exists because the two halves have completely different costs and
+ * completely different lifetimes. Embedding a photograph is a decode plus a
+ * forward pass — hundreds of milliseconds, and the same answer forever, for any
+ * profile. Turning that into stars is a dot product against whichever profile
+ * the run happened to name. A caller that keeps the first half can change its
+ * mind about the second for free, which is what the derived-value cache and
+ * `rate --profile` between runs both depend on.
+ */
+export interface QualityMeasurement {
+  /** L2-normalized CLIP image embedding in this backend's space. */
+  embedding: Float32Array;
+  /** Robust peak local sharpness, before it is mapped into [0, 1]. */
+  focusPeak: number;
+  /**
+   * Cheap perceptual statistics, present only when the model archive ships no
+   * aesthetics head and the technical heuristic is doing the work instead.
+   */
+  stats?: AestheticStats;
+  /**
+   * The full sharpness measurement, present only when this call performed it.
+   * Absent when the caller supplied `focusPeak` from somewhere else — there was
+   * nothing to measure, so there is nothing to hand back.
+   */
+  laplacian?: LaplacianResult;
+  /** Where the pixels came from, when this call loaded them. */
+  pixelSource?: 'file' | 'embedded-preview';
+}
+
+export interface MeasureOptions {
+  /**
+   * Sharpness the caller already holds, from a cache or an earlier command.
+   * Supplying it skips the Laplacian pass; the decode still happens because the
+   * embedding needs it.
+   */
+  focusPeak?: number;
+}
+
 export interface QualityModel {
   /** Backend identifier, recorded in sidecars for provenance. */
   readonly name: string;
 
   /** Load weights / warm up the runtime. Must be called before scoring. */
   init(): Promise<void>;
+
+  /** The expensive, profile-independent half: look at the pixels. */
+  measure(image: ImageInput, options?: MeasureOptions): Promise<QualityMeasurement>;
+
+  /** The cheap, profile-dependent half: arithmetic over a measurement. */
+  interpret(measurement: QualityMeasurement): QualityAssessment;
 
   /** Focus/sharpness confidence in [0, 1]. */
   scoreFocus(image: ImageInput): Promise<number>;

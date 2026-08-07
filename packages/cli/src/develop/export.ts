@@ -59,6 +59,8 @@ import {
   type CliIo,
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
+import { DerivedCache } from '../cache/store.js';
+import { assessCached } from '../cache/quality.js';
 import { VERSION } from '../version.js';
 import type { AsShotMeta, Treatment } from './develop/schema.js';
 import { ensureClipModelReady, ensureExiftoolReady, ensureLibrawReady } from '../tools.js';
@@ -77,6 +79,7 @@ type Baseline = (typeof BASELINES)[number];
 export interface DevelopExportOptions {
   model: string;
   concurrency: string;
+  cache?: boolean;
   out: string;
   baseline: string;
   /** Which editor's develop settings to read (see adapters/registry.ts). */
@@ -257,6 +260,12 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   await model.init();
   modelPhase.done(model.name);
 
+  // The embedding half is the same one `rate` and `embeddings` want, and comes
+  // from the same pack files: whichever command reached these frames first paid.
+  const cache = await DerivedCache.open(
+    workFiles.map((f) => f.path),
+    { enabled: options.cache !== false },
+  );
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
   const progress = await startProgress(io, workFiles.length, 'Develop-export');
   /** Distinct Looks seen, name → the editor's own serialization. */
@@ -281,7 +290,7 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
         : developer && isRawFile(file.path)
           ? withNeutralRender(developer, file.path, (rendered) => extractColorFeatures(rendered))
           : extractColorFeatures(file.path);
-      const [assessment, color] = await Promise.all([model.assess({ path: file.path }), colorTask]);
+      const [assessment, color] = await Promise.all([assessCached(cache, model, file), colorTask]);
       if (!assessment.embedding) throw new Error('backend produced no embedding (unsupported model?)');
 
       const edit = edits.get(file.path);
@@ -313,6 +322,11 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   );
 
   progress.stop();
+  await cache.save();
+  logVerbose(
+    io,
+    `Cache: ${cache.counters.hits} hits, ${cache.counters.misses} misses, ${cache.counters.stale} stale`,
+  );
   await model.dispose();
 
   const ok = outcomes.filter((o) => o.ok);

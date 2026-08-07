@@ -120,6 +120,7 @@ export function registerDevelopCommand(program: Command): void {
     .argument('<path>', 'folder (or single file) of RAW/edited images carrying develop settings')
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
     .option('--concurrency <n>', 'max parallel jobs', '4')
+    .option('--no-cache', 're-embed every frame instead of reusing what a previous run worked out')
     .requiredOption('--out <file>', 'write the JSONL dataset to this path (one record per line + a trailing meta line)')
     .option('--baseline <mode>', `baseline render strategy: ${BASELINES.join(' | ')}`, 'embedded-preview')
     .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)

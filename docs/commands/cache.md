@@ -13,34 +13,58 @@ shoots cache prune
 
 ## What it holds
 
-Derived values, and only derived values: a Laplacian measurement, a focus map,
-and — as the predictor lands on it — CLIP embeddings and colour-feature vectors.
-**Never image data.** That distinction is why the cache is safe to leave on:
+Derived values, and only derived values: a Laplacian measurement with its focus
+map, and the CLIP image embedding. **Never image data.** That distinction is why
+the cache is safe to leave on:
 
 | | 100,000 RAW frames |
 | --- | --- |
 | the catalog itself | ~2.5 TB |
 | its embedded previews, if they were cached | ~300 GB |
-| **the derived numbers, which is what is cached** | **~150 MB** |
+| **the derived numbers, which is what is cached** | **~420 MB** |
 
-The expensive part was never the bytes. Decoding a full-size preview and running
-a Laplacian over it costs about 150 ms per frame; the measurement that falls out
-is about 1.5 KB. A hit skips the decode and reads the kilobyte.
+The expensive part was never the bytes. Decoding a full-size preview, running a
+Laplacian over it and pushing it through CLIP costs about 320 ms per frame; what
+falls out is about 4 KB. A hit skips the decode and reads the four kilobytes.
+
+## Which commands share it
+
+| Command | Reads / writes |
+| --- | --- |
+| [`cull`](./cull.md), `/cull --review` | the sharpness measurement |
+| [`rate`](./rate.md) | the embedding **and** the sharpness |
+| [`embeddings`](./embeddings.md) | the embedding |
+| [`develop export`](./develop.md) (so `init` and `edit`) | the embedding |
+
+They share entries in both directions. `rate` after `cull` skips the Laplacian;
+`cull` after `rate` measures nothing at all, because the embedding pass already
+had the pixels open and left its measurement behind. `embeddings` after `rate`
+does no work whatsoever.
 
 ## What is *not* cached
 
-The verdict. `cull` caches its measurement and re-derives sharp-versus-blurry
-every run, so hunting for the right `--threshold` costs one decode instead of one
-per attempt:
+Anything that depends on what you asked for.
+
+`cull` caches its measurement and re-derives sharp-versus-blurry every run, so
+hunting for the right `--threshold` costs one decode instead of one per attempt:
 
 ```sh
-shoots cull ~/shoot                      # measures, ~2s per 40 frames
+shoots cull ~/shoot                      # measures
 shoots cull ~/shoot --threshold 400      # reclassifies, instant
 shoots cull ~/shoot --threshold 250      # instant
 ```
 
-The same rule will apply to `rate`: the embedding is cached, the stars are
-re-derived, so changing `--profile` will not re-run the model.
+`rate` caches the embedding and re-derives the stars, so a second opinion under
+another eye is a dot product rather than a forward pass:
+
+```sh
+shoots rate ~/shoot --profile street     # embeds — 3.1s for 30 frames
+shoots rate ~/shoot --profile portrait   # re-scores — 0.5s
+shoots rate ~/shoot --profile my-eye     # 0.5s
+```
+
+Cached and uncached runs produce byte-identical output. If they ever did not,
+that would be a bug and not a trade-off.
 
 ## Identity, and why a wrong answer is not possible
 
@@ -109,7 +133,12 @@ each, and a long afternoon for a virus scanner.
 
 ---
 
+A frame carries about 1.5 KB of measurement and 2.7 KB of embedding, so a shoot
+that has only been culled costs roughly a third of one that has been rated too.
+
+---
+
 ## See also
 
-- [`cull`](./cull.md) — the first command to use the cache
+- [`cull`](./cull.md), [`rate`](./rate.md), [`embeddings`](./embeddings.md) — the commands that fill it
 - [Configuration](../configuration.md) — `SHOOTS_HOME`, `SHOOTS_CACHE`, `SHOOTS_CACHE_MAX`

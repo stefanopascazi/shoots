@@ -4,6 +4,8 @@ export {
   type QualityAssessment,
   type AestheticAspectScore,
   type QualityModel,
+  type QualityMeasurement,
+  type MeasureOptions,
   type StarRating,
 } from './QualityModel.js';
 

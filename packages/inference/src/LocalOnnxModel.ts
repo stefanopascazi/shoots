@@ -27,7 +27,13 @@ import {
   type AestheticStats,
   DEFAULT_FOCUS_THRESHOLD,
 } from '@shoots/imaging';
-import type { ImageInput, QualityAssessment, QualityModel } from './QualityModel.js';
+import type {
+  ImageInput,
+  MeasureOptions,
+  QualityAssessment,
+  QualityMeasurement,
+  QualityModel,
+} from './QualityModel.js';
 import {
   CLIP_INPUT,
   CLIP_MODEL_VERSION,
@@ -134,21 +140,44 @@ export class LocalOnnxModel implements QualityModel {
   }
 
   /**
-   * Single efficient pass — decode once, then derive all three signals. The
-   * granular methods delegate here (they are not on the hot path; `rate` calls
-   * assess()).
+   * The expensive half: one decode, then everything that needs the pixels.
+   *
+   * `options.focusPeak` lets a caller that already knows how sharp the frame is
+   * — from the derived cache, or from a `cull` that ran earlier — skip the
+   * Laplacian. The decode itself is not optional: the embedding needs it.
    */
-  async assess(image: ImageInput): Promise<QualityAssessment> {
-    const { vocab } = this.ready();
-    const { buffer } = await loadRenderableImage(image.path);
+  async measure(image: ImageInput, options: MeasureOptions = {}): Promise<QualityMeasurement> {
+    this.ready();
+    const { buffer, source } = await loadRenderableImage(image.path);
 
-    // Focus: robust local sharpness peak, mapped to [0,1] (half at the default
-    // focus threshold), which keeps shallow-depth-of-field keepers scoring high.
-    const lap = await laplacianVariance(buffer);
-    const focus = lap.focusPeak / (lap.focusPeak + DEFAULT_FOCUS_THRESHOLD);
+    // Focus: robust local sharpness peak. Mapped into [0,1] later, in interpret().
+    const laplacian = options.focusPeak === undefined ? await laplacianVariance(buffer) : undefined;
+    const focusPeak = options.focusPeak ?? laplacian!.focusPeak;
+
+    const embedding = await this.embed(buffer);
+    // Only the heuristic branch needs these, and it only exists for archives
+    // shipping no aesthetics head — do not pay for them otherwise.
+    const stats =
+      this.profile.type !== 'linear-embedding' && !this.aesthetics ? await aestheticStats(buffer) : undefined;
+
+    return { embedding, focusPeak, stats, laplacian, pixelSource: source };
+  }
+
+  /**
+   * The cheap half: arithmetic over a measurement, under this model's profile.
+   *
+   * Nothing here touches a file, which is the point — a measurement kept from a
+   * previous run is interpreted exactly like one taken a microsecond ago.
+   */
+  interpret(measurement: QualityMeasurement): QualityAssessment {
+    const { vocab } = this.ready();
+    const clipEmbedding = measurement.embedding;
+
+    // Half at the default focus threshold, which keeps shallow-depth-of-field
+    // keepers scoring high.
+    const focus = measurement.focusPeak / (measurement.focusPeak + DEFAULT_FOCUS_THRESHOLD);
 
     // One image embedding feeds both the aesthetic aspects and the keywords.
-    const clipEmbedding = await this.embed(buffer);
     const keywords = matchKeywords(vocab, clipEmbedding, KEYWORD_TOP_K, KEYWORD_FLOOR);
 
     // Aesthetic merit depends on the profile kind:
@@ -167,7 +196,7 @@ export class LocalOnnxModel implements QualityModel {
       aesthetic = scored.aesthetic;
       aspects = scored.aspects;
     } else {
-      aesthetic = heuristicAesthetic(await aestheticStats(buffer));
+      aesthetic = heuristicAesthetic(measurement.stats ?? { brightness: 0.5, contrast: 0, colorfulness: 0 });
     }
 
     // Surface the raw embedding for preference-learning tooling. Rounded to 6
@@ -177,6 +206,11 @@ export class LocalOnnxModel implements QualityModel {
     const embedding = Array.from(clipEmbedding, (x) => Math.round(x * 1e6) / 1e6);
 
     return { focus: clamp01(focus), aesthetic: clamp01(aesthetic), aspects, keywords, embedding };
+  }
+
+  /** Both halves, for callers with nothing cached to contribute. */
+  async assess(image: ImageInput): Promise<QualityAssessment> {
+    return this.interpret(await this.measure(image));
   }
 
   async scoreFocus(image: ImageInput): Promise<number> {

@@ -38,6 +38,8 @@ import {
   printJson,
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
+import { DerivedCache } from '../cache/store.js';
+import { assessCached } from '../cache/quality.js';
 import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 import { TriageStore } from '../triage/store.js';
 import { VERSION } from '../version.js';
@@ -48,6 +50,7 @@ interface RateOptions {
   writeXmp?: boolean;
   mark?: boolean;
   concurrency: string;
+  cache?: boolean;
   dryRun?: boolean;
   json?: boolean;
   verbose?: boolean;
@@ -74,6 +77,7 @@ export function registerRateCommand(program: Command): void {
     .option('--write-xmp', 'write XMP sidecars via exiftool instead of JSON sidecars')
     .option('--mark', 'record stars and keywords as a triage mark instead of a sidecar; `develop edit` or `triage apply` writes them out later')
     .option('--concurrency <n>', 'max parallel scoring jobs', '4')
+    .option('--no-cache', 're-embed every frame instead of reusing what a previous run worked out')
     .option('--dry-run', 'score and report, but write no sidecars')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
@@ -125,13 +129,20 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
   if (!(await ensureClipModelReady(io))) return;
 
   await model.init();
+  // The embedding is what costs; the stars are a dot product against whichever
+  // --profile this run named. Caching only the first means re-rating the same
+  // shoot under a different profile never re-runs the model.
+  const cache = await DerivedCache.open(
+    files.map((f) => f.path),
+    { enabled: options.cache !== false },
+  );
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
   const progress = await startProgress(io, files.length, 'Rating');
 
   const outcomes = await queue.run(
     files,
     async (file): Promise<RatingResult> => {
-      const assessment = await model.assess({ path: file.path });
+      const assessment = await assessCached(cache, model, file);
       const stars = toStarRating(assessment, profile);
 
       let sidecar: string | null = null;
@@ -188,6 +199,11 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
   );
 
   progress.stop();
+  await cache.save();
+  logVerbose(
+    io,
+    `Cache: ${cache.counters.hits} hits, ${cache.counters.misses} misses, ${cache.counters.stale} stale`,
+  );
   await model.dispose();
 
   const rated = outcomes.filter((o) => o.ok).map((o) => o.value!);
