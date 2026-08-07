@@ -34,10 +34,20 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rename, rm, utimes, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rename, rm, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { cacheShootPath, cacheDir } from '@shoots/core';
 import { enforceCacheBudget, listPacks } from './budget.js';
+
+/**
+ * Values written before anything reaches disk.
+ *
+ * A `develop export` over a catalog is hours of inference; with a single write
+ * at the end, an interrupted run threw all of it away and showed nothing while
+ * it worked. Sixty-four frames is seconds of loss and a few tens of kilobytes
+ * per append.
+ */
+const DEFAULT_FLUSH_EVERY = 64;
 
 /** The scan's own report on a file, and the whole of this cache's validation. */
 export interface FileIdentity {
@@ -120,33 +130,47 @@ export interface CacheCounters {
  */
 export class DerivedCache {
   private readonly dirty = new Set<string>();
+  /** Pack path → keys written since the last flush, waiting to be appended. */
+  private readonly unflushed = new Map<string, Set<string>>();
+  private pendingCount = 0;
+  private flushing = false;
   readonly counters: CacheCounters = { hits: 0, misses: 0, writes: 0, stale: 0 };
 
   private constructor(
     readonly enabled: boolean,
     /** Pack path → its records. */
     private readonly packs: Map<string, Map<string, CacheRecord>>,
+    /**
+     * Values to accumulate before appending them to disk. Bounds how much work
+     * an interrupted run throws away; every flush is an append, so the cost of
+     * a small number here is a few kilobytes, not a pack rewrite.
+     */
+    private readonly flushEvery: number,
   ) {}
 
   /**
    * Open the packs covering `files`. Reads only the directories those files sit
    * in, so a command pays for its own scope and not for the whole machine.
    */
-  static async open(files: readonly string[], options: { enabled?: boolean } = {}): Promise<DerivedCache> {
+  static async open(
+    files: readonly string[],
+    options: { enabled?: boolean; flushEvery?: number } = {},
+  ): Promise<DerivedCache> {
     const enabled = (options.enabled ?? true) && cacheEnabledByEnv();
-    if (!enabled) return new DerivedCache(false, new Map());
+    const flushEvery = Math.max(1, options.flushEvery ?? DEFAULT_FLUSH_EVERY);
+    if (!enabled) return new DerivedCache(false, new Map(), flushEvery);
 
     const packPaths = new Set<string>();
     for (const file of files) packPaths.add(packPathFor(path.dirname(path.resolve(file))));
 
     const packs = new Map<string, Map<string, CacheRecord>>();
     for (const packPath of packPaths) packs.set(packPath, await loadPack(packPath));
-    return new DerivedCache(true, packs);
+    return new DerivedCache(true, packs, flushEvery);
   }
 
   /** A cache that never hits, for `--no-cache` and for tests that want cold runs. */
   static disabled(): DerivedCache {
-    return new DerivedCache(false, new Map());
+    return new DerivedCache(false, new Map(), DEFAULT_FLUSH_EVERY);
   }
 
   /**
@@ -217,7 +241,56 @@ export class DerivedCache {
       existing && existing.size === identity.size && existing.mtimeMs === identity.mtimeMs ? existing.values : {};
     records.set(key, { file: key, size: identity.size, mtimeMs: identity.mtimeMs, values: { ...values, [producer]: value } });
     this.dirty.add(packKey);
+    let waiting = this.unflushed.get(packKey);
+    if (!waiting) {
+      waiting = new Set();
+      this.unflushed.set(packKey, waiting);
+    }
+    if (!waiting.has(key)) this.pendingCount++;
+    waiting.add(key);
     this.counters.writes++;
+  }
+
+  /**
+   * Append what has accumulated, if enough has, so a long run leaves something
+   * behind before it finishes.
+   *
+   * Appending rather than rewriting is what makes this affordable: a pack is
+   * JSONL read last-wins, so a later line for a photograph simply supersedes an
+   * earlier one, and a flush costs the bytes it adds instead of the size of the
+   * whole pack. {@link save} still rewrites at the end, which compacts the
+   * duplicates away and is the only step that can express a deletion.
+   *
+   * Called by the cache helpers rather than by `set`, which is synchronous. Safe
+   * to call from several workers at once: a flush already running means the
+   * others have nothing to do.
+   */
+  async flushIfDue(): Promise<void> {
+    if (!this.enabled || this.flushing || this.pendingCount < this.flushEvery) return;
+    this.flushing = true;
+    try {
+      await this.appendPending();
+    } finally {
+      this.flushing = false;
+    }
+  }
+
+  private async appendPending(): Promise<void> {
+    for (const [packPath, keys] of this.unflushed) {
+      if (keys.size === 0) continue;
+      const records = this.packs.get(packPath);
+      if (!records) continue;
+      const lines: string[] = [];
+      for (const key of keys) {
+        const record = records.get(key);
+        if (record) lines.push(JSON.stringify(record));
+      }
+      keys.clear();
+      if (lines.length === 0) continue;
+      await mkdir(path.dirname(packPath), { recursive: true });
+      await appendFile(packPath, lines.join('\n') + '\n', 'utf8');
+    }
+    this.pendingCount = 0;
   }
 
   /**
@@ -228,6 +301,9 @@ export class DerivedCache {
    */
   async save(): Promise<void> {
     if (!this.enabled) return;
+    // Nothing appended is owed to disk any more: the rewrite below carries it.
+    for (const keys of this.unflushed.values()) keys.clear();
+    this.pendingCount = 0;
     for (const packPath of this.dirty) {
       const records = this.packs.get(packPath);
       if (!records || records.size === 0) {

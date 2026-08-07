@@ -46,5 +46,6 @@ export async function colorFeaturesCached(
   }
   const vector = await compute();
   cache.set(file, producer, identity, { v: encodeDoubles(vector) } satisfies CachedColor);
+  await cache.flushIfDue();
   return vector;
 }

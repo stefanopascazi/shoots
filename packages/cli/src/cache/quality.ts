@@ -73,6 +73,7 @@ export async function measureQualityCached(
     // costs a decode but not a forward pass.
     const measured = await measureBlur(file.path, { maxDimension: BLUR_ANALYSIS_MAX_DIMENSION });
     cache.set(file.path, blurKey, identity, measured satisfies CachedMeasurement);
+    await cache.flushIfDue();
     return { embedding: cachedClip.embedding, focusPeak: measured.measured.focusPeak, stats: cachedClip.stats };
   }
 
@@ -95,6 +96,9 @@ export async function measureQualityCached(
       pixelSource: measurement.pixelSource,
     } satisfies CachedMeasurement);
   }
+  // An embedding is the most expensive thing here by far; do not hold hours of
+  // them in memory waiting for the run to end.
+  await cache.flushIfDue();
   return measurement;
 }
 

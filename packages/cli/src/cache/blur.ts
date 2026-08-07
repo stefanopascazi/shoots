@@ -51,5 +51,8 @@ export async function analyzeBlurCached(
 
   const measured = await measureBlur(file.path, { maxDimension: BLUR_ANALYSIS_MAX_DIMENSION });
   cache.set(file.path, producer, identity, measured satisfies CachedMeasurement);
+  // Get it to disk periodically rather than only at the end: a long run that is
+  // interrupted should keep what it already measured.
+  await cache.flushIfDue();
   return classifyBlur(file.path, measured.measured, measured.pixelSource, options);
 }

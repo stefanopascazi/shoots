@@ -212,6 +212,69 @@ describe('DerivedCache', () => {
     expect(cache.get(good, 'blur@1', id)).toEqual({ score: 42 });
   });
 
+  test('reaches disk during a run, not only at the end', async () => {
+    // A develop export over a catalog is hours of inference. Holding all of it
+    // in memory until the last frame meant an interrupted run kept nothing and
+    // showed nothing while it worked.
+    const files = await Promise.all([0, 1, 2, 3].map((i) => photo(`IMG_${i}.cr3`)));
+    const cache = await DerivedCache.open(files, { flushEvery: 2 });
+
+    for (const file of files.slice(0, 2)) {
+      cache.set(file, 'blur@1', await identityOf(file), { score: 1 });
+      await cache.flushIfDue();
+    }
+    // No save() has been called, and yet the work is already recoverable.
+    const midRun = await DerivedCache.open(files);
+    expect(midRun.get(files[0]!, 'blur@1', await identityOf(files[0]!))).toEqual({ score: 1 });
+    expect(midRun.get(files[1]!, 'blur@1', await identityOf(files[1]!))).toEqual({ score: 1 });
+    expect(midRun.get(files[2]!, 'blur@1', await identityOf(files[2]!))).toBeUndefined();
+  });
+
+  test('holds back until enough has accumulated', async () => {
+    const file = await photo('IMG_1.cr3');
+    const cache = await DerivedCache.open([file], { flushEvery: 10 });
+    cache.set(file, 'blur@1', await identityOf(file), { score: 1 });
+    await cache.flushIfDue();
+    expect(await listPacks()).toEqual([]);
+  });
+
+  test('the final save compacts what the flushes appended', async () => {
+    // An append supersedes rather than replaces, so a re-measured photograph
+    // leaves two lines behind. The rewrite at the end collapses them, and the
+    // surviving value is the last one written.
+    const file = await photo('IMG_1.cr3');
+    const id = await identityOf(file);
+    const cache = await DerivedCache.open([file], { flushEvery: 1 });
+    cache.set(file, 'blur@1', id, { score: 1 });
+    await cache.flushIfDue();
+    cache.set(file, 'blur@1', id, { score: 2 });
+    await cache.flushIfDue();
+    await cache.save();
+
+    const pack = packPathFor(catalog);
+    const lines = (await readFile(pack, 'utf8')).trim().split('\n');
+    expect(lines).toHaveLength(1);
+    const warm = await DerivedCache.open([file]);
+    expect(warm.get(file, 'blur@1', id)).toEqual({ score: 2 });
+  });
+
+  test('an interrupted run leaves readable, correct entries behind', async () => {
+    // What survives a Ctrl-C: appended lines with no compacting rewrite. Reading
+    // them back has to give the same answer a clean shutdown would.
+    const file = await photo('IMG_1.cr3');
+    const id = await identityOf(file);
+    const cache = await DerivedCache.open([file], { flushEvery: 1 });
+    cache.set(file, 'blur@1', id, { score: 1 });
+    await cache.flushIfDue();
+    cache.set(file, 'clip@1', id, { e: 'abc' });
+    await cache.flushIfDue();
+    // No save(): the process died here.
+
+    const warm = await DerivedCache.open([file]);
+    expect(warm.get(file, 'blur@1', id)).toEqual({ score: 1 });
+    expect(warm.get(file, 'clip@1', id)).toEqual({ e: 'abc' });
+  });
+
   test('never writes over a pack it did not open', async () => {
     // The dangerous shape: a caller stores a value for a file outside the set it
     // declared. Inventing an empty pack for that directory and saving it would
