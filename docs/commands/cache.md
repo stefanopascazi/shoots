@@ -14,18 +14,20 @@ shoots cache prune
 ## What it holds
 
 Derived values, and only derived values: a Laplacian measurement with its focus
-map, and the CLIP image embedding. **Never image data.** That distinction is why
-the cache is safe to leave on:
+map, the CLIP image embedding, and the photometric colour features the develop
+predictor trains on. **Never image data.** That distinction is why the cache is
+safe to leave on:
 
 | | 100,000 RAW frames |
 | --- | --- |
 | the catalog itself | ~2.5 TB |
 | its embedded previews, if they were cached | ~300 GB |
-| **the derived numbers, which is what is cached** | **~420 MB** |
+| **the derived numbers, which is what is cached** | **~480 MB** |
 
 The expensive part was never the bytes. Decoding a full-size preview, running a
-Laplacian over it and pushing it through CLIP costs about 320 ms per frame; what
-falls out is about 4 KB. A hit skips the decode and reads the four kilobytes.
+Laplacian over it, pushing it through CLIP and measuring its colour costs about
+430 ms per frame; what falls out is under 5 KB. A hit skips the decode and reads
+the five kilobytes.
 
 ## Which commands share it
 
@@ -34,12 +36,19 @@ falls out is about 4 KB. A hit skips the decode and reads the four kilobytes.
 | [`cull`](./cull.md), `/cull --review` | the sharpness measurement |
 | [`rate`](./rate.md) | the embedding **and** the sharpness |
 | [`embeddings`](./embeddings.md) | the embedding |
-| [`develop export`](./develop.md) (so `init` and `edit`) | the embedding |
+| [`develop export`](./develop.md) (so `init` and `edit`) | the embedding, the sharpness, and the colour features |
 
 They share entries in both directions. `rate` after `cull` skips the Laplacian;
 `cull` after `rate` measures nothing at all, because the embedding pass already
 had the pixels open and left its measurement behind. `embeddings` after `rate`
 does no work whatsoever.
+
+Colour features are the one producer that is not shared, because they do not
+describe a photograph — they describe a *rendering* of one. The same RAW
+measured off its embedded preview and off a neutral external render is two
+different vectors, so `--baseline` is part of the key, and so is which RAW
+developer produced the render and with which arguments. Change any of those and
+the measurement is taken again, because it has to be.
 
 ## What is *not* cached
 
@@ -63,8 +72,15 @@ shoots rate ~/shoot --profile portrait   # re-scores — 0.5s
 shoots rate ~/shoot --profile my-eye     # 0.5s
 ```
 
-Cached and uncached runs produce byte-identical output. If they ever did not,
-that would be a bug and not a trade-off.
+And `develop export` re-reads instead of re-embedding and re-rendering:
+
+```sh
+shoots develop export ~/shoot --out d.jsonl   # 3.6s for 30 frames
+shoots develop export ~/shoot --out d.jsonl   # 0.9s
+```
+
+Cached and uncached runs produce identical output. If they ever did not, that
+would be a bug and not a trade-off.
 
 ## Identity, and why a wrong answer is not possible
 
@@ -133,8 +149,9 @@ each, and a long afternoon for a virus scanner.
 
 ---
 
-A frame carries about 1.5 KB of measurement and 2.7 KB of embedding, so a shoot
-that has only been culled costs roughly a third of one that has been rated too.
+A frame carries about 1.5 KB of measurement, 2.7 KB of embedding and 0.6 KB of
+colour features, so a shoot that has only been culled costs under a third of one
+that has been through the develop export too.
 
 ---
 

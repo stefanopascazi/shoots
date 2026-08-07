@@ -23,6 +23,34 @@ export function encodeFloats(values: Float32Array): string {
 }
 
 /**
+ * The same, at the width a plain JavaScript number actually is.
+ *
+ * Colour features arrive as `number[]`, which is float64. Narrowing them to
+ * float32 to save 200 bytes would move the values the develop trainer fits on,
+ * so they are stored at full width — and even at full width, base64 is smaller
+ * than the eighteen-character decimals JSON would write.
+ */
+export function encodeDoubles(values: readonly number[]): string {
+  const packed = Float64Array.from(values);
+  return Buffer.from(packed.buffer, packed.byteOffset, packed.byteLength).toString('base64');
+}
+
+/** Unpack a base64 float64 vector, or null when it is not one. */
+export function decodeDoubles(encoded: unknown): number[] | null {
+  if (typeof encoded !== 'string' || encoded.length === 0) return null;
+  let raw: Buffer;
+  try {
+    raw = Buffer.from(encoded, 'base64');
+  } catch {
+    return null;
+  }
+  if (raw.byteLength === 0 || raw.byteLength % 8 !== 0) return null;
+  const out = new Float64Array(raw.byteLength / 8);
+  Buffer.from(out.buffer, out.byteOffset, out.byteLength).set(raw);
+  return Array.from(out);
+}
+
+/**
  * Unpack a base64 float vector, or null when it is not one.
  *
  * Copies rather than viewing the decoded buffer: a Buffer from base64 carries no

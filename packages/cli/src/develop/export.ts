@@ -61,6 +61,8 @@ import {
 import { startPhase, startProgress } from '../progress.js';
 import { DerivedCache } from '../cache/store.js';
 import { assessCached } from '../cache/quality.js';
+import { colorFeaturesCached } from '../cache/color.js';
+import { colorSourceId } from '../cache/producers.js';
 import { VERSION } from '../version.js';
 import type { AsShotMeta, Treatment } from './develop/schema.js';
 import { ensureClipModelReady, ensureExiftoolReady, ensureLibrawReady } from '../tools.js';
@@ -282,14 +284,34 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
       // scene-linear pyramid, which no external developer can unpack — decode it
       // directly. That IS the neutral baseline, so it applies under either
       // --baseline mode rather than being tied to the external developer.
-      const colorTask = floatDngFiles.has(file.path)
-        ? renderFloatDngNeutral(file.path).then((raster) => {
-            if (!raster) throw new Error("float DNG decode produced no raster");
-            return extractColorFeatures(raster);
-          })
-        : developer && isRawFile(file.path)
-          ? withNeutralRender(developer, file.path, (rendered) => extractColorFeatures(rendered))
-          : extractColorFeatures(file.path);
+      const isFloatDngFile = floatDngFiles.has(file.path);
+      const viaDeveloper = !isFloatDngFile && developer && isRawFile(file.path);
+      // Which rendering these numbers describe, so a run under one --baseline
+      // never answers with what another measured.
+      const colorSource = isFloatDngFile
+        ? colorSourceId('float-dng')
+        : viaDeveloper
+          ? colorSourceId('neutral', developer!)
+          : colorSourceId('preview');
+      const colorTask = colorFeaturesCached(
+        cache,
+        file.path,
+        { size: file.size, mtimeMs: file.mtime.getTime() },
+        colorSource,
+        async () => {
+          if (isFloatDngFile) {
+            const raster = await renderFloatDngNeutral(file.path);
+            if (!raster) throw new Error('float DNG decode produced no raster');
+            return (await extractColorFeatures(raster)).vector;
+          }
+          if (viaDeveloper) {
+            return withNeutralRender(developer!, file.path, async (rendered) =>
+              (await extractColorFeatures(rendered)).vector,
+            );
+          }
+          return (await extractColorFeatures(file.path)).vector;
+        },
+      );
       const [assessment, color] = await Promise.all([assessCached(cache, model, file), colorTask]);
       if (!assessment.embedding) throw new Error('backend produced no embedding (unsupported model?)');
 
@@ -298,7 +320,7 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
       const record: DatasetRecord = {
         file: file.path,
         embedding: assessment.embedding.map(round5),
-        features: color.vector,
+        features: color,
         develop,
         asShot: capture.get(file.path) ?? EMPTY_AS_SHOT,
         treatment: edit?.treatment ?? 'color',
