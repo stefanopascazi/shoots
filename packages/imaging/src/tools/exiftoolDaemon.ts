@@ -68,7 +68,8 @@ function assertArgfileSafe(args: readonly string[]): void {
 export class ExiftoolDaemon {
   private child?: ChildProcessWithoutNullStreams;
   private nextId = 1;
-  private readonly queue: (() => void)[] = [];
+  /** Waiting requests, each with the handle needed to fail it if we shut down. */
+  private readonly queue: { dispatch: () => void; reject: (err: Error) => void }[] = [];
   private current?: PendingRequest;
   /**
    * stdout as it arrives, unjoined. A `-b` preview extraction is megabytes in
@@ -144,7 +145,7 @@ export class ExiftoolDaemon {
     pending?.reject(err);
     // Whatever was queued starts a fresh process rather than inheriting the
     // failure — one at a time, as always.
-    this.queue.shift()?.();
+    this.queue.shift()?.dispatch();
   }
 
   private reset(): void {
@@ -187,8 +188,12 @@ export class ExiftoolDaemon {
     this.outLen += chunk.length;
 
     if (hit < 0) {
-      const keep = Math.min(marker.length - 1, chunk.length);
-      this.outTail = chunk.subarray(chunk.length - keep);
+      // Carry over the last bytes of the *window*, not of the chunk. Taking them
+      // from the chunk alone loses the earlier tail whenever a chunk is shorter
+      // than a marker, and a marker delivered in three pieces — "{re", "ad",
+      // "y1}" — would then never be found at all: the request hangs forever.
+      const keep = Math.min(marker.length - 1, window.length);
+      this.outTail = Buffer.from(window.subarray(window.length - keep));
       return;
     }
 
@@ -227,7 +232,7 @@ export class ExiftoolDaemon {
     if (!req || req.stdout === undefined || req.stderr === undefined) return;
     this.current = undefined;
     req.resolve({ stdout: req.stdout, stderr: req.stderr.trim(), status: req.status ?? 0 });
-    this.queue.shift()?.();
+    this.queue.shift()?.dispatch();
   }
 
   /**
@@ -248,7 +253,7 @@ export class ExiftoolDaemon {
         } catch (err) {
           this.current = undefined;
           reject(err instanceof Error ? err : new Error(String(err)));
-          this.queue.shift()?.();
+          this.queue.shift()?.dispatch();
           return;
         }
         // -echo4 lands on stderr *after* any message the batch produced, so the
@@ -257,16 +262,29 @@ export class ExiftoolDaemon {
         child.stdin.write(batch.join('\n') + '\n');
       };
       // Serialized: dispatch now only when nothing else is mid-flight.
-      if (this.current) this.queue.push(dispatch);
+      if (this.current) this.queue.push({ dispatch, reject });
       else dispatch();
     });
   }
 
-  /** Stop the process. Idempotent; the next run() starts a fresh one. */
+  /**
+   * Stop the process. Idempotent; the next run() starts a fresh one.
+   *
+   * Anything outstanding is failed rather than left waiting. Closing while a
+   * request is in flight is not the normal path, but a promise nobody will ever
+   * settle is a hang with no diagnosis attached, and that is a worse outcome
+   * than an error saying exactly what happened.
+   */
   async close(): Promise<void> {
+    const pending = this.current;
+    this.current = undefined;
+    const queued = this.queue.splice(0, this.queue.length);
     const child = this.child;
-    if (!child) return;
     this.reset();
+    const closed = (): Error => new Error('exiftool daemon was closed while a request was outstanding');
+    pending?.reject(closed());
+    for (const entry of queued) entry.reject(closed());
+    if (!child) return;
     child.removeAllListeners('close');
     child.removeAllListeners('error');
     child.on('error', () => {});

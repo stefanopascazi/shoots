@@ -149,16 +149,21 @@ export class DerivedCache {
     return new DerivedCache(false, new Map());
   }
 
-  private packFor(file: string): { key: string; records: Map<string, CacheRecord> } {
+  /**
+   * The already-loaded pack a file belongs to, or null when it belongs to one
+   * this instance never opened.
+   *
+   * Null, and never an empty pack invented on the spot. Loading is async and
+   * this is not, so an invented pack would start out believing the directory has
+   * no cached values at all — and {@link save} would then write that belief over
+   * a real file, destroying every record the other shoot had. A file outside the
+   * declared scope costs a recomputation instead, which is the failure this
+   * cache is allowed to have.
+   */
+  private packFor(file: string): { key: string; records: Map<string, CacheRecord> } | null {
     const key = packPathFor(path.dirname(path.resolve(file)));
-    let records = this.packs.get(key);
-    if (!records) {
-      // A file outside the opened scope (a caller that scanned more than it
-      // declared). Start an empty pack rather than silently dropping the write.
-      records = new Map();
-      this.packs.set(key, records);
-    }
-    return { key, records };
+    const records = this.packs.get(key);
+    return records ? { key, records } : null;
   }
 
   /**
@@ -170,8 +175,13 @@ export class DerivedCache {
    */
   get<T>(file: string, producer: string, identity: FileIdentity): T | undefined {
     if (!this.enabled) return undefined;
+    const pack = this.packFor(file);
+    if (!pack) {
+      this.counters.misses++;
+      return undefined;
+    }
     const key = path.resolve(file);
-    const { key: packKey, records } = this.packFor(file);
+    const { key: packKey, records } = pack;
     const record = records.get(key);
     if (!record) {
       this.counters.misses++;
@@ -196,8 +206,10 @@ export class DerivedCache {
   /** Store what `producer` worked out. Takes effect on {@link save}. */
   set(file: string, producer: string, identity: FileIdentity, value: unknown): void {
     if (!this.enabled) return;
+    const pack = this.packFor(file);
+    if (!pack) return;
     const key = path.resolve(file);
-    const { key: packKey, records } = this.packFor(file);
+    const { key: packKey, records } = pack;
     const existing = records.get(key);
     // A record whose identity moved on keeps nothing: its other values described
     // the previous version of the photograph.

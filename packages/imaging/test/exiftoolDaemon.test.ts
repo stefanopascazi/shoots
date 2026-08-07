@@ -129,6 +129,20 @@ describe('ExiftoolDaemon.matches', () => {
 });
 
 describe('ExiftoolDaemon.close', () => {
+  test('fails what was outstanding rather than leaving it waiting forever', async () => {
+    // A promise nobody will ever settle is a hang with no diagnosis attached.
+    const daemon = makeDaemon();
+    const inFlight = daemon.run(['-echoargs', 'slow', '-slow']);
+    const queued = daemon.run(['-ver']);
+    const settled = Promise.allSettled([inFlight, queued]);
+    await daemon.close();
+
+    const [a, b] = await settled;
+    expect(a.status).toBe('rejected');
+    expect(b.status).toBe('rejected');
+    expect((a as PromiseRejectedResult).reason.message).toMatch(/closed/);
+  });
+
   test('is idempotent and leaves the daemon usable again', async () => {
     const daemon = makeDaemon();
     await daemon.run(['-ver']);

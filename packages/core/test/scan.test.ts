@@ -161,6 +161,19 @@ describe('scanFiles under concurrency', () => {
     expect(parallel).toHaveLength(290);
   });
 
+  test('propagates an onProgress that throws instead of waiting forever', async () => {
+    // The pool counts a directory as in flight until its handler returns. An
+    // exception escaping that handler would leave the count high and the walk
+    // waiting on work that already finished.
+    await expect(
+      scanFiles(deep, {
+        onProgress: (n) => {
+          if (n > 5) throw new Error('caller blew up');
+        },
+      }),
+    ).rejects.toThrow('caller blew up');
+  });
+
   test('counts every match exactly once, whatever order the pool visits them in', async () => {
     const counts: number[] = [];
     const found = await scanFiles(deep, { onProgress: (n) => counts.push(n) });

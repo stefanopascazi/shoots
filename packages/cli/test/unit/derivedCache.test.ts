@@ -212,6 +212,42 @@ describe('DerivedCache', () => {
     expect(cache.get(good, 'blur@1', id)).toEqual({ score: 42 });
   });
 
+  test('never writes over a pack it did not open', async () => {
+    // The dangerous shape: a caller stores a value for a file outside the set it
+    // declared. Inventing an empty pack for that directory and saving it would
+    // replace a real file holding another shoot's records. A miss is the only
+    // acceptable answer.
+    const outsider = await photo('other/IMG_9.cr3');
+    const outsiderId = await identityOf(outsider);
+    const seed = await DerivedCache.open([outsider]);
+    seed.set(outsider, 'blur@1', outsiderId, { score: 99 });
+    seed.set(outsider, 'clip@1', outsiderId, { embedding: 'kept' });
+    await seed.save();
+
+    const mine = await photo('mine/IMG_1.cr3');
+    const scoped = await DerivedCache.open([mine]);
+    scoped.set(outsider, 'blur@1', outsiderId, { score: 1 });
+    scoped.set(mine, 'blur@1', await identityOf(mine), { score: 2 });
+    await scoped.save();
+
+    const check = await DerivedCache.open([outsider]);
+    expect(check.get(outsider, 'blur@1', outsiderId)).toEqual({ score: 99 });
+    expect(check.get(outsider, 'clip@1', outsiderId)).toEqual({ embedding: 'kept' });
+  });
+
+  test('a file outside the opened set reads as a miss, not as an empty pack', async () => {
+    const outsider = await photo('elsewhere/IMG_9.cr3');
+    const outsiderId = await identityOf(outsider);
+    const seed = await DerivedCache.open([outsider]);
+    seed.set(outsider, 'blur@1', outsiderId, { score: 7 });
+    await seed.save();
+
+    const mine = await photo('here/IMG_1.cr3');
+    const scoped = await DerivedCache.open([mine]);
+    expect(scoped.get(outsider, 'blur@1', outsiderId)).toBeUndefined();
+    expect(scoped.counters.misses).toBe(1);
+  });
+
   test('writes nothing when a run only reads', async () => {
     const file = await photo('IMG_1.cr3');
     const id = await identityOf(file);

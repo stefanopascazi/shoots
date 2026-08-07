@@ -93,12 +93,23 @@ function flush(id) {
       for (let i = 0; i < payload.length; i++) payload[i] = i % 251;
       break;
     case '-splitmarker': {
-      // The marker arriving one byte per chunk: the boundary case a search that
-      // only looked inside a single chunk would miss forever.
-      payload = Buffer.from('split\r\n', 'latin1');
-      process.stdout.write(payload);
-      for (const ch of `{ready${id}}\r\n`) process.stdout.write(ch);
-      process.stderr.write(marker.replace('${status}', '0') + '\r\n');
+      // The marker arriving one byte per 'data' event, which is the case that
+      // hung: a reader carrying over only the last chunk's bytes loses the
+      // earlier ones as soon as a chunk is shorter than a marker, and never
+      // matches. The gaps are load-bearing — without them the runtime coalesces
+      // these writes into a single chunk and the test proves nothing.
+      const pieces = `{ready${id}}\r\n`.split('');
+      process.stdout.write('split\r\n');
+      let i = 0;
+      const tick = () => {
+        if (i < pieces.length) {
+          process.stdout.write(pieces[i++]);
+          setTimeout(tick, 12);
+          return;
+        }
+        process.stderr.write(marker.replace('${status}', '0') + '\r\n');
+      };
+      setTimeout(tick, 12);
       return;
     }
     default:

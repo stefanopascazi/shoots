@@ -155,10 +155,14 @@ export class LocalOnnxModel implements QualityModel {
     const focusPeak = options.focusPeak ?? laplacian!.focusPeak;
 
     const embedding = await this.embed(buffer);
-    // Only the heuristic branch needs these, and it only exists for archives
-    // shipping no aesthetics head — do not pay for them otherwise.
-    const stats =
-      this.profile.type !== 'linear-embedding' && !this.aesthetics ? await aestheticStats(buffer) : undefined;
+    // Only archives shipping no aesthetics head need these — but *every* profile
+    // on such an archive needs them, not just the one this instance carries. A
+    // measurement is meant to be profile-independent so that a cache can keep it
+    // and any profile can interpret it later; skipping the statistics because
+    // *this* profile would not have used them makes the stored measurement a
+    // lie, and the next profile to read it would silently score against neutral
+    // constants instead of the photograph.
+    const stats = this.aesthetics ? undefined : await aestheticStats(buffer);
 
     return { embedding, focusPeak, stats, laplacian, pixelSource: source };
   }
@@ -195,8 +199,18 @@ export class LocalOnnxModel implements QualityModel {
       const scored = scoreAesthetics(this.aesthetics, clipEmbedding, this.profile.meritWeights);
       aesthetic = scored.aesthetic;
       aspects = scored.aspects;
+    } else if (measurement.stats) {
+      aesthetic = heuristicAesthetic(measurement.stats);
     } else {
-      aesthetic = heuristicAesthetic(measurement.stats ?? { brightness: 0.5, contrast: 0, colorfulness: 0 });
+      // Refused rather than defaulted. Without the statistics this branch has
+      // nothing about the photograph to score, and quietly substituting neutral
+      // constants would give every frame in a shoot the same merit — plausible
+      // output, uniformly wrong, with nothing to point at. measure() always
+      // supplies them for an archive that has no aesthetics head.
+      throw new Error(
+        `${this.name}: this archive ships no aesthetics head, so the heuristic needs the ` +
+          'image statistics, and this measurement carries none',
+      );
     }
 
     // Surface the raw embedding for preference-learning tooling. Rounded to 6

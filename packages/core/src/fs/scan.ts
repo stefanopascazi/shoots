@@ -145,18 +145,25 @@ async function walkDirectories(
       while (pending.length > 0 && active < limit) {
         const dir = pending.pop()!;
         active++;
-        readdir(dir, { withFileTypes: true }).then(
-          (entries) => {
+        const fail = (err: unknown): void => {
+          failed = true;
+          reject(err instanceof Error ? err : new Error(String(err)));
+        };
+        readdir(dir, { withFileTypes: true }).then((entries) => {
+          // `visit` calls the caller's onProgress, which may throw. Letting that
+          // escape would leave `active` counted up forever and the walk waiting
+          // on a directory that already finished — a hang where the sequential
+          // version simply propagated the error.
+          try {
             const subdirs = visit(dir, entries);
             if (recursive) pending.push(...subdirs);
-            active--;
-            pump();
-          },
-          (err: unknown) => {
-            failed = true;
-            reject(err instanceof Error ? err : new Error(String(err)));
-          },
-        );
+          } catch (err) {
+            fail(err);
+            return;
+          }
+          active--;
+          pump();
+        }, fail);
       }
     };
     pump();

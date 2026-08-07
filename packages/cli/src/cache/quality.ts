@@ -29,10 +29,18 @@ interface CachedEmbedding {
   stats?: QualityMeasurement['stats'];
 }
 
-function readEmbedding(cache: DerivedCache, file: string, producer: string, identity: FileIdentity): CachedEmbedding | null {
+/** Read and decode in one step, so a corrupt entry is a miss and not a crash. */
+function readEmbedding(
+  cache: DerivedCache,
+  file: string,
+  producer: string,
+  identity: FileIdentity,
+): { embedding: Float32Array; stats: CachedEmbedding['stats'] } | null {
   const raw = cache.get<CachedEmbedding>(file, producer, identity);
-  if (!raw || decodeFloats(raw.e) === null) return null;
-  return raw;
+  if (!raw) return null;
+  const embedding = decodeFloats(raw.e);
+  if (!embedding) return null;
+  return { embedding, stats: raw.stats };
 }
 
 /**
@@ -57,11 +65,7 @@ export async function measureQualityCached(
   const cachedClip = readEmbedding(cache, file.path, clipKey, identity);
 
   if (cachedBlur && cachedClip) {
-    return {
-      embedding: decodeFloats(cachedClip.e)!,
-      focusPeak: cachedBlur.measured.focusPeak,
-      stats: cachedClip.stats,
-    };
+    return { embedding: cachedClip.embedding, focusPeak: cachedBlur.measured.focusPeak, stats: cachedClip.stats };
   }
 
   if (cachedClip) {
@@ -69,11 +73,7 @@ export async function measureQualityCached(
     // costs a decode but not a forward pass.
     const measured = await measureBlur(file.path, { maxDimension: BLUR_ANALYSIS_MAX_DIMENSION });
     cache.set(file.path, blurKey, identity, measured satisfies CachedMeasurement);
-    return {
-      embedding: decodeFloats(cachedClip.e)!,
-      focusPeak: measured.measured.focusPeak,
-      stats: cachedClip.stats,
-    };
+    return { embedding: cachedClip.embedding, focusPeak: measured.measured.focusPeak, stats: cachedClip.stats };
   }
 
   // The embedding has to be computed, and that decode can carry the Laplacian

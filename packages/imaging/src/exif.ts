@@ -44,7 +44,17 @@ export interface RunExiftoolOptions {
 export async function runExiftool(args: string[], options: RunExiftoolOptions = {}): Promise<Buffer> {
   const daemon = sharedExiftoolDaemon();
   if (!daemon) return spawnExiftool(args, options);
-  const { stdout, stderr, status } = await daemon.run(args);
+  let result;
+  try {
+    result = await daemon.run(args);
+  } catch (err) {
+    // The binary resolved a moment ago but would not start — deleted, or not
+    // executable. Callers distinguish "exiftool is missing" from "this file had
+    // no such tag" by the error type, so it has to keep saying which this is.
+    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') throw new ExiftoolNotFoundError();
+    throw err;
+  }
+  const { stdout, stderr, status } = result;
   if (status === 0) return stdout;
   if (options.lenient && stdout.length > 0) return stdout;
   throw new ExiftoolError(`exiftool exited with code ${status}${stderr ? `: ${stderr}` : ''}`);
