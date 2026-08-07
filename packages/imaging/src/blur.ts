@@ -169,16 +169,23 @@ export interface AnalyzeBlurOptions extends LaplacianOptions {
   focusRescue?: boolean;
 }
 
-/** Full per-file analysis: load renderable pixels, score, classify. */
-export async function analyzeBlur(
+/**
+ * Classify an already-measured frame. Split out from {@link analyzeBlur}
+ * deliberately: measuring is the expensive, threshold-independent half, and
+ * classifying is arithmetic. A caller holding a measurement from somewhere else
+ * — a cache, a previous run — reclassifies it here rather than re-deriving the
+ * rule, so a re-run with a different `--threshold` costs nothing.
+ */
+export function classifyBlur(
   filePath: string,
-  options: AnalyzeBlurOptions = {},
-): Promise<BlurAnalysis> {
+  measured: LaplacianResult,
+  pixelSource: 'file' | 'embedded-preview',
+  options: Omit<AnalyzeBlurOptions, keyof LaplacianOptions> = {},
+): BlurAnalysis {
   const threshold = options.threshold ?? DEFAULT_BLUR_THRESHOLD;
   const focusThreshold = options.focusThreshold ?? DEFAULT_FOCUS_THRESHOLD;
   const focusRescue = options.focusRescue ?? true;
-  const { buffer, source } = await loadRenderableImage(filePath);
-  const { score, focusPeak, focusMap, width, height } = await laplacianVariance(buffer, options);
+  const { score, focusPeak, focusMap, width, height } = measured;
 
   const globallySoft = score < threshold;
   const hasFocusedRegion = focusPeak >= focusThreshold;
@@ -194,8 +201,26 @@ export async function analyzeBlur(
     threshold,
     focusThreshold,
     rescued,
-    pixelSource: source,
+    pixelSource,
     analyzedWidth: width,
     analyzedHeight: height,
   };
+}
+
+/** Measure a file without classifying it: the half worth caching. */
+export async function measureBlur(
+  filePath: string,
+  options: LaplacianOptions = {},
+): Promise<{ measured: LaplacianResult; pixelSource: 'file' | 'embedded-preview' }> {
+  const { buffer, source } = await loadRenderableImage(filePath);
+  return { measured: await laplacianVariance(buffer, options), pixelSource: source };
+}
+
+/** Full per-file analysis: load renderable pixels, score, classify. */
+export async function analyzeBlur(
+  filePath: string,
+  options: AnalyzeBlurOptions = {},
+): Promise<BlurAnalysis> {
+  const { measured, pixelSource } = await measureBlur(filePath, options);
+  return classifyBlur(filePath, measured, pixelSource, options);
 }

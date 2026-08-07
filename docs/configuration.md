@@ -73,6 +73,17 @@ export SHOOTS_HOME=/Volumes/Field/shoots-home
 shoots setup
 ```
 
+### Derived-value cache
+
+| Variable | Effect |
+| --- | --- |
+| `SHOOTS_CACHE` | Set to `0` to recompute everything, every run. Per run, use `--no-cache`. |
+| `SHOOTS_CACHE_MAX` | Ceiling on `~/.shoots/cache`. Default `1GB`; accepts `512MB`, `2GB` or plain bytes. Crossing it drops whole shoots, oldest first. |
+
+The cache holds derived numbers only — measurements, embeddings — never image
+data, which is why ~150 MB covers a 100,000-frame catalog. See
+[`shoots cache`](./commands/cache.md).
+
 ### External tools
 
 | Variable | Effect |

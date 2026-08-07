@@ -33,6 +33,7 @@ focus map. It is fast, deterministic and needs no model.
 | `--format <fmt>` | `json` | Report format: `json` or `csv` |
 | `--out <file>` | stdout | Write the report to a file |
 | `--concurrency <n>` | `4` | Max parallel analyses |
+| `--no-cache` | off | Re-measure every frame instead of reusing what a previous run worked out ([`shoots cache`](./cache.md)) |
 | `--dry-run` | off | Analyze and report, but relocate nothing and write no report file |
 | `--json` | off | Machine-readable JSON on stdout |
 | `--verbose` | off | Verbose logging on stderr |

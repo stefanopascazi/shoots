@@ -17,6 +17,7 @@ export {
   modelsDir,
   modelDir,
   cacheDir,
+  cacheShootPath,
   profilesDir,
   developHome,
   developExportPath,

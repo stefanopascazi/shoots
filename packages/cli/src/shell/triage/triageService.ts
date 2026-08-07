@@ -18,7 +18,9 @@
 import { statSync } from 'node:fs';
 import path from 'node:path';
 import { JobQueue, scanFiles } from '@shoots/core';
-import { analyzeBlur, readMetadata, type FocusMap } from '@shoots/imaging';
+import { readMetadata, type FocusMap } from '@shoots/imaging';
+import { analyzeBlurCached } from '../../cache/blur.js';
+import { DerivedCache } from '../../cache/store.js';
 import { relocate, relocateAll } from '../../relocate.js';
 import { TriageStore } from '../../triage/store.js';
 import type { SemanticLabel } from '../../triage/schema.js';
@@ -72,6 +74,8 @@ export interface TriageOptions extends TriageDisposition {
   copy?: boolean;
   /** Analyse and queue for review, but write nothing. */
   dryRun?: boolean;
+  /** Re-measure every frame instead of reusing a previous run's numbers. */
+  cache?: boolean;
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -109,18 +113,21 @@ export async function runTriage(targetPath: string, options: TriageOptions): Pro
   );
   const total = files.length;
 
+  // Same split, and the same pack files, as the batch `cull`: measuring is the
+  // expensive half and does not depend on the thresholds this session chose, so
+  // a review opened twice on the same folder measures once.
+  const cache = await DerivedCache.open(files.map((f) => f.path), { enabled: options.cache !== false });
+  const classifyOptions = { threshold: options.threshold, focusThreshold: options.focusThreshold };
+
   const queue = new JobQueue({ concurrency: options.concurrency ?? 4 });
   let done = 0;
   const outcomes = await queue.run(
     files,
-    (file) =>
-      analyzeBlur(file.path, {
-        threshold: options.threshold,
-        focusThreshold: options.focusThreshold,
-      }),
+    (file) => analyzeBlurCached(cache, file, classifyOptions),
     () => options.onProgress?.(++done, total),
     (file) => file.name,
   );
+  await cache.save();
 
   // Best-effort aperture for the review cards.
   const apertureByFile = new Map<string, number>();

@@ -43,6 +43,7 @@ so scripts are unaffected.
 | Command | Purpose |
 | --- | --- |
 | [`setup`](./setup.md) | Download & verify exiftool, LibRaw and the inference model into `~/.shoots` |
+| [`cache`](./cache.md) | The derived numbers runs reuse (measurements, embeddings): `status`, `clear`, `prune` |
 | [`doctor`](./doctor.md) | Environment health check |
 | [`update`](./update.md) | Self-update the standalone binary |
 | [`release-notes`](./release-notes.md) | The migration steps this release needs, checked against `~/.shoots` |

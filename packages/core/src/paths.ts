@@ -39,9 +39,23 @@ export function modelDir(name: string, version: string): string {
   return path.join(modelsDir(), name, version);
 }
 
-/** Root for regenerable caches (thumbnails, RAW previews). */
+/**
+ * Root for regenerable caches.
+ *
+ * Everything here is *derived numbers* — a Laplacian measurement, a CLIP
+ * embedding, a colour-feature vector — and never pixels. That distinction is
+ * the whole reason this directory is safe to leave switched on: the numbers
+ * describing a 100k-frame catalog are a few hundred megabytes, while its
+ * previews would be hundreds of gigabytes. Deleting any of it costs only the
+ * recomputation.
+ */
 export function cacheDir(): string {
   return path.join(shootsHome(), 'cache');
+}
+
+/** The derived-value file for one shoot, named after the folder it came from. */
+export function cacheShootPath(folderName: string): string {
+  return path.join(cacheDir(), `${folderName}.jsonl`);
 }
 
 /** Directory holding user-supplied rating profiles (learned `*.json`). */

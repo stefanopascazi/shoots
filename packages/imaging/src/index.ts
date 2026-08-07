@@ -65,6 +65,8 @@ export {
 export {
   laplacianVariance,
   analyzeBlur,
+  measureBlur,
+  classifyBlur,
   DEFAULT_BLUR_THRESHOLD,
   DEFAULT_FOCUS_THRESHOLD,
   type FocusMap,

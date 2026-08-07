@@ -70,6 +70,11 @@ export const COMMANDS: CommandSpec[] = [
     usage: '/schedule install [--at 03:00] [--dry-run] · status · uninstall · run [--force] [--dry-run] [--json]',
   },
   {
+    name: 'cache',
+    summary: 'The derived values runs reuse (measurements, embeddings): inspect or drop them',
+    usage: '/cache status · clear · prune',
+  },
+  {
     name: 'setup',
     summary: 'Download & verify external tools (exiftool, libraw) and the inference model into ~/.shoots',
     usage: '/setup [--json]',

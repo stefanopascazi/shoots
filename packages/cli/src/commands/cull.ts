@@ -12,12 +12,13 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { JobQueue, scanFiles } from '@shoots/core';
 import {
-  analyzeBlur,
   DEFAULT_BLUR_THRESHOLD,
   DEFAULT_FOCUS_THRESHOLD,
   readMetadata,
   type BlurAnalysis,
 } from '@shoots/imaging';
+import { DerivedCache } from '../cache/store.js';
+import { analyzeBlurCached } from '../cache/blur.js';
 import {
   logError,
   logVerbose,
@@ -47,6 +48,7 @@ interface CullOptions {
   format: string;
   out?: string;
   concurrency: string;
+  cache?: boolean;
   dryRun?: boolean;
   json?: boolean;
   verbose?: boolean;
@@ -69,6 +71,7 @@ export function registerCullCommand(program: Command): void {
     .option('--format <fmt>', 'report format: json | csv', 'json')
     .option('--out <file>', 'write the report to a file instead of stdout')
     .option('--concurrency <n>', 'max parallel analyses', '4')
+    .option('--no-cache', 're-measure every frame instead of reusing what a previous run worked out')
     .option('--dry-run', 'analyze and report, but skip copying and report-file writes')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
@@ -171,17 +174,30 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   // exiftool; only provision it when the batch actually contains RAW.
   if (files.some((f) => f.kind === 'raw') && !(await ensureExiftoolReady(io))) return;
 
+  // The measurement is expensive and threshold-independent; the verdict is
+  // arithmetic over it. Caching only the first half is what makes re-running
+  // with a different --threshold cost nothing.
+  const cache = await DerivedCache.open(
+    files.map((f) => f.path),
+    { enabled: options.cache !== false },
+  );
+
   const queue = new JobQueue({ concurrency: parsePositiveInt(options.concurrency, 4) });
   const progress = await startProgress(io, files.length, 'Culling');
 
   const outcomes = await queue.run(
     files,
-    (file) => analyzeBlur(file.path, { threshold, focusThreshold, focusRescue }),
+    (file) => analyzeBlurCached(cache, file, { threshold, focusThreshold, focusRescue }),
     progress.onProgress,
     (file) => file.name,
   );
 
   progress.stop();
+  await cache.save();
+  logVerbose(
+    io,
+    `Cache: ${cache.counters.hits} hits, ${cache.counters.misses} misses, ${cache.counters.stale} stale`,
+  );
 
   const results: BlurAnalysis[] = [];
   const errors: CullError[] = [];
