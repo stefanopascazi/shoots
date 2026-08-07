@@ -9,6 +9,7 @@
  */
 import { spawn } from 'node:child_process';
 import { resolveExiftool } from './tools/exiftool.js';
+import { sharedExiftoolDaemon } from './tools/exiftoolDaemon.js';
 
 export class ExiftoolError extends Error {}
 
@@ -31,8 +32,26 @@ export interface RunExiftoolOptions {
   lenient?: boolean;
 }
 
-/** Low-level runner. Returns raw stdout as a Buffer (metadata may be binary). */
-export function runExiftool(args: string[], options: RunExiftoolOptions = {}): Promise<Buffer> {
+/**
+ * Low-level runner. Returns raw stdout as a Buffer (metadata may be binary).
+ *
+ * Goes through the shared `-stay_open` daemon when exiftool is provisioned, so
+ * the ~190ms Perl startup is paid once per run instead of once per call — see
+ * {@link sharedExiftoolDaemon}. Falls back to a one-shot spawn when there is no
+ * daemon to use (unprovisioned binary, or SHOOTS_EXIFTOOL_DAEMON=0), which is
+ * also the path that reports the missing binary.
+ */
+export async function runExiftool(args: string[], options: RunExiftoolOptions = {}): Promise<Buffer> {
+  const daemon = sharedExiftoolDaemon();
+  if (!daemon) return spawnExiftool(args, options);
+  const { stdout, stderr, status } = await daemon.run(args);
+  if (status === 0) return stdout;
+  if (options.lenient && stdout.length > 0) return stdout;
+  throw new ExiftoolError(`exiftool exited with code ${status}${stderr ? `: ${stderr}` : ''}`);
+}
+
+/** One process per call: the fallback, and what the daemon replaced. */
+function spawnExiftool(args: string[], options: RunExiftoolOptions = {}): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const resolved = resolveExiftool();
     if (!resolved) {

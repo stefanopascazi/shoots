@@ -25,6 +25,13 @@ export {
 } from './tools/exiftool.js';
 
 export {
+  ExiftoolDaemon,
+  sharedExiftoolDaemon,
+  closeExiftoolDaemon,
+  type DaemonResult,
+} from './tools/exiftoolDaemon.js';
+
+export {
   exiftoolManifest,
   EXIFTOOL_VERSION,
   UnsupportedPlatformError,
