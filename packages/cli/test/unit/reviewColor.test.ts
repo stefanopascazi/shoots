@@ -63,19 +63,37 @@ describe('wbGains', () => {
     expect(luminance(wbGains(5500, 7000, -50, 50))).toBeCloseTo(1, 9);
   });
 
-  // 2000..50000 K is the schema's own Temperature range, so it is every value a
-  // prediction can decode to and every as-shot value a camera reports.
-  test('gives a positive gain on every channel across the whole supported range', () => {
-    for (const asShot of [2000, 3200, 5500, 9000, 50000]) {
-      for (const chosen of [2000, 3200, 5500, 9000, 50000]) {
-        const gains = wbGains(asShot, chosen, 0, 0);
-        expect(gains.every(Number.isFinite)).toBe(true);
-        expect(gains.every((g) => g > 0)).toBe(true);
+  /**
+   * Every gain is positive across the whole domain this can be reached with.
+   *
+   * The domain is 2000..50000 K on both sides, and it is bounded three times
+   * over on the way in: `decodeDelta`, `predictAnchor` and `applyOffset` all
+   * clamp a predicted Temperature to the schema's own `absMin`/`absMax`, so the
+   * chosen side cannot leave it, and the as-shot side comes from a camera or
+   * from `crs:Temperature`, whose floor is the same 2000.
+   *
+   * Worth stating because the sign is not free below that floor: the Planckian
+   * locus leaves the sRGB gamut around 1904 K, where the blue coefficient of the
+   * white point turns negative and the ratio taken here would invert the channel.
+   * The bound is what makes that unreachable, not a guard inside this function —
+   * so if a caller ever widens the range, this test is the one that fails.
+   */
+  test('gives a positive gain on every channel across the reachable domain', () => {
+    let checked = 0;
+    for (let asShot = 2000; asShot <= 50000; asShot += 250) {
+      for (let chosen = 2000; chosen <= 50000; chosen += 250) {
+        for (const [tintFrom, tintTo] of [[0, 0], [-150, 150], [150, -150]] as const) {
+          const gains = wbGains(asShot, chosen, tintFrom, tintTo);
+          expect(gains.every(Number.isFinite)).toBe(true);
+          expect(gains.every((g) => g > 0)).toBe(true);
+          checked++;
+        }
       }
     }
+    expect(checked).toBeGreaterThan(100000);
   });
 
-  test('stays finite when handed a temperature no slider can produce', () => {
+  test('stays finite even outside the domain, so a bad EXIF read cannot crash a preview', () => {
     for (const [from, to] of [[1, 5500], [5500, 1e9], [0, 0]] as const) {
       expect(wbGains(from, to, 0, 0).every(Number.isFinite)).toBe(true);
     }
