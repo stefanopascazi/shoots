@@ -1,1 +1,2 @@
 {"date":"2026-08-07","repo":"stefanopascazi/shoots","latestTag":"v0.7.0","commandRuns":3,"scripts":{"install.sh":2,"install.ps1":1},"attempts":37,"binaries":{"darwin-arm64":0,"linux-arm64":0,"linux-x64":3,"windows-x64":38},"installs":41}
+{"date":"2026-08-08","repo":"stefanopascazi/shoots","latestTag":"v0.7.0","commandRuns":3,"scripts":{"install.sh":2,"install.ps1":1},"attempts":38,"binaries":{"darwin-arm64":0,"linux-arm64":0,"linux-x64":3,"windows-x64":39},"installs":42}
