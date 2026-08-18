@@ -3,11 +3,13 @@
 Run a YAML pipeline: shoots commands in order, sharing one set of variables.
 
 ```
-shoots pipeline <config> [options]
+shoots pipeline <config> [options]        # run a pipeline file
+shoots pipeline init [file] [options]     # write one by answering questions
 ```
 
 The full format is documented in [Pipelines](../pipelines.md). This page is the
-command surface.
+command surface. (`shoots pipeline run <config>` is the explicit spelling of the
+first form; the bare `shoots pipeline <config>` is the same command.)
 
 ---
 
@@ -54,6 +56,55 @@ failure once you have fixed it.
 | `0` | Every step that ran succeeded |
 | `1` | At least one step failed |
 | `2` | The file could not be loaded, or does not resolve against this build's commands |
+
+---
+
+## `pipeline init`
+
+Writes a pipeline file by asking questions, for anyone who would rather not
+start from an empty YAML buffer. It is the same file either way: `init` writes
+what you would have typed, comments included, and is never needed twice.
+
+```
+shoots pipeline init [file] [options]
+```
+
+| Argument | Default | Description |
+| --- | --- | --- |
+| `[file]` | `shoots-pipeline.yaml` | Where to write |
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--template <name>` | — | Skip the questions: `ingest`, `cull-rate` or `develop-train`, all defaults |
+| `--var <name=value>` | — | Answer a variable up front, e.g. `--var shoot=D:/Shoots/smith`. Repeatable |
+| `--name <name>` | preset's | Pipeline name written into the file |
+| `--plain` | off | Ask line by line instead of the full-screen wizard |
+| `--stdout` | off | Print the file instead of writing it |
+| `--force` | off | Replace the file if it already exists |
+| `--json` | off | Machine-readable report on stdout |
+
+On a terminal it opens the full-screen wizard: arrows move, space toggles a
+step, enter accepts, esc goes back one answer, and the finished file is shown
+before anything is written. `--plain` asks the same questions one line at a
+time — press enter to take every default. Without a terminal it refuses rather
+than guessing, so use `--template` for an unattended file.
+
+Three presets seed the step list, which you then edit:
+
+| Template | Steps |
+| --- | --- |
+| `ingest` | `import` → `rename` → `exif` → `rate` → `cull` → `develop edit` |
+| `cull-rate` | `rate` → `cull` → `triage apply` |
+| `develop-train` | `develop export` → `develop train` |
+
+Whatever it writes is parsed and resolved against this build's real commands
+before it lands on disk, so a generated file always runs.
+
+```sh
+shoots pipeline init                                    # the wizard
+shoots pipeline init wedding.yaml --template ingest --var shoot=D:/Shoots/smith
+shoots pipeline init --template cull-rate --stdout      # print it, write nothing
+```
 
 ---
 

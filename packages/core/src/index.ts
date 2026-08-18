@@ -82,3 +82,49 @@ export {
   type PipelineValue,
   type ParseOptions,
 } from './pipeline/PipelineConfig.js';
+
+export {
+  renderPipelineYaml,
+  type SerializeOptions,
+} from './pipeline/init/serialize.js';
+
+export {
+  type PipelineDraft,
+  type DraftStep,
+  type DraftVar,
+} from './pipeline/init/draft.js';
+
+export {
+  defaultOf,
+  describeDefault,
+  parseAnswer,
+  validateAnswer,
+  AnswerError,
+  type Answers,
+  type AnswerValue,
+  type Choice,
+  type Question,
+  type TextQuestion,
+  type SelectQuestion,
+  type MultiSelectQuestion,
+  type ConfirmQuestion,
+} from './pipeline/init/questions.js';
+
+export {
+  wizardQuestions,
+  nextQuestion,
+  presetAnswers,
+  buildDraft,
+  draftHeader,
+  makeContext,
+  selectedSteps,
+  DEFAULT_CONCURRENCY,
+  STEP_BLUEPRINTS,
+  PRESETS,
+  findBlueprint,
+  findPreset,
+  type CatalogContext,
+  type StepBlueprint,
+} from './pipeline/init/wizard.js';
+
+export { type Preset, DEFAULT_RENAME_PATTERN as DEFAULT_INIT_RENAME_PATTERN } from './pipeline/init/catalog.js';

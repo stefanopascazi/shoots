@@ -10,6 +10,9 @@
  * The command itself is thin: load and interpolate (@shoots/core), resolve
  * against the commander tree (pipeline/resolve.ts), run as child processes
  * (pipeline/exec.ts), report. Nothing about any individual command lives here.
+ *
+ * `pipeline init` (pipeline/init/) writes one of these files by asking
+ * questions, for the photographer who has a workflow but not the YAML.
  */
 import path from 'node:path';
 import type { Command } from 'commander';
@@ -17,6 +20,7 @@ import { loadPipelineConfig, parseVarOverrides, PipelineConfigError } from '@sho
 import { logError, makeIo, printHuman, printJson } from '../io.js';
 import { resolvePipeline, type ResolvedStep } from '../pipeline/resolve.js';
 import { formatDuration, runSteps, type StepReport } from '../pipeline/exec.js';
+import { runPipelineInit, DEFAULT_INIT_FILE, type PipelineInitOptions } from '../pipeline/init/run.js';
 
 interface PipelineOptions {
   var: string[];
@@ -31,9 +35,17 @@ interface PipelineOptions {
 const collect = (value: string, previous: string[]): string[] => [...previous, value];
 
 export function registerPipelineCommand(program: Command): void {
-  program
+  const pipeline = program
     .command('pipeline')
-    .description('Run a YAML pipeline: shoots commands in order, sharing variables (import → … → develop, export → train, …)')
+    .description(
+      'Run a YAML pipeline: shoots commands in order, sharing variables (import → … → develop, export → train, …)',
+    );
+
+  // `run` is the default subcommand, so `shoots pipeline my.yaml` — the only
+  // form there was before `init` existed — still means exactly what it did.
+  pipeline
+    .command('run', { isDefault: true })
+    .description('Run a pipeline file')
     .argument('<config>', 'pipeline YAML file')
     .option('--var <name=value>', 'override a variable declared in the file (repeatable)', collect, [])
     .option('--from <id>', 'resume: skip every step before this one')
@@ -42,6 +54,20 @@ export function registerPipelineCommand(program: Command): void {
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action((config: string, options: PipelineOptions) => runPipeline(config, options, program));
+
+  pipeline
+    .command('init')
+    .description('Answer a few questions and get a pipeline file — no YAML to write')
+    .argument('[file]', 'file to write', DEFAULT_INIT_FILE)
+    .option('--template <name>', 'skip the questions: ingest | cull-rate | develop-train, all defaults')
+    .option('--var <name=value>', 'answer a variable up front, e.g. --var shoot=D:/Shoots/smith (repeatable)', collect, [])
+    .option('--name <name>', 'pipeline name to write into the file')
+    .option('--plain', 'ask line by line instead of the full-screen wizard')
+    .option('--stdout', 'print the file instead of writing it')
+    .option('--force', 'replace the file if it already exists')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action((file: string, options: PipelineInitOptions) => runPipelineInit(file, options, program));
 }
 
 function reportIssues(issues: readonly string[], source: string): void {

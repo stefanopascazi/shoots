@@ -61,8 +61,9 @@ export const COMMANDS: CommandSpec[] = [
   },
   {
     name: 'pipeline',
-    summary: 'Run a YAML pipeline: shoots commands in order, sharing variables',
-    usage: '/pipeline <config.yaml> [--var name=value] [--from <id>] [--dry-run] [--continue-on-error] [--json]',
+    summary: 'Run a YAML pipeline: shoots commands in order, sharing variables (`init` writes one for you)',
+    usage:
+      '/pipeline <config.yaml> [--var name=value] [--from <id>] [--dry-run] [--continue-on-error] [--json] · init [file] [--template ingest|cull-rate|develop-train] [--plain] [--stdout] [--force]',
   },
   {
     name: 'schedule',
