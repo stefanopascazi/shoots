@@ -10,3 +10,4 @@
 {"date":"2026-08-16","repo":"stefanopascazi/shoots","latestTag":"v0.7.0","commandRuns":7,"scripts":{"install.sh":6,"install.ps1":1},"attempts":38,"binaries":{"darwin-arm64":0,"linux-arm64":0,"linux-x64":3,"windows-x64":39},"installs":42}
 {"date":"2026-08-17","repo":"stefanopascazi/shoots","latestTag":"v0.7.0","commandRuns":7,"scripts":{"install.sh":6,"install.ps1":1},"attempts":38,"binaries":{"darwin-arm64":0,"linux-arm64":0,"linux-x64":3,"windows-x64":39},"installs":42}
 {"date":"2026-08-18","repo":"stefanopascazi/shoots","latestTag":"v0.7.0","commandRuns":7,"scripts":{"install.sh":6,"install.ps1":1},"attempts":38,"binaries":{"darwin-arm64":0,"linux-arm64":0,"linux-x64":3,"windows-x64":39},"installs":42}
+{"date":"2026-08-19","repo":"stefanopascazi/shoots","latestTag":"v0.7.1","commandRuns":7,"scripts":{"install.sh":6,"install.ps1":1},"attempts":39,"binaries":{"darwin-arm64":0,"linux-arm64":0,"linux-x64":3,"windows-x64":40},"installs":43}
