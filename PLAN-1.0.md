@@ -9,8 +9,9 @@
 > from). This file supersedes neither: it says what ships for 1.0 and in what
 > order.
 >
-> Updated 2026-08-24: A1 and A2 measured and closed as nulls, A4 shipped. Two of
-> the three 1.0 promises are now enforced in code rather than asserted here.
+> Updated 2026-08-24: Track A is closed. A1, A2 and A3 measured and not shipped;
+> A4 shipped. Two of the three 1.0 promises are now enforced in code rather than
+> asserted here, and 0.8.0 forces no retrain.
 
 ## What 1.0 promises
 
@@ -51,8 +52,8 @@ the three promises above.
 CLOSED         A1  EV estimator into the frame head      GATE FAILED — reverted
 CLOSED         A2  tempMeasured anchor                   GATE FAILED — rejected
 CLOSED         A4  drop negative-skill parameters        GATE MET — shipped
-now, week      A3  B&W branch restructure                gate: in-shoot > −0.0021
-               └─► A3 is the only item left needing the schema bump
+CLOSED         A3  B&W branch restructure                PREMISE FALSIFIED — not built
+               └─► nothing left in Track A. No schema bump, no forced retrain.
 
 now, parallel  C   collect 30 shoots × 10 photographers  long lead — starts first
 now, days      B1  remove --xmp
@@ -80,13 +81,15 @@ on the window has largely gone, and 1.0 is closer, not further.
 
 # Track A — the schema window
 
-A1 and A2 both closed as nulls without touching the schema. A4 shipped without
-touching it either. **A3 is the only item left in the window**, and it is the
-only reason a `SCHEMA_VERSION` bump (9 → 10) and a forced retrain are still on
-the table for 0.8.0.
+**Track A is closed, and nothing in it changed the schema.** A1 and A2 measured
+as nulls; A4 shipped as an additive change; A3's premise did not survive contact
+with the data. `SCHEMA_VERSION` stays at 9, and **0.8.0 forces no retrain** —
+the first release in three not to.
 
-It needs no re-export. The migration is `Required: yes / Affects: profile` — not
-`dataset`.
+The window that dominated this plan turned out to have nothing wanting to pass
+through it. That is worth stating plainly rather than quietly deleting: the
+deadline was real, and the right response to it was to measure what wanted to
+land, not to assume.
 
 ## A1 — the EV estimator scalar into the frame head · CLOSED 2026-08-24 · **reverted**
 
@@ -165,123 +168,155 @@ reported without the per-shoot column Phase 2.5 had already shown to be the
 load-bearing one. Both notes recorded a real number; neither recorded the number
 that decides anything.
 
-## A3 — restructure the B&W branch
+## A3 — restructure the B&W branch · CLOSED 2026-08-24 · **premise falsified, not built**
 
-41 parameters over 125 images and 32 shoots is not undertrained, it is
-**unidentifiable**. `BASELINE.md` reads within-shoot −0.0021: the branch emits a
-per-shoot level and nothing else. No plausible dataset fixes a 41-parameter fit
-at n=125, so this is a modelling decision, not a data problem.
+This section previously read: *"41 parameters over 125 images and 32 shoots is
+not undertrained, it is **unidentifiable**"*, and proposed three fixes. All three
+are wrong, and the first one is wrong about the code.
 
-### Steps
+### 1. "41 parameters is unidentifiable" — false, and it was my own premise
 
-1. Derive the tonal parameters (`Exposure2012`, `Contrast2012`, `Whites2012`,
-   `Blacks2012`, curve knots) from the colour branch's own decisions rather than
-   fitting them again on 125 frames.
-2. Replace the `GrayMixer*` family (8 parameters, all 2.8–6.6% headline with
-   0 to −3% in-shoot) with a fixed per-profile policy plus **one** learned
-   per-shoot scalar.
-3. Keep `Dehaze` on `darkChannel` — the one anchored B&W slider that works
-   (tail 0.227).
+The heads do not fit 41 parameters jointly. `train/regress.ts` builds the normal
+equations **once** from the features (`xtx` depends on `X` alone) and then solves
+each parameter as its own ridge row against its own right-hand side. Adding a
+parameter costs one more back-substitution and **no degrees of freedom**. Every
+one of the 41 is an independent n=125 regression.
 
-Target: ~5 free parameters, down from 41.
+So reducing 41 to 5 buys nothing. The count was never the problem, and the
+sentence that said it was is the kind of claim that sounds like a measurement and
+is not one.
 
-### Gate
+### 2. "Derive the tonal parameters from the colour branch" — falsified by the data
 
-- B&W within-shoot skill > −0.0021 (i.e. no longer negative), and
-- B&W headline skill ≥ 0.0328 — the restructure must not buy per-frame movement
-  by giving up the level it already predicts correctly.
+Inside the 16 shoots that carry both treatments, the photographer does *not* give
+the B&W frames the colour frames' tonal treatment:
 
-### Tests
+| slider | mean difference (B&W − colour) | sd of that difference |
+|---|---:|---:|
+| `Shadows2012` | **−30.95** | 21.37 |
+| `Highlights2012` | +16.28 | 31.04 |
+| `Blacks2012` | −11.51 | 22.15 |
+| `Whites2012` | −6.81 | 22.17 |
+| `Contrast2012` | +2.16 | 6.00 |
+| `Exposure2012` | +0.09 | 0.44 |
 
-- `packages/cli/test/unit/` — new suite for the derivation: a colour decision
-  vector maps to the B&W tonal set deterministically; the `GrayMixer` policy is
-  a pure function of the profile; `Dehaze` still routes through the anchor path.
-- `packages/cli/test/unit/anchor.test.ts` — extend, if the anchor selection code
-  changes shape.
+A B&W conversion is a different decision, not the colour edit plus an offset —
+and the spread of the differences is as large as the differences, so it is not a
+learnable constant either.
 
-## A4 — stop shipping parameters with negative skill · CLOSED 2026-08-24 · **shipped**
+### 3. "Share the frame head across treatments" — the one idea worth testing, and it fails
 
-Done. Promise 3 is now enforced by the trainer rather than asserted in this file.
+Not in the original plan; it is what the falsification of (2) leaves standing.
+The frame head does not predict the number, it predicts the **departure from this
+shoot's own level**, which subtracts exactly the difference above. If "this frame
+is a stop brighter than its neighbours" has one answer across both treatments,
+the B&W frame head could be fitted on 553 photographs instead of 125.
 
-### What shipped
+`tools/bw-transfer` measures it: per shared parameter, scored on B&W frames only,
+whole shoots held out, shrinkage re-selected inside every outer fold for each arm
+separately.
 
-A floor the `--boldness` knob cannot lower. The existing gate asks whether a
-parameter's skill is clear of its own noise, which is a judgement call and is
-what boldness moves. This asks a different question the knob has no business
-answering: **is the model worse than the photographer's own average?** A negative
-end-to-end held-out skill says exactly that, and shipping it means paying
-accuracy for the privilege of making a prediction.
+| parameter | B&W only | + colour pooled | change | ±shuffle |
+|---|---:|---:|---:|---:|
+| `Highlights2012` | 3.3% | 3.1% | −0.2 | ±1.3 |
+| `Tint` | −3.3% | 0.8% | +4.1 | ±0.3 |
+| `Clarity2012` | −0.9% | −0.0% | +0.9 | ±0.0 |
+| `Blacks2012` | −0.4% | 0.2% | +0.6 | ±0.3 |
+| `Contrast2012` | −0.5% | −0.1% | +0.3 | ±0.0 |
+| `Exposure2012` | −1.6% | −6.3% | **−4.7** | ±0.2 |
+| `Whites2012` | −0.3% | −6.5% | **−6.2** | ±3.8 |
 
-It runs after the end-to-end pass that produces the number and after the anchors,
-because an anchored slider does not predict through the heads — its row in the
-end-to-end table describes machinery inference does not use. `Dehaze` reads
-−0.5% there and ships at 0.258 tail skill; gating on that row would silence a
-slider that works.
+Every arm sits within a point or two of zero, which is what a properly shrunk fit
+does when there is nothing to find: λ goes high and the prediction collapses to
+the mean. Pooling costs more on `Exposure2012` and `Whites2012` than it buys
+anywhere. **The B&W frame head has no per-frame signal, and colour evidence does
+not supply one.**
 
-A forced parameter has both heads gated, response 1, and its reported numbers
-rewritten to what it now emits (`modelMae = baselineMae`, skill 0) — leaving the
-error of a model that no longer runs would report a regression the profile cannot
-produce.
+### What the B&W branch actually is
 
-### The three states, now stated rather than inferred
+Not broken. **Small.** 125 photographs over 32 shoots, of which **11 carry four
+frames or more** — and a shoot of one or two frames poses no within-shoot
+question at all, because a frame deviates from itself by nothing. The colour
+branch has 428 over 32.
 
-`packages/cli/src/develop/develop/paramState.ts`. Every parameter is
-`predicted`, `leveled` or `constant`, recorded on the profile and surfaced in
-three places: the `develop train` report, `develop status`, and
-`develop predict --json` (a `parameters` map per branch, plus a line on stderr).
-`gateReason` gained `negative-skill` alongside `low-skill` and `degenerate`.
+The level head works: `ToneCurvePoint96` 18.2%, `ToneCurvePoint64` 16.7%,
+`Dehaze` 13.2%, headline 3.3%. What the branch predicts is a per-shoot level, and
+a per-shoot level is what 11 shoots can support. Calling that "the weakest branch
+by a wide margin" measured per-frame skill on a branch with a quarter of the data
+and a third of the usable shoots.
 
-An anchored slider reports `predicted` whatever its heads did — the anchor
-replaces both, and reading the heads' gates is how `Dehaze` comes back labelled a
-constant.
+**Fixing it needs shoots, which is Track C** — the constraint Phase 2.6 already
+identified as binding for the per-shoot gains, arrived at here independently from
+the other direction.
 
-### Gate — met
+### What did come out of it
 
-`train_v2.jsonl`, whole sessions held out, both boldness settings:
+A real defect in the contract A4 shipped hours earlier. See below.
 
-| | colour | B&W |
+## A4 addendum — a response of zero is a constant
+
+`predict.ts` computes `mean + response × (raw − mean)`, so a de-shrinking slope of
+**zero returns the mean exactly as a gate does**. `clampResponse` produces exactly
+zero whenever the measured slope came out at or below zero — held-out
+anti-correlation, the fit reading noise — which is common.
+
+A4's first cut read only the gate flag, so those parameters reported `predicted`
+when they provably could not move. The correction is in `headEmitsConstant`, and
+it changes the honest picture substantially:
+
+| | before the fix | after |
 |---|---|---|
-| parameters forced to constant | **17** | **2** |
-| negative-skill rows still shipping (boldness 1) | 0 | 0 |
-| negative-skill rows still shipping (boldness 0) | 0 | 0 |
+| colour | 38 predicted / 1 leveled / 38 constant | **18 / 3 / 56** |
+| B&W | 26 predicted / 2 leveled / 13 constant | **19 / 4 / 18** |
 
-The colour branch forces `Tint`, `RedHue`, `GreenHue`, `GreenSaturation`,
-`BlueHue`, `BlueSaturation`, `PostCropVignetteAmount`, `GrainAmount`,
-`ToneCurvePoint224`, `SaturationAdjustmentGreen`, `SaturationAdjustmentMagenta`,
-`ColorGradeMidtoneHue`, `ColorGradeMidtoneSat` and the four split-toning
-parameters. B&W forces `Blacks2012` and `ToneCurvePoint128`.
+Half the colour branch's claimed predictions were parameters whose frame head had
+been measured at a slope of zero.
 
-The one row left negative is `Dehaze` at −0.5%, which is anchored and therefore
-excluded by design.
+## Open decision — the frame-head floor
 
-### What it did not do, and that is the point
+A4 forces a parameter to a constant when its **end-to-end** skill is negative.
+The same argument applies one level down, and the numbers are worse there:
 
-The headline barely moved: 0.0759 / 0.0342 before and after. The 17 forced
-parameters carry **2.07%** of the weighted baseline MAE between them — they were
-small contributors that happened to be wrong, not a hidden reserve of skill.
-Nothing here was ever going to raise a score. What changed is that the profile
-stopped making 19 predictions it measurably could not support.
+| branch | frame head live on | of which negative shipped skill |
+|---|---:|---:|
+| colour | 14 / 77 | **9** |
+| B&W | 17 / 41 | **15** |
 
-The colour branch now reports 38/77 constant rather than 21/77. That is the
-honest number, and it is the first time the profile's own report says how many
-sliders it declines to move.
+A frame head's baseline *is* "no per-frame modulation", so a negative shipped
+skill means that head is measurably worse than not running. Fifteen of B&W's
+seventeen are in that state, which is the whole of why its within-shoot skill
+reads −0.0021.
 
-### Schema
+**Why this is not mine to decide.** At `--boldness 1` the skill gate is off by
+design (`gateZ` and `gateFloor` both reach 0), leaving only a 30% MAE allowance,
+and `conservatismFor` defends that in terms this plan should not overrule:
 
-None. A4 adds fields to the profile and changes no stored layout, so
-`SCHEMA_VERSION` stays at 9 and no retrain is forced — a profile trained before
-this simply reports no `state` and has it reconstructed from the gates it does
-carry.
+> The skill numbers get worse as this goes up, by construction. That is not a
+> regression: MAE is minimised by the flat answer, so any model that moves more
+> pays for it. **Judge this one in Lightroom, not in `BASELINE.md`.**
+
+The owner has confirmed boldness 1 by eye on real shoots. A floor at zero would
+undo exactly that trade for 9 colour parameters and 15 B&W ones — including
+`Exposure2012`, `Contrast2012`, `Shadows2012`, `Clarity2012` and `Texture`, the
+sliders most visible in the editor. Whether "worse on average but worth opening
+in Lightroom" is acceptable for the frame head is a taste judgement, and it is
+the photographer's.
+
+Three options, none of them free:
+
+1. **Leave it.** Boldness stays the only knob. `within-shoot` keeps reading
+   slightly negative on B&W, and the report says so honestly.
+2. **Floor at zero, always.** Symmetric with A4. Costs reach on the tonal sliders
+   at boldness 1; needs a look in Lightroom before it ships.
+3. **Floor at zero for the B&W branch only.** Defensible on the evidence — 15 of
+   17 there against 9 of 14 in colour — but a per-branch rule is a special case,
+   and special cases are how a gate stops being explicable.
 
 ## A — combined migration
 
-One entry in `packages/cli/src/release-notes/migrations.ts`:
-
-> **0.8.0 — Retrain: a black-and-white branch that fits its own evidence**
-> **Required:** yes · **Affects:** profile
-
-A4 needs no entry of its own: it adds fields and changes no stored layout, so an
-old profile keeps working and simply reports fewer details.
+**No entry.** Track A closed without a schema change: A1 and A2 were reverted,
+A3 was not built, and A4 adds fields while changing no stored layout. An old
+profile keeps working and simply reports fewer details.
 
 Must state: no re-export is needed (`develop train` alone is enough); the
 feedback journal survives; `develop calibrate` must be re-run because the
@@ -292,7 +327,7 @@ gates on `--check`.
 
 ## A — regenerate the baseline
 
-`BASELINE.md` is regenerated **once**, after A3 lands, from a single
+`BASELINE.md` is regenerated **once**, when the next thing that moves a number lands, from a single
 `develop train --boldness 1 --group-by folder` run on the unchanged
 `train_v2.jsonl`. Its own rule applies: a figure is only a baseline for the
 model that produced it, so no intermediate table is written.
@@ -531,8 +566,9 @@ and Linux personally. `ci.yml` stays ubuntu-only by decision, not omission.
 
 # Release sequencing
 
-**0.8.0 — the schema window.** A3 and B1 (A4 is already in). One migration,
-`Required: yes / Affects: profile`. The last release that may break a profile.
+**0.8.0 — the contract, part one.** B1 and whatever of Track B is ready. A4 is
+already in. **No migration and no forced retrain** — Track A closed without
+touching the schema.
 
 **0.9.0 — the contract.** B2, B3, B4, B5. After this, a profile survives a minor
 and the JSON shape is fixed. Track D lands here or in a 0.9.x; Track C is

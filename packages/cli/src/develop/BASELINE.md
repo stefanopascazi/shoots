@@ -4,6 +4,12 @@
 > mirrored to the public site by `scripts/sync-webapp-content.mjs`, and these are
 > one photographer's catalog figures, not user documentation.
 
+> **The B&W branch is small, not broken.** 125 photographs over 32 shoots, of
+> which only 11 carry four frames or more. Its within-shoot −0.0021 is what 11
+> shoots support, and neither restructuring it nor pooling the colour deviations
+> into its frame head changes that — see A3 in `PLAN-1.0.md` and
+> `tools/bw-transfer`. What it needs is shoots.
+
 > **Superseded in part since 2026-08-24.** A4 forces any parameter with a
 > negative end-to-end skill to the photographer's constant, so every "constant
 > (both heads gated)" count below is low — the colour branch now reads 38/77

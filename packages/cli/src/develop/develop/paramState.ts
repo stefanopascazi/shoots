@@ -16,17 +16,41 @@ import type { GateReason, ParamState } from '../types.js';
 /** The three states, in the order a report should list them. */
 export const PARAM_STATES: readonly ParamState[] = ['predicted', 'leveled', 'constant'];
 
+/** What a head has to look like for the state to be read off it. */
+export interface HeadOutcome {
+  gated: boolean;
+  /** De-shrinking slope actually applied — 0 means the head cannot move. */
+  response: number;
+}
+
 /**
- * State from the two heads' gates.
+ * Does this head emit its own constant, whatever the gate flag says?
+ *
+ * Two different things produce the same output. The gate is the explicit one.
+ * The other is a de-shrinking slope of zero, which `clampResponse` produces when
+ * the measured slope came out at or below zero — held-out anti-correlation, the
+ * fit reading noise. Inference multiplies the departure from the mean by that
+ * slope (`predict.ts`), so a response of 0 returns the mean exactly as a gate
+ * does. Reading only `gated` reports such a parameter as predicted when it
+ * provably cannot move.
+ */
+export function headEmitsConstant(head: HeadOutcome): boolean {
+  return head.gated || head.response === 0;
+}
+
+/**
+ * State from what the two heads actually emit.
  *
  * `leveled` is the honest name for the case a photographer notices first: the
  * model knows where the shoot sits but cannot tell two of its frames apart, so
  * every frame comes back with the same value. Calling that `predicted` would be
  * a claim the model does not support.
  */
-export function paramState(levelGated: boolean, frameGated: boolean): ParamState {
-  if (levelGated && frameGated) return 'constant';
-  return frameGated ? 'leveled' : 'predicted';
+export function paramState(level: HeadOutcome, frame: HeadOutcome): ParamState {
+  const levelFlat = headEmitsConstant(level);
+  const frameFlat = headEmitsConstant(frame);
+  if (levelFlat && frameFlat) return 'constant';
+  return frameFlat ? 'leveled' : 'predicted';
 }
 
 /**
@@ -66,14 +90,12 @@ export function describeGateReason(reason: GateReason): string {
  * reconstructed from the gates it does carry.
  */
 export function stateMap(branch: {
-  perParam: readonly { key: string; state?: ParamState; gated: boolean; frame: { gated: boolean } }[];
+  perParam: readonly { key: string; state?: ParamState; level: HeadOutcome; frame: HeadOutcome }[];
   anchors?: Record<string, unknown>;
 }): Record<string, ParamState> {
   const out: Record<string, ParamState> = {};
   for (const p of branch.perParam) {
-    out[p.key] = branch.anchors?.[p.key]
-      ? 'predicted'
-      : (p.state ?? paramState(p.gated, p.frame.gated));
+    out[p.key] = branch.anchors?.[p.key] ? 'predicted' : (p.state ?? paramState(p.level, p.frame));
   }
   return out;
 }

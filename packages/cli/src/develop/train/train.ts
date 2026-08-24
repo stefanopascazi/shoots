@@ -981,7 +981,7 @@ function trainBranch(
       ...(levelEval.gated && frameEval.gated
         ? { gateReason: gateReasonFor(bothDegenerate[k]!, forcedConstant.has(param.key)) }
         : {}),
-      state: paramState(levelEval.gated, frameEval.gated),
+      state: paramState(levelEval, frameEval),
     };
   });
 

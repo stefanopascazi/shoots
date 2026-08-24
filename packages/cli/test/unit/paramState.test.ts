@@ -13,36 +13,58 @@ import {
   countStates,
   describeGateReason,
   gateReasonFor,
+  headEmitsConstant,
   PARAM_STATES,
   paramState,
   stateMap,
   summariseStates,
 } from '../../src/develop/develop/paramState.js';
 
-const row = (key: string, gated: boolean, frameGated: boolean, state?: 'predicted' | 'leveled' | 'constant') => ({
-  key,
-  gated,
-  frame: { gated: frameGated },
-  ...(state ? { state } : {}),
-});
+const live = { gated: false, response: 1 };
+const gated = { gated: true, response: 1 };
+/** Not gated, but a de-shrinking slope of zero: it emits its mean all the same. */
+const flat = { gated: false, response: 0 };
+
+const row = (
+  key: string,
+  level: { gated: boolean; response: number },
+  frame: { gated: boolean; response: number },
+  state?: 'predicted' | 'leveled' | 'constant',
+) => ({ key, level, frame, ...(state ? { state } : {}) });
 
 describe('paramState', () => {
   test('both heads live means the value follows the photograph', () => {
-    expect(paramState(false, false)).toBe('predicted');
+    expect(paramState(live, live)).toBe('predicted');
   });
 
   test('a gated frame head means one value for the whole shoot', () => {
-    expect(paramState(false, true)).toBe('leveled');
+    expect(paramState(live, gated)).toBe('leveled');
   });
 
   test('both heads gated means the photographer own constant', () => {
-    expect(paramState(true, true)).toBe('constant');
+    expect(paramState(gated, gated)).toBe('constant');
   });
 
   // A live frame head with a gated level one still moves per photograph — the
   // shoot sits at the catalog constant and the frame departs from it.
   test('a gated level head alone still predicts per frame', () => {
-    expect(paramState(true, false)).toBe('predicted');
+    expect(paramState(gated, live)).toBe('predicted');
+  });
+
+  // The trap this exists to close: inference multiplies the departure from the
+  // mean by the response, so a slope of zero returns the mean exactly as a gate
+  // does. On the B&W branch that mislabelled 26 of 41 sliders as predicted.
+  test('a response of zero is a constant, gate flag or not', () => {
+    expect(headEmitsConstant(flat)).toBe(true);
+    expect(headEmitsConstant(live)).toBe(false);
+    expect(headEmitsConstant(gated)).toBe(true);
+    expect(paramState(live, flat)).toBe('leveled');
+    expect(paramState(flat, flat)).toBe('constant');
+    expect(paramState(gated, flat)).toBe('constant');
+  });
+
+  test('a small but non-zero response still moves, so it still predicts', () => {
+    expect(paramState(live, { gated: false, response: 0.02 })).toBe('predicted');
   });
 
   test('lists the states in reporting order', () => {
@@ -72,9 +94,9 @@ describe('stateMap', () => {
   test('reads the state a profile records', () => {
     const branch = {
       perParam: [
-        row('Exposure2012', false, false, 'predicted'),
-        row('Contrast2012', false, true, 'leveled'),
-        row('RedHue', true, true, 'constant'),
+        row('Exposure2012', live, live, 'predicted'),
+        row('Contrast2012', live, gated, 'leveled'),
+        row('RedHue', gated, gated, 'constant'),
       ],
     };
     expect(stateMap(branch)).toEqual({
@@ -88,7 +110,7 @@ describe('stateMap', () => {
   // heads are gated and its anchor is what runs.
   test('an anchored slider is predicted however its heads were gated', () => {
     const branch = {
-      perParam: [row('Dehaze', true, true, 'constant'), row('RedHue', true, true, 'constant')],
+      perParam: [row('Dehaze', gated, gated, 'constant'), row('RedHue', gated, gated, 'constant')],
       anchors: { Dehaze: { gain: 1 } },
     };
     expect(stateMap(branch)).toEqual({ Dehaze: 'predicted', RedHue: 'constant' });
@@ -96,7 +118,7 @@ describe('stateMap', () => {
 
   test('reconstructs the state for a profile written before it was recorded', () => {
     const branch = {
-      perParam: [row('Exposure2012', false, false), row('Contrast2012', false, true), row('RedHue', true, true)],
+      perParam: [row('Exposure2012', live, live), row('Contrast2012', live, gated), row('RedHue', gated, gated)],
     };
     expect(stateMap(branch)).toEqual({
       Exposure2012: 'predicted',
