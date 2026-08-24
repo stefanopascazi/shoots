@@ -12,7 +12,7 @@ import path from 'node:path';
 import { createElement } from 'react';
 import { render } from 'ink';
 import { Shell } from '../../src/shell/Shell.js';
-import { ENTER, ESC, fakeTerminal, sleep } from './inkTerminal.js';
+import { ENTER, ESC, fakeTerminal, renderOptions, sleep, waitForScreen } from './inkTerminal.js';
 import { InitArgumentError, isInteractiveInit, parseInitArgs } from '../../src/shell/pipelineInit.js';
 import { DEFAULT_INIT_FILE } from '../../src/pipeline/init/run.js';
 
@@ -69,29 +69,19 @@ describe('argument parsing', () => {
 describe('the shell opens the wizard in-process', () => {
   test('typing /pipeline init shows the first question, not "needs a terminal"', async () => {
     const terminal = fakeTerminal(110, 40);
-    const app = render(createElement(Shell), {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      stdin: terminal.stdin as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      stdout: terminal.stdout as any,
-      exitOnCtrlC: false,
-      patchConsole: false,
-    });
+    const app = render(createElement(Shell), renderOptions(terminal));
     try {
-      await sleep(300);
+      await waitForScreen(terminal, 'Type / for commands');
       terminal.stdin.write('/pipeline init wizard-test.yaml');
-      await sleep(150);
+      await sleep(50);
       terminal.stdin.write(ENTER);
-      await sleep(700);
 
-      const screen = terminal.screen();
-      expect(screen).toContain('What are you setting up?');
-      expect(screen).not.toContain('needs a terminal');
+      await waitForScreen(terminal, 'What are you setting up?');
+      expect(terminal.screen()).not.toContain('needs a terminal');
 
       // Esc on the first question abandons it and hands the prompt back.
       terminal.stdin.write(ESC);
-      await sleep(300);
-      expect(terminal.screen()).toContain('nothing written');
+      await waitForScreen(terminal, 'nothing written');
     } finally {
       app.unmount();
     }

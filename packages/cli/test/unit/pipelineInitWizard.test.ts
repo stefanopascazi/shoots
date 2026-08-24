@@ -12,22 +12,37 @@ import { createElement } from 'react';
 import { render } from 'ink';
 import { makeContext, type Answers } from '@shoots/core';
 import { InitWizard } from '../../src/pipeline/init/InitWizard.js';
-import { DOWN, ENTER, ESC, SPACE, fakeTerminal, sleep } from './inkTerminal.js';
+import {
+  DOWN,
+  ENTER,
+  ESC,
+  SPACE,
+  fakeTerminal,
+  renderOptions,
+  sleep,
+  waitFor,
+  waitForScreen,
+  type FakeTerminal,
+} from './inkTerminal.js';
 
 const CONTEXT = makeContext({ profiles: ['generic', 'wedding'], editors: ['acr'], labels: ['reject'] });
 
 interface Session {
   press(input: string): Promise<void>;
+  /** Wait for text to reach the screen — rendering is asynchronous. */
+  expectScreen(text: string): Promise<void>;
+  /** Wait for the wizard to hand its answers back (or to refuse to). */
+  settled(): Promise<void>;
   result(): Answers | null;
   screen(): string;
-  /** Let the last keypress settle and tear the app down. */
+  /** Tear the app down. */
   done(): Promise<void>;
 }
 
 function start(initial: Answers = {}): Session {
-  const terminal = fakeTerminal();
+  const terminal: FakeTerminal = fakeTerminal();
   let result: Answers | null = null;
-  let settled = false;
+  let finished = false;
 
   const app = render(
     createElement(InitWizard, {
@@ -37,48 +52,48 @@ function start(initial: Answers = {}): Session {
       exists: false,
       onDone: (answers: Answers | null) => {
         result = answers;
-        settled = true;
+        finished = true;
       },
     }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { stdin: terminal.stdin as any, stdout: terminal.stdout as any, exitOnCtrlC: false, patchConsole: false },
+    renderOptions(terminal),
   );
 
   return {
     async press(input: string) {
-      if (settled) return;
+      if (finished) return;
       terminal.stdin.write(input);
-      await sleep(45);
+      await sleep(20); // let the keypress land; the assertions do the waiting
     },
+    expectScreen: (text: string) => waitForScreen(terminal, text),
+    settled: () => waitFor(() => finished, 'the wizard to finish'),
     result: () => result,
     screen: terminal.screen,
     done: async () => {
-      await sleep(60);
+      await sleep(20);
       app.unmount();
     },
   };
 }
 
-const ENTER = '\r';
-
 /** Enter until the review screen appears (or the safety bound is hit). */
 async function pressThrough(session: Session, times = 20): Promise<void> {
   for (let i = 0; i < times && !session.screen().includes('This is p.yaml'); i += 1) {
     await session.press(ENTER);
+    await sleep(20);
   }
+  await session.expectScreen('This is p.yaml');
 }
 
 describe('the Ink wizard', () => {
   test('enter through every question reaches the review screen, and y writes', async () => {
     const session = start();
-    await sleep(60);
-    expect(session.screen()).toContain('What are you setting up?');
+    await session.expectScreen('What are you setting up?');
 
     await pressThrough(session);
-    expect(session.screen()).toContain('This is p.yaml');
     expect(session.screen()).toContain('version: 2');
 
     await session.press('y');
+    await session.settled();
     await session.done();
 
     const answers = session.result()!;
@@ -88,33 +103,37 @@ describe('the Ink wizard', () => {
 
   test('nothing is handed back until the review screen is confirmed', async () => {
     const session = start();
-    await sleep(60);
+    await session.expectScreen('What are you setting up?');
     await pressThrough(session);
     expect(session.result()).toBeNull(); // on the review screen, still nothing
 
     await session.press('n');
+    await session.settled();
     await session.done();
     expect(session.result()).toBeNull();
   }, 20_000);
 
   test('arrows move the selection and space toggles a step', async () => {
     const session = start();
-    await sleep(60);
+    await session.expectScreen('What are you setting up?');
 
     await session.press(ENTER); // intent: work on a shoot
     await session.press(DOWN); // coverage → pick the steps
     await session.press(ENTER);
+    await session.expectScreen('Which steps?');
     await session.press(SPACE); // steps: toggle the first choice (import) off
+    // Wait for the toggle to render: pressing enter before the component has
+    // re-rendered would commit the selection the handler closed over.
+    await session.expectScreen('[ ] import');
     await session.press(ENTER);
-    await sleep(60);
 
     // Dropping the offload drops the question only the offload needed.
-    const screen = session.screen();
-    expect(screen).not.toContain('Card or source folder');
-    expect(screen).toContain('Shoot folder');
+    await session.expectScreen('Shoot folder');
+    expect(session.screen()).not.toContain('Card or source folder');
 
     await pressThrough(session);
     await session.press('y');
+    await session.settled();
     await session.done();
 
     const answers = session.result()!;
@@ -125,17 +144,18 @@ describe('the Ink wizard', () => {
 
   test('esc steps back one answer, and cancels outright on the first question', async () => {
     const session = start();
-    await sleep(60);
+    await session.expectScreen('What are you setting up?');
     await session.press(ENTER); // intent answered
     await session.press(ENTER); // coverage answered
-    expect(session.screen()).toContain('Card or source folder');
+    await session.expectScreen('Card or source folder');
 
     await session.press(ESC);
-    await sleep(60);
-    expect(session.screen()).toContain('The whole pass'); // back on the previous question
+    await session.expectScreen('The whole pass'); // back on the previous question
 
     await session.press(ESC); // back to the intent
+    await session.expectScreen('What are you setting up?');
     await session.press(ESC); // nothing left to undo: cancel
+    await session.settled();
     await session.done();
     expect(session.result()).toBeNull();
   }, 20_000);
