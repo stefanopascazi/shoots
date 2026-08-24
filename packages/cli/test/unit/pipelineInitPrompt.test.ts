@@ -45,6 +45,8 @@ describe('the plain wizard', () => {
     expect(answers.intent).toBe('shoot');
     expect(answers.coverage).toBe('all');
     expect(buildDraft(answers, CONTEXT).steps.map((s) => s.run)).toEqual([
+      'import',
+      'rename',
       'exif',
       'rate',
       'cull',

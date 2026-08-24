@@ -33,7 +33,7 @@ expected to change.
 | [`cull`](./commands/cull.md), [`rate`](./commands/rate.md), [`triage`](./commands/triage.md) | Stable. Focus-aware culling and CLIP rating, with review. |
 | [Preference learning](./preference-learning.md) — `embeddings`, `match` | Working end to end: duels in, a personal rating profile out. |
 | [Develop predictor](./develop-predictor.md) — `develop` | The active front. Usable, and the part still moving fastest. |
-| [Pipelines](./pipelines.md), [`schedule`](./commands/schedule.md) | Recent. `pipeline init` scaffolds a pipeline file from two to four questions (full-screen, line-by-line, or inside the shell), so the YAML is optional. The surface may still gain steps — there are no conditionals yet. |
+| [Pipelines](./pipelines.md), [`schedule`](./commands/schedule.md) | Recent. `pipeline init` scaffolds a pipeline file from two to five questions (full-screen, line-by-line, or inside the shell), so the YAML is optional. The surface may still gain steps — there are no conditionals yet. |
 | [`setup`](./commands/setup.md), [`doctor`](./commands/doctor.md), [`update`](./commands/update.md), [`release-notes`](./commands/release-notes.md) | Stable. Provisioning, self-update and the migration notes that apply to your machine. |
 | [`cache`](./commands/cache.md) | New. `cull`, `rate`, `embeddings` and `develop export` share the measurements and embeddings they derive, so a re-run — or a second `--profile` — costs nothing. Derived values only, never image data, under a ceiling. |
 | Test suite | Every package carries unit tests (`packages/*/test`), run together by `npm test`; `npm run test:unit` skips the build and the subprocess suites. |

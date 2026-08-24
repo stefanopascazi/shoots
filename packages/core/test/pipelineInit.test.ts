@@ -2,7 +2,7 @@
  * The `pipeline init` wizard, as a pure function of its answers.
  *
  * Three properties carry the design. It asks little: two questions to set up
- * training, four for a whole shoot pass, and never one whose answer a command
+ * training, five for a whole shoot pass, and never one whose answer a command
  * default already knows. The question list is *derived* — pick no `exif` step
  * and nothing asks for a studio name — which is what lets both front-ends stay
  * dumb. And what it writes is scaffolding: the arguments only the author can
@@ -52,12 +52,12 @@ describe('how much it asks', () => {
     expect(selectedSteps(answers).map((s) => s.run)).toEqual(['develop init']);
   });
 
-  test('the whole shoot pass is four questions, none of them a command default', () => {
+  test('the whole shoot pass is five questions, none of them a command default', () => {
     const answers = presetAnswers('shoot', CONTEXT);
-    expect(Object.keys(answers)).toEqual(['intent', 'coverage', 'vars.shoot', 'vars.studio']);
+    expect(Object.keys(answers)).toEqual(['intent', 'coverage', 'vars.card', 'vars.shoot', 'vars.studio']);
   });
 
-  test('picking steps is what opens the step list — and import and rename with it', () => {
+  test('picking steps is what opens the step list', () => {
     const whole: Answers = { intent: 'shoot', coverage: 'all' };
     expect(ids(whole)).not.toContain('steps');
 
@@ -68,7 +68,14 @@ describe('how much it asks', () => {
     expect(offered).toContain('import');
     expect(offered).toContain('rename');
     expect(offered).not.toContain('develop-init'); // training is its own intent
-    expect((stepsQuestion as { default: string[] }).default).toEqual(['exif', 'rate', 'cull', 'develop-edit']);
+    expect((stepsQuestion as { default: string[] }).default).toEqual([
+      'import',
+      'rename',
+      'exif',
+      'rate',
+      'cull',
+      'develop-edit',
+    ]);
   });
 
   test('a variable is only asked for when a chosen step needs it', () => {
@@ -132,12 +139,22 @@ describe('answer parsing', () => {
 });
 
 describe('the scaffolding it writes', () => {
-  test('one folder answers every step of a shoot', () => {
+  test('one folder answers every step after the offload', () => {
     const answers = presetAnswers('shoot', CONTEXT, { 'vars.shoot': 'D:/Shoots/smith' });
     const config = parsePipelineConfig(yamlFor(answers));
     expect(config.vars.shoot).toBe('D:/Shoots/smith');
-    expect(config.steps.map((s) => s.run)).toEqual(['exif', 'rate', 'cull', 'develop edit']);
-    for (const step of config.steps) expect(step.args).toEqual(['D:/Shoots/smith']);
+    expect(config.steps.map((s) => s.run)).toEqual([
+      'import',
+      'rename',
+      'exif',
+      'rate',
+      'cull',
+      'develop edit',
+    ]);
+    // The offload reads the card and writes the shoot folder; the rest read it.
+    expect(config.steps[0]!.args).toEqual([config.vars.card!]);
+    expect(config.steps[0]!.with.dest).toBe('D:/Shoots/smith');
+    for (const step of config.steps.slice(1)) expect(step.args).toEqual(['D:/Shoots/smith']);
   });
 
   test('no step carries a flag the command would have defaulted anyway', () => {
@@ -154,11 +171,12 @@ describe('the scaffolding it writes', () => {
   });
 
   test('the flags a command cannot run without are still written', () => {
-    const answers = presetAnswers('shoot', CONTEXT, { coverage: 'pick', steps: ['import', 'rename'] });
-    const config = parsePipelineConfig(yamlFor(answers));
-    // `import --dest` and `rename --pattern` are required options.
+    const config = parsePipelineConfig(yamlFor(presetAnswers('shoot', CONTEXT)));
+    // `import --dest` and `rename --pattern` are required options; `recursive`
+    // is what makes rename reach the dated subfolders the offload created.
     expect(config.steps[0]!.with.dest).toBe(config.vars.shoot);
     expect(String(config.steps[1]!.with.pattern)).toContain('{date}');
+    expect(config.steps[1]!.with.recursive).toBe(true);
   });
 
   test('training is the single develop init command, on its own defaults', () => {
@@ -181,7 +199,7 @@ describe('the scaffolding it writes', () => {
   test('the studio name reaches the artist tag', () => {
     const answers = presetAnswers('shoot', CONTEXT, { 'vars.studio': 'Jane Doe Photography' });
     const config = parsePipelineConfig(yamlFor(answers));
-    expect(config.steps[0]!.with['set-artist']).toBe('Jane Doe Photography');
+    expect(config.steps.find((step) => step.run === 'exif')!.with['set-artist']).toBe('Jane Doe Photography');
   });
 
   test('every preset renders a file that parses, with the steps it promised', () => {

@@ -64,7 +64,7 @@ const coverageQuestion = (): Question => ({
   label: 'The whole pass, or particular steps?',
   choices: [
     { value: 'all', label: 'Everything', hint: shootPassSummary() },
-    { value: 'pick', label: 'Pick the steps', hint: 'import and rename live here too' },
+    { value: 'pick', label: 'Pick the steps', hint: 'a folder already on disk needs no offload' },
   ],
   default: 'all',
 });

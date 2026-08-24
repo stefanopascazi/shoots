@@ -104,12 +104,14 @@ describe('the Ink wizard', () => {
     await session.press(ENTER); // intent: work on a shoot
     await session.press(DOWN); // coverage → pick the steps
     await session.press(ENTER);
-    await session.press(SPACE); // steps: toggle the first choice (import) on
+    await session.press(SPACE); // steps: toggle the first choice (import) off
     await session.press(ENTER);
     await sleep(60);
 
+    // Dropping the offload drops the question only the offload needed.
     const screen = session.screen();
-    expect(screen).toContain('Card or source folder'); // import was really added
+    expect(screen).not.toContain('Card or source folder');
+    expect(screen).toContain('Shoot folder');
 
     await pressThrough(session);
     await session.press('y');
@@ -117,7 +119,7 @@ describe('the Ink wizard', () => {
 
     const answers = session.result()!;
     expect(answers.coverage).toBe('pick');
-    expect(answers.steps).toContain('import');
+    expect(answers.steps).not.toContain('import');
     expect(answers.steps).toContain('rate');
   }, 20_000);
 
@@ -126,7 +128,7 @@ describe('the Ink wizard', () => {
     await sleep(60);
     await session.press(ENTER); // intent answered
     await session.press(ENTER); // coverage answered
-    expect(session.screen()).toContain('Shoot folder');
+    expect(session.screen()).toContain('Card or source folder');
 
     await session.press(ESC);
     await sleep(60);

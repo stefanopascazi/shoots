@@ -78,8 +78,10 @@ export const STEP_BLUEPRINTS: StepBlueprint[] = [
       id: 'name-frames',
       run: 'rename',
       args: ['${shoot}'],
-      with: { pattern: DEFAULT_RENAME_PATTERN }, // required, and the one thing worth editing
-      notes: ['tokens: {date} {time} {camera} {lens} {seq:4} {ext}', alternatives('recursive: true')],
+      // `pattern` is required. `recursive` is not a default, but `import` files
+      // into dated subfolders, so without it a full pass renames nothing.
+      with: { pattern: DEFAULT_RENAME_PATTERN, recursive: true },
+      notes: ['tokens: {date} {time} {camera} {lens} {seq:4} {ext}'],
     }),
   },
   {
@@ -208,9 +210,9 @@ export const PRESETS: Preset[] = [
   {
     id: 'shoot',
     label: 'Work on a shoot',
-    hint: 'tag, rate, cull and develop a folder of photographs',
+    hint: 'offload, name, tag, rate, cull and develop a shoot',
     name: 'shoot-pass',
-    steps: ['exif', 'rate', 'cull', 'develop-edit'],
+    steps: ['import', 'rename', 'exif', 'rate', 'cull', 'develop-edit'],
   },
   {
     id: 'train',

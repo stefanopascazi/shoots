@@ -86,19 +86,20 @@ shoots pipeline init [file] [options]
 
 1. **What are you setting up?** — work on a shoot, or train your develop profile.
 2. *(shoot only)* **The whole pass, or particular steps?** — everything is
-   `exif → rate → cull → develop edit`; picking opens the step list, `import`
-   and `rename` included.
+   `import → rename → exif → rate → cull → develop edit`; picking opens the step
+   list, for a folder that is already on disk.
 3. **The folders**, and the artist name if `exif` is in.
 
-That is the whole wizard: two questions to set up training, four for a full
+That is the whole wizard: two questions to set up training, five for a full
 shoot pass. It never asks anything a command already has a default for.
 
 ### It writes scaffolding, not a finished config
 
 The generated file carries only what no default could supply — the folder, the
-artist name — plus the two flags a command cannot run without (`import --dest`,
-`rename --pattern`) and the `mark: true` that makes `rate` and `cull` one pass
-instead of two unrelated reports. Everything a step *could* take is a commented
+artist name — plus the flags a command cannot run without (`import --dest`,
+`rename --pattern`), the `mark: true` that makes `rate` and `cull` one pass
+instead of two unrelated reports, and `rename --recursive`, without which a full
+pass would rename nothing (the offload files into dated subfolders). Everything a step *could* take is a commented
 hint under it:
 
 ```yaml

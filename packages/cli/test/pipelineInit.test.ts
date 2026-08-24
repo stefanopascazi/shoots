@@ -67,13 +67,15 @@ describe('templates', () => {
   );
 
   test(
-    'the shoot template is the four-step pass, on one folder, with no extra flags',
+    'the shoot template is card-to-sidecars, on one folder, with no extra flags',
     async () => {
       await inTempDir(async (dir) => {
         const file = path.join(dir, 'p.yaml');
         await shoots(['pipeline', 'init', file, '--template', 'shoot', '--var', 'shoot=D:/Shoots/smith']);
         const dry = await shoots(['pipeline', file, '--dry-run']);
 
+        expect(dry.out).toContain('--dest D:/Shoots/smith');
+        expect(dry.out).toContain('shoots rename D:/Shoots/smith --pattern');
         expect(dry.out).toContain('shoots exif D:/Shoots/smith --set-artist');
         expect(dry.out).toContain('shoots rate D:/Shoots/smith --mark');
         expect(dry.out).toContain('shoots cull D:/Shoots/smith --mark');
@@ -172,12 +174,12 @@ describe('the file on disk', () => {
           'pipeline', 'init', file,
           '--template', 'shoot',
           '--var', 'shoot=D:/Shoots/on-disk',
-          '--var', 'card=E:/DCIM',
+          '--var', 'lens=50mm',
         ]);
         expect(run.code).toBe(0);
         const yaml = await readFile(file, 'utf8');
         expect(yaml).toContain('shoot: D:/Shoots/on-disk');
-        expect(run.err).toContain('--var card is not used'); // no import step asked for it
+        expect(run.err).toContain('--var lens is not used'); // no step declares it
       });
     },
     SLOW,
