@@ -61,9 +61,8 @@ failure once you have fixed it.
 
 ## `pipeline init`
 
-Writes a pipeline file by asking questions, for anyone who would rather not
-start from an empty YAML buffer. It is the same file either way: `init` writes
-what you would have typed, comments included, and is never needed twice.
+Writes a pipeline file by answering a handful of questions, for anyone who
+would rather not start from an empty YAML buffer.
 
 ```
 shoots pipeline init [file] [options]
@@ -75,13 +74,49 @@ shoots pipeline init [file] [options]
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `--template <name>` | — | Skip the questions: `ingest`, `cull-rate` or `develop-train`, all defaults |
+| `--template <name>` | — | Skip the questions: `shoot` or `train`, all defaults |
 | `--var <name=value>` | — | Answer a variable up front, e.g. `--var shoot=D:/Shoots/smith`. Repeatable |
 | `--name <name>` | preset's | Pipeline name written into the file |
 | `--plain` | off | Ask line by line instead of the full-screen wizard |
 | `--stdout` | off | Print the file instead of writing it |
 | `--force` | off | Replace the file if it already exists |
 | `--json` | off | Machine-readable report on stdout |
+
+### What it asks
+
+1. **What are you setting up?** — work on a shoot, or train your develop profile.
+2. *(shoot only)* **The whole pass, or particular steps?** — everything is
+   `exif → rate → cull → develop edit`; picking opens the step list, `import`
+   and `rename` included.
+3. **The folders**, and the artist name if `exif` is in.
+
+That is the whole wizard: two questions to set up training, four for a full
+shoot pass. It never asks anything a command already has a default for.
+
+### It writes scaffolding, not a finished config
+
+The generated file carries only what no default could supply — the folder, the
+artist name — plus the two flags a command cannot run without (`import --dest`,
+`rename --pattern`) and the `mark: true` that makes `rate` and `cull` one pass
+instead of two unrelated reports. Everything a step *could* take is a commented
+hint under it:
+
+```yaml
+steps:
+  - id: rating
+    run: rate
+    args: ${shoot}
+    with:
+      mark: true
+    # also: profile: street | generic | portrait | wildlife · write-xmp: true
+```
+
+So the file starts minimal and legible, teaches you the format as you read it,
+and grows by editing — which is what a pipeline is for. Nothing is frozen at
+today's defaults: when a command's default changes, a generated pipeline
+follows it.
+
+### Front-ends
 
 On a terminal it opens the full-screen wizard: arrows move, space toggles a
 step, enter accepts, esc goes back one answer, and the finished file is shown
@@ -94,21 +129,13 @@ Inside the `shoots` shell, `/pipeline init` runs the same wizard in-process
 It accepts `[file]`, `--var` and `--name` there; `--template`, `--plain` and
 `--stdout` are spawned as an ordinary command, exactly as they are outside.
 
-Three presets seed the step list, which you then edit:
-
-| Template | Steps |
-| --- | --- |
-| `ingest` | `import` → `rename` → `exif` → `rate` → `cull` → `develop edit` |
-| `cull-rate` | `rate` → `cull` → `triage apply` |
-| `develop-train` | `develop export` → `develop train` |
-
 Whatever it writes is parsed and resolved against this build's real commands
 before it lands on disk, so a generated file always runs.
 
 ```sh
 shoots pipeline init                                    # the wizard
-shoots pipeline init wedding.yaml --template ingest --var shoot=D:/Shoots/smith
-shoots pipeline init --template cull-rate --stdout      # print it, write nothing
+shoots pipeline init wedding.yaml --template shoot --var shoot=D:/Shoots/smith
+shoots pipeline init --template train --stdout          # print it, write nothing
 ```
 
 ---

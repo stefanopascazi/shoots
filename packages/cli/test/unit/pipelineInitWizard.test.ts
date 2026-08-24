@@ -72,7 +72,7 @@ describe('the Ink wizard', () => {
   test('enter through every question reaches the review screen, and y writes', async () => {
     const session = start();
     await sleep(60);
-    expect(session.screen()).toContain('What should this pipeline do?');
+    expect(session.screen()).toContain('What are you setting up?');
 
     await pressThrough(session);
     expect(session.screen()).toContain('This is p.yaml');
@@ -82,8 +82,8 @@ describe('the Ink wizard', () => {
     await session.done();
 
     const answers = session.result()!;
-    expect(answers.preset).toBe('ingest');
-    expect(answers.steps).toEqual(['import', 'rename', 'exif', 'rate', 'cull', 'develop-edit']);
+    expect(answers.intent).toBe('shoot');
+    expect(answers.coverage).toBe('all');
   }, 20_000);
 
   test('nothing is handed back until the review screen is confirmed', async () => {
@@ -101,9 +101,9 @@ describe('the Ink wizard', () => {
     const session = start();
     await sleep(60);
 
-    await session.press(DOWN); // preset → cull & rate
+    await session.press(ENTER); // intent: work on a shoot
+    await session.press(DOWN); // coverage → pick the steps
     await session.press(ENTER);
-    await session.press(ENTER); // name: default
     await session.press(SPACE); // steps: toggle the first choice (import) on
     await session.press(ENTER);
     await sleep(60);
@@ -116,7 +116,7 @@ describe('the Ink wizard', () => {
     await session.done();
 
     const answers = session.result()!;
-    expect(answers.preset).toBe('cull-rate');
+    expect(answers.coverage).toBe('pick');
     expect(answers.steps).toContain('import');
     expect(answers.steps).toContain('rate');
   }, 20_000);
@@ -124,15 +124,15 @@ describe('the Ink wizard', () => {
   test('esc steps back one answer, and cancels outright on the first question', async () => {
     const session = start();
     await sleep(60);
-    await session.press(ENTER); // preset answered
-    await session.press(ENTER); // name answered
-    expect(session.screen()).toContain('Which steps should it run?');
+    await session.press(ENTER); // intent answered
+    await session.press(ENTER); // coverage answered
+    expect(session.screen()).toContain('Shoot folder');
 
     await session.press(ESC);
     await sleep(60);
-    expect(session.screen()).toContain('Pipeline name'); // back on the previous question
+    expect(session.screen()).toContain('The whole pass'); // back on the previous question
 
-    await session.press(ESC); // back to the preset
+    await session.press(ESC); // back to the intent
     await session.press(ESC); // nothing left to undo: cancel
     await session.done();
     expect(session.result()).toBeNull();

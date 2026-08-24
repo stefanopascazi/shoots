@@ -59,7 +59,7 @@ export function registerPipelineCommand(program: Command): void {
     .command('init')
     .description('Answer a few questions and get a pipeline file — no YAML to write')
     .argument('[file]', 'file to write', DEFAULT_INIT_FILE)
-    .option('--template <name>', 'skip the questions: ingest | cull-rate | develop-train, all defaults')
+    .option('--template <name>', 'skip the questions: shoot | train')
     .option('--var <name=value>', 'answer a variable up front, e.g. --var shoot=D:/Shoots/smith (repeatable)', collect, [])
     .option('--name <name>', 'pipeline name to write into the file')
     .option('--plain', 'ask line by line instead of the full-screen wizard')

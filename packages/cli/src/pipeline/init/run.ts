@@ -155,11 +155,6 @@ export async function runPipelineInit(
       process.exitCode = 2;
       return;
     }
-    if (preset.steps.length === 0) {
-      logError(`template '${preset.id}' has no steps of its own — run \`shoots pipeline init\` and pick them`);
-      process.exitCode = 2;
-      return;
-    }
     if (exists && !options.force && !options.stdout) {
       logError(`${fileName} already exists — pass --force to replace it`);
       process.exitCode = 2;

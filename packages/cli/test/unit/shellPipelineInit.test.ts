@@ -85,7 +85,7 @@ describe('the shell opens the wizard in-process', () => {
       await sleep(700);
 
       const screen = terminal.screen();
-      expect(screen).toContain('What should this pipeline do?');
+      expect(screen).toContain('What are you setting up?');
       expect(screen).not.toContain('needs a terminal');
 
       // Esc on the first question abandons it and hands the prompt back.

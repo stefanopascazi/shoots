@@ -42,41 +42,48 @@ describe('the plain wizard', () => {
   test('pressing enter through it answers every question with its default', async () => {
     const answers = (await runPlainWizard(CONTEXT, allDefaults(), {}, silent)) as Answers;
     expect(answers).not.toBeNull();
-    expect(answers.preset).toBe('ingest');
-    expect(answers.steps).toEqual(['import', 'rename', 'exif', 'rate', 'cull', 'develop-edit']);
-    expect(buildDraft(answers, CONTEXT).steps).toHaveLength(6);
+    expect(answers.intent).toBe('shoot');
+    expect(answers.coverage).toBe('all');
+    expect(buildDraft(answers, CONTEXT).steps.map((s) => s.run)).toEqual([
+      'exif',
+      'rate',
+      'cull',
+      'develop edit',
+    ]);
   });
 
-  test('answers are read, not assumed: a chosen preset and picked steps both land', async () => {
+  test('answers are read, not assumed', async () => {
     const reader = scripted([
-      '2', // preset: cull & rate
-      'my-cull', // name
-      '4,5', // steps: rate, cull
-      'D:/Shoots/on-disk', // vars.raw
-      'wedding', // rate.profile
-      'n', // rate.mark
-      '250', // cull.threshold
-      '', // cull.label (default)
+      '1', // intent: work on a shoot
+      'pick', // coverage: particular steps
+      '1, 4', // steps: import, rate
+      'E:/DCIM', // vars.card
+      'D:/Shoots/smith', // vars.shoot
     ]);
     const answers = (await runPlainWizard(CONTEXT, reader, {}, silent)) as Answers;
-    expect(answers.preset).toBe('cull-rate');
-    expect(answers.name).toBe('my-cull');
-    expect(answers.steps).toEqual(['rate', 'cull']);
-    expect(answers['rate.profile']).toBe('wedding');
-    expect(answers['rate.mark']).toBe(false);
-    expect(answers['cull.threshold']).toBe('250');
+    expect(answers.intent).toBe('shoot');
+    expect(answers.steps).toEqual(['import', 'rate']);
+    expect(answers['vars.card']).toBe('E:/DCIM');
+    expect(answers['vars.shoot']).toBe('D:/Shoots/smith');
+  });
+
+  test('training asks two questions and stops', async () => {
+    const reader = scripted(['train', 'D:/Shoots/edited']);
+    const answers = (await runPlainWizard(CONTEXT, reader, {}, silent)) as Answers;
+    expect(answers['vars.shoot']).toBe('D:/Shoots/edited');
+    expect(reader.asked).toHaveLength(2);
   });
 
   test('an unknown choice is re-asked instead of stored', async () => {
-    const reader = scripted(['nonsense', '4', 'x', '4', '', '', '', '']);
+    const reader = scripted(['nonsense', 'train', '']);
     const answers = (await runPlainWizard(CONTEXT, reader, {}, silent)) as Answers;
-    expect(answers.preset).toBe('custom');
+    expect(answers.intent).toBe('train');
     // The rejected line cost one extra prompt for the same question.
-    expect(reader.asked.length).toBeGreaterThan(4);
+    expect(reader.asked).toHaveLength(3);
   });
 
   test('input that ends mid-wizard abandons it — no partial file', async () => {
-    expect(await runPlainWizard(CONTEXT, scripted(['1', 'name']), {}, silent)).toBeNull();
+    expect(await runPlainWizard(CONTEXT, scripted(['1', 'all']), {}, silent)).toBeNull();
   });
 
   test('pre-answered questions are not asked again', async () => {

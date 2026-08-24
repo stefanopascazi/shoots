@@ -1,11 +1,13 @@
 /**
  * The `pipeline init` wizard, as a pure function of its answers.
  *
- * Two properties matter more than the individual questions. First, the question
- * list is *derived*: pick no `exif` step and nothing ever asks for a studio
- * name, which is what lets both front-ends stay dumb. Second, whatever it
- * renders must load: every preset is generated, parsed back through
- * `parsePipelineConfig`, and checked for the variables and flags it claimed —
+ * Three properties carry the design. It asks little: two questions to set up
+ * training, four for a whole shoot pass, and never one whose answer a command
+ * default already knows. The question list is *derived* — pick no `exif` step
+ * and nothing asks for a studio name — which is what lets both front-ends stay
+ * dumb. And what it writes is scaffolding: the arguments only the author can
+ * supply, every command left on its defaults, the rest offered as commented
+ * hints. Each preset is rendered and parsed back through `parsePipelineConfig`,
  * because a wizard that emits a file the runner rejects is worse than no wizard.
  */
 import { describe, expect, test } from 'bun:test';
@@ -37,46 +39,56 @@ const ids = (answers: Answers): string[] => wizardQuestions(answers, CONTEXT).ma
 const yamlFor = (answers: Answers): string =>
   renderPipelineYaml(buildDraft(answers, CONTEXT), { header: draftHeader('my.yaml') });
 
-describe('question flow', () => {
-  test('the first question is the preset, and nothing else is known yet', () => {
-    const first = nextQuestion({}, CONTEXT);
-    expect(first?.id).toBe('preset');
-    expect(ids({})).toEqual(['preset']);
+describe('how much it asks', () => {
+  test('the first question is what you are setting up', () => {
+    expect(nextQuestion({}, CONTEXT)?.id).toBe('intent');
+    expect(ids({})).toEqual(['intent']);
   });
 
-  test('the steps a preset selects drive which questions exist', () => {
-    const answers: Answers = { preset: 'cull-rate', name: 'x' };
-    const stepsQuestion = wizardQuestions(answers, CONTEXT).find((q) => q.id === 'steps') as Question;
+  test('training asks for one thing: the folder to learn from', () => {
+    expect(ids({ intent: 'train' })).toEqual(['intent', 'vars.shoot']);
+    const answers = presetAnswers('train', CONTEXT, { 'vars.shoot': 'D:/Shoots/edited' });
+    expect(nextQuestion(answers, CONTEXT)).toBeNull();
+    expect(selectedSteps(answers).map((s) => s.run)).toEqual(['develop init']);
+  });
+
+  test('the whole shoot pass is four questions, none of them a command default', () => {
+    const answers = presetAnswers('shoot', CONTEXT);
+    expect(Object.keys(answers)).toEqual(['intent', 'coverage', 'vars.shoot', 'vars.studio']);
+  });
+
+  test('picking steps is what opens the step list — and import and rename with it', () => {
+    const whole: Answers = { intent: 'shoot', coverage: 'all' };
+    expect(ids(whole)).not.toContain('steps');
+
+    const picking: Answers = { intent: 'shoot', coverage: 'pick' };
+    const stepsQuestion = wizardQuestions(picking, CONTEXT).find((q) => q.id === 'steps') as Question;
     expect(stepsQuestion.kind).toBe('multiselect');
-    expect((stepsQuestion as { default: string[] }).default).toEqual(['rate', 'cull', 'triage-apply']);
+    const offered = (stepsQuestion as { choices: Array<{ value: string }> }).choices.map((c) => c.value);
+    expect(offered).toContain('import');
+    expect(offered).toContain('rename');
+    expect(offered).not.toContain('develop-init'); // training is its own intent
+    expect((stepsQuestion as { default: string[] }).default).toEqual(['exif', 'rate', 'cull', 'develop-edit']);
   });
 
-  test('no exif step means no studio question, and no import means raw is asked directly', () => {
-    const withoutExif: Answers = { preset: 'custom', name: 'x', steps: ['rate'] };
-    expect(ids(withoutExif)).toContain('vars.raw');
-    expect(ids(withoutExif)).not.toContain('vars.studio');
-    expect(ids(withoutExif)).not.toContain('vars.shoot');
+  test('a variable is only asked for when a chosen step needs it', () => {
+    const noExif: Answers = { intent: 'shoot', coverage: 'pick', steps: ['rate', 'cull'] };
+    expect(ids(noExif)).toContain('vars.shoot');
+    expect(ids(noExif)).not.toContain('vars.studio');
+    expect(ids(noExif)).not.toContain('vars.card');
 
-    const withExifAndImport: Answers = { preset: 'custom', name: 'x', steps: ['import', 'exif'] };
-    expect(ids(withExifAndImport)).toContain('vars.studio');
-    expect(ids(withExifAndImport)).toContain('vars.shoot');
-    expect(ids(withExifAndImport)).not.toContain('vars.raw');
+    const withImport: Answers = { intent: 'shoot', coverage: 'pick', steps: ['import', 'exif'] };
+    expect(ids(withImport)).toContain('vars.card');
+    expect(ids(withImport)).toContain('vars.studio');
   });
 
   test('steps run in catalog order, whatever order they were picked in', () => {
-    const answers: Answers = { preset: 'custom', name: 'x', steps: ['develop-edit', 'rate', 'import'] };
+    const answers: Answers = { intent: 'shoot', coverage: 'pick', steps: ['develop-edit', 'rate', 'import'] };
     expect(selectedSteps(answers).map((s) => s.key)).toEqual(['import', 'rate', 'develop-edit']);
   });
 
-  test('nextQuestion returns null only once every question has an answer', () => {
-    const answers = presetAnswers('ingest', CONTEXT);
-    expect(nextQuestion(answers, CONTEXT)).toBeNull();
-    delete answers['rename.pattern'];
-    expect(nextQuestion(answers, CONTEXT)?.id).toBe('rename.pattern');
-  });
-
   test('a pre-answered question is never asked', () => {
-    const answers = presetAnswers('ingest', CONTEXT, { 'vars.shoot': 'D:/given' });
+    const answers = presetAnswers('shoot', CONTEXT, { 'vars.shoot': 'D:/given' });
     expect(answers['vars.shoot']).toBe('D:/given');
   });
 });
@@ -119,86 +131,84 @@ describe('answer parsing', () => {
   });
 });
 
-describe('the file it writes', () => {
-  test('with an import step, raw is derived from the shoot folder', () => {
-    const answers = presetAnswers('ingest', CONTEXT, { 'vars.shoot': 'D:/Shoots/smith' });
+describe('the scaffolding it writes', () => {
+  test('one folder answers every step of a shoot', () => {
+    const answers = presetAnswers('shoot', CONTEXT, { 'vars.shoot': 'D:/Shoots/smith' });
     const config = parsePipelineConfig(yamlFor(answers));
     expect(config.vars.shoot).toBe('D:/Shoots/smith');
-    expect(config.vars.raw).toBe('D:/Shoots/smith/raw');
-    expect(config.steps[0]!.with.dest).toBe('D:/Shoots/smith/raw');
+    expect(config.steps.map((s) => s.run)).toEqual(['exif', 'rate', 'cull', 'develop edit']);
+    for (const step of config.steps) expect(step.args).toEqual(['D:/Shoots/smith']);
   });
 
-  test('without an import step, raw is the folder the photographs are already in', () => {
-    const answers = presetAnswers('cull-rate', CONTEXT, { 'vars.raw': 'D:/Shoots/on-disk' });
+  test('no step carries a flag the command would have defaulted anyway', () => {
+    const config = parsePipelineConfig(yamlFor(presetAnswers('shoot', CONTEXT)));
+    const by = (run: string) => config.steps.find((s) => s.run === run)!;
+
+    // What survives: the artist name, and the marks that make rate and cull one
+    // pass. No profile, no threshold, no treatment, no editor, no concurrency.
+    expect(Object.keys(by('exif').with)).toEqual(['set-artist']);
+    expect(by('rate').with).toEqual({ mark: true });
+    expect(by('cull').with).toEqual({ mark: true });
+    expect(by('develop edit').with).toEqual({});
+    expect(Object.keys(config.defaults)).toHaveLength(0);
+  });
+
+  test('the flags a command cannot run without are still written', () => {
+    const answers = presetAnswers('shoot', CONTEXT, { coverage: 'pick', steps: ['import', 'rename'] });
     const config = parsePipelineConfig(yamlFor(answers));
-    expect(config.vars.raw).toBe('D:/Shoots/on-disk');
-    expect(config.vars.shoot).toBeUndefined();
-    expect(config.steps.map((s) => s.run)).toEqual(['rate', 'cull', 'triage apply']);
+    // `import --dest` and `rename --pattern` are required options.
+    expect(config.steps[0]!.with.dest).toBe(config.vars.shoot);
+    expect(String(config.steps[1]!.with.pattern)).toContain('{date}');
   });
 
-  test('keywords become a list, the threshold stays a number, and empty answers drop the flag', () => {
-    const answers: Answers = {
-      ...presetAnswers('custom', CONTEXT, {
-        steps: ['exif', 'cull'],
-        'exif.keywords': 'wedding, smith , 2026',
-        'cull.threshold': '140',
-      }),
-    };
-    const config = parsePipelineConfig(yamlFor(answers));
-    const exif = config.steps.find((s) => s.run === 'exif')!;
-    expect(exif.with['set-keywords']).toEqual(['wedding', 'smith', '2026']);
-    expect(config.steps.find((s) => s.run === 'cull')!.with.threshold).toBe(140);
-
-    const noKeywords = parsePipelineConfig(
-      yamlFor(presetAnswers('custom', CONTEXT, { steps: ['exif'], 'exif.keywords': '', 'exif.copyright': '' })),
-    );
-    const tags = noKeywords.steps[0]!.with;
-    expect(tags['set-keywords']).toBeUndefined();
-    expect(tags['set-copyright']).toBeUndefined();
-    expect(tags['set-artist']).toBe('Your Name'); // placeholder, never an empty tag
+  test('training is the single develop init command, on its own defaults', () => {
+    const config = parsePipelineConfig(yamlFor(presetAnswers('train', CONTEXT)));
+    expect(config.name).toBe('develop-training');
+    expect(config.steps).toHaveLength(1);
+    expect(config.steps[0]!.run).toBe('develop init');
+    expect(config.steps[0]!.with).toEqual({});
   });
 
-  test('the studio name reaches both the artist tag and the copyright line', () => {
-    const answers = presetAnswers('custom', CONTEXT, {
-      steps: ['exif'],
-      'vars.studio': 'Jane Doe Photography',
-    });
+  test('the hints are comments: they name real flags and change nothing', () => {
+    const yaml = yamlFor(presetAnswers('shoot', CONTEXT));
+    expect(yaml).toContain('# also: profile: generic | wedding | street'); // from the context, not hardcoded
+    expect(yaml).toContain('# also: treatment: color | bw');
+    for (const line of yaml.split('\n')) {
+      if (line.includes('also:')) expect(line.trimStart().startsWith('#')).toBe(true);
+    }
+  });
+
+  test('the studio name reaches the artist tag', () => {
+    const answers = presetAnswers('shoot', CONTEXT, { 'vars.studio': 'Jane Doe Photography' });
     const config = parsePipelineConfig(yamlFor(answers));
     expect(config.steps[0]!.with['set-artist']).toBe('Jane Doe Photography');
-    expect(config.steps[0]!.with['set-copyright']).toContain('Jane Doe Photography');
   });
 
   test('every preset renders a file that parses, with the steps it promised', () => {
     for (const preset of PRESETS) {
-      if (preset.steps.length === 0) continue;
       const answers = presetAnswers(preset.id, CONTEXT);
       const yaml = yamlFor(answers);
       const config = parsePipelineConfig(yaml);
       expect(config.version).toBe(2);
       expect(config.name).toBe(preset.name);
-      expect(config.steps.length).toBe(preset.steps.length);
-      expect(yaml.startsWith('# Written by `shoots pipeline init`')).toBe(true);
+      expect(config.steps).toHaveLength(preset.steps.length);
+      expect(yaml.startsWith('# Scaffolding from `shoots pipeline init`')).toBe(true);
     }
   });
 
   test('a value that needs quoting survives the round trip', () => {
-    const answers = presetAnswers('custom', CONTEXT, {
+    const answers = presetAnswers('shoot', CONTEXT, {
+      coverage: 'pick',
       steps: ['rename'],
-      'vars.raw': 'D:/Shoots/#3: the one with spaces',
-      'rename.pattern': '{date}: {camera}.{ext}',
+      'vars.shoot': 'D:/Shoots/#3: the one with spaces',
     });
     const config = parsePipelineConfig(yamlFor(answers));
     expect(config.steps[0]!.args[0]).toBe('D:/Shoots/#3: the one with spaces');
-    expect(config.steps[0]!.with.pattern).toBe('{date}: {camera}.{ext}');
   });
 
   test('a pipeline with no steps is refused rather than written empty', () => {
-    expect(() => buildDraft({ preset: 'custom', name: 'x', steps: [] }, CONTEXT)).toThrow(/at least one step/);
-  });
-
-  test('concurrency is only suggested when a step actually takes it', () => {
-    expect(buildDraft(presetAnswers('ingest', CONTEXT), CONTEXT).defaults.concurrency).toBe(8);
-    const renameOnly = buildDraft({ preset: 'custom', name: 'x', steps: ['rename'] }, CONTEXT);
-    expect(renameOnly.defaults.concurrency).toBeUndefined();
+    expect(() => buildDraft({ intent: 'shoot', coverage: 'pick', steps: [] }, CONTEXT)).toThrow(
+      /at least one step/,
+    );
   });
 });

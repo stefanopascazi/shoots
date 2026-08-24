@@ -41,6 +41,7 @@ function renderStep(step: DraftStep): string[] {
     lines.push('    with:');
     lines.push(...renderMapping(step.with, '      '));
   }
+  for (const note of step.notes ?? []) lines.push(`    # ${note}`);
   return lines;
 }
 

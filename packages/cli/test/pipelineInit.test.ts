@@ -49,7 +49,7 @@ describe('templates', () => {
   test(
     'every template writes a file that `pipeline --dry-run` accepts',
     async () => {
-      for (const template of ['ingest', 'cull-rate', 'develop-train']) {
+      for (const template of ['shoot', 'train']) {
         await inTempDir(async (dir) => {
           const file = path.join(dir, `${template}.yaml`);
           const init = await shoots(['pipeline', 'init', file, '--template', template]);
@@ -67,20 +67,36 @@ describe('templates', () => {
   );
 
   test(
-    'the ingest template is the six-step develop pipeline, in order',
+    'the shoot template is the four-step pass, on one folder, with no extra flags',
     async () => {
       await inTempDir(async (dir) => {
         const file = path.join(dir, 'p.yaml');
-        await shoots(['pipeline', 'init', file, '--template', 'ingest', '--var', 'shoot=D:/Shoots/smith']);
+        await shoots(['pipeline', 'init', file, '--template', 'shoot', '--var', 'shoot=D:/Shoots/smith']);
         const dry = await shoots(['pipeline', file, '--dry-run']);
 
-        expect(dry.out).toContain('shoots import E:/DCIM/100CANON');
-        expect(dry.out).toContain('--dest D:/Shoots/smith/raw');
-        expect(dry.out).toContain('shoots rename D:/Shoots/smith/raw');
-        expect(dry.out).toContain('shoots exif D:/Shoots/smith/raw');
-        expect(dry.out).toContain('shoots rate D:/Shoots/smith/raw');
-        expect(dry.out).toContain('shoots cull D:/Shoots/smith/raw');
-        expect(dry.out).toContain('shoots develop edit D:/Shoots/smith/raw');
+        expect(dry.out).toContain('shoots exif D:/Shoots/smith --set-artist');
+        expect(dry.out).toContain('shoots rate D:/Shoots/smith --mark');
+        expect(dry.out).toContain('shoots cull D:/Shoots/smith --mark');
+        expect(dry.out).toContain('shoots develop edit D:/Shoots/smith');
+        // Scaffolding: nothing the commands already default to.
+        expect(dry.out).not.toContain('--profile');
+        expect(dry.out).not.toContain('--threshold');
+        expect(dry.out).not.toContain('--concurrency');
+      });
+    },
+    SLOW,
+  );
+
+  test(
+    'the train template is `develop init` on the folder, and nothing else',
+    async () => {
+      await inTempDir(async (dir) => {
+        const file = path.join(dir, 'p.yaml');
+        await shoots(['pipeline', 'init', file, '--template', 'train', '--var', 'shoot=D:/Shoots/edited']);
+        const dry = await shoots(['pipeline', file, '--dry-run']);
+
+        expect(dry.out).toContain('1 step(s)');
+        expect(dry.out).toContain('shoots develop init D:/Shoots/edited');
       });
     },
     SLOW,
@@ -90,10 +106,11 @@ describe('templates', () => {
     '--stdout prints the file and writes nothing',
     async () => {
       await inTempDir(async (dir) => {
-        const run = await shoots(['pipeline', 'init', path.join(dir, 'p.yaml'), '--template', 'cull-rate', '--stdout']);
+        const run = await shoots(['pipeline', 'init', path.join(dir, 'p.yaml'), '--template', 'shoot', '--stdout']);
         expect(run.code).toBe(0);
         expect(run.out).toContain('version: 2');
-        expect(run.out).toContain('run: triage apply');
+        expect(run.out).toContain('run: develop edit');
+        expect(run.out).toContain('# also:'); // the hints that make it scaffolding
         expect(existsSync(path.join(dir, 'p.yaml'))).toBe(false);
       });
     },
@@ -105,8 +122,8 @@ describe('templates', () => {
     async () => {
       const run = await shoots(['pipeline', 'init', '--template', 'weddings']);
       expect(run.code).toBe(2);
-      expect(run.err).toContain('ingest');
-      expect(run.err).toContain('cull-rate');
+      expect(run.err).toContain('shoot');
+      expect(run.err).toContain('train');
     },
     SLOW,
   );
@@ -120,12 +137,12 @@ describe('the file on disk', () => {
         const file = path.join(dir, 'p.yaml');
         await writeFile(file, '# mine\n', 'utf8');
 
-        const guarded = await shoots(['pipeline', 'init', file, '--template', 'ingest']);
+        const guarded = await shoots(['pipeline', 'init', file, '--template', 'shoot']);
         expect(guarded.code).toBe(2);
         expect(guarded.err).toContain('--force');
         expect(await readFile(file, 'utf8')).toBe('# mine\n');
 
-        const forced = await shoots(['pipeline', 'init', file, '--template', 'ingest', '--force']);
+        const forced = await shoots(['pipeline', 'init', file, '--template', 'shoot', '--force']);
         expect(forced.code).toBe(0);
         expect(await readFile(file, 'utf8')).toContain('version: 2');
       });
@@ -137,7 +154,7 @@ describe('the file on disk', () => {
     'the default file name is used when none is given',
     async () => {
       await inTempDir(async (dir) => {
-        const run = await shoots(['pipeline', 'init', '--template', 'cull-rate'], dir);
+        const run = await shoots(['pipeline', 'init', '--template', 'shoot'], dir);
         expect(run.code).toBe(0);
         expect(existsSync(path.join(dir, 'shoots-pipeline.yaml'))).toBe(true);
         expect(run.out).toContain('--dry-run');
@@ -153,14 +170,14 @@ describe('the file on disk', () => {
         const file = path.join(dir, 'p.yaml');
         const run = await shoots([
           'pipeline', 'init', file,
-          '--template', 'cull-rate',
-          '--var', 'raw=D:/Shoots/on-disk',
+          '--template', 'shoot',
+          '--var', 'shoot=D:/Shoots/on-disk',
           '--var', 'card=E:/DCIM',
         ]);
         expect(run.code).toBe(0);
         const yaml = await readFile(file, 'utf8');
-        expect(yaml).toContain('raw: D:/Shoots/on-disk');
-        expect(run.err).toContain('--var card is not used');
+        expect(yaml).toContain('shoot: D:/Shoots/on-disk');
+        expect(run.err).toContain('--var card is not used'); // no import step asked for it
       });
     },
     SLOW,
@@ -171,10 +188,10 @@ describe('the file on disk', () => {
     async () => {
       await inTempDir(async (dir) => {
         const file = path.join(dir, 'p.yaml');
-        const run = await shoots(['pipeline', 'init', file, '--template', 'develop-train', '--json']);
+        const run = await shoots(['pipeline', 'init', file, '--template', 'train', '--json']);
         const payload = JSON.parse(run.out);
         expect(payload.command).toBe('pipeline init');
-        expect(payload.steps.map((step: { run: string }) => step.run)).toEqual(['develop export', 'develop train']);
+        expect(payload.steps.map((step: { run: string }) => step.run)).toEqual(['develop init']);
         expect(payload.issues).toEqual([]);
       });
     },
@@ -201,7 +218,7 @@ describe('the old spelling', () => {
     async () => {
       await inTempDir(async (dir) => {
         const file = path.join(dir, 'p.yaml');
-        await shoots(['pipeline', 'init', file, '--template', 'cull-rate']);
+        await shoots(['pipeline', 'init', file, '--template', 'shoot']);
 
         const legacy = await shoots(['pipeline', file, '--dry-run']);
         const explicit = await shoots(['pipeline', 'run', file, '--dry-run']);

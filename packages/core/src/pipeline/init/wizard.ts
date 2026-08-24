@@ -3,10 +3,17 @@
  *
  * `nextQuestion(answers)` is the whole interaction protocol — ask it, store the
  * answer, ask again, stop when it returns null. Which questions exist depends on
- * the answers already given (no `exif` step, no studio name to ask for), so the
- * front-ends never decide what to ask: they only render a question and hand back
- * a value. That is what keeps the Ink screen and the plain prompt in step with
- * each other, and what makes the flow testable without a terminal.
+ * the answers already given, so the front-ends never decide what to ask: they
+ * only render a question and hand back a value. That is what keeps the Ink
+ * screen and the plain prompt in step, and what makes the flow testable without
+ * a terminal.
+ *
+ * It asks as little as it can get away with: what you are doing (a shoot, or
+ * training your look), whether you want the whole pass or particular steps, and
+ * then only what no default could supply — the folders, and the name that goes
+ * in the Artist tag. Everything else is left to the commands and hinted at in
+ * the file, because the output is scaffolding somebody will edit, not a
+ * configuration they have to get right by answering questions.
  */
 import type { PipelineValue } from '../PipelineConfig.js';
 import type { PipelineDraft, DraftVar } from './draft.js';
@@ -35,50 +42,63 @@ export function makeContext(partial: Partial<CatalogContext> = {}): CatalogConte
   };
 }
 
-const presetQuestion = (): Question => ({
+const intentQuestion = (): Question => ({
   kind: 'select',
-  id: 'preset',
-  label: 'What should this pipeline do?',
-  hint: 'A starting point — you pick the exact steps next',
+  id: 'intent',
+  label: 'What are you setting up?',
   choices: PRESETS.map((preset) => ({ value: preset.id, label: preset.label, hint: preset.hint })),
   default: PRESETS[0]!.id,
 });
 
-const nameQuestion = (presetId: string): Question => ({
-  kind: 'text',
-  id: 'name',
-  label: 'Pipeline name',
-  hint: 'Shown while it runs',
-  default: findPreset(presetId)?.name ?? 'my-pipeline',
+const SHOOT_STEPS = findPreset('shoot')!.steps;
+
+/** `exif → rate → cull → develop edit`, read off the catalog. */
+const shootPassSummary = (): string =>
+  STEP_BLUEPRINTS.filter((step) => SHOOT_STEPS.includes(step.key))
+    .map((step) => step.run)
+    .join(' → ');
+
+const coverageQuestion = (): Question => ({
+  kind: 'select',
+  id: 'coverage',
+  label: 'The whole pass, or particular steps?',
+  choices: [
+    { value: 'all', label: 'Everything', hint: shootPassSummary() },
+    { value: 'pick', label: 'Pick the steps', hint: 'import and rename live here too' },
+  ],
+  default: 'all',
 });
 
-const stepsQuestion = (presetId: string): Question => ({
+const stepsQuestion = (): Question => ({
   kind: 'multiselect',
   id: 'steps',
-  label: 'Which steps should it run?',
+  label: 'Which steps?',
   hint: 'They run in this order, top to bottom',
-  choices: STEP_BLUEPRINTS.map((step) => ({ value: step.key, label: step.label, hint: step.hint })),
-  default: findPreset(presetId)?.steps ?? [],
+  choices: STEP_BLUEPRINTS.filter((step) => step.key !== 'develop-init').map((step) => ({
+    value: step.key,
+    label: step.label,
+    hint: step.hint,
+  })),
+  default: [...SHOOT_STEPS],
   minimum: 1,
 });
 
-/** The steps chosen, always in catalog order — that order is the run order. */
+/** The steps this answer sheet implies, always in catalog (= run) order. */
 export function selectedSteps(answers: Answers): StepBlueprint[] {
-  const chosen = answers.steps;
-  const keys = Array.isArray(chosen) ? chosen : [];
+  const intent = typeof answers.intent === 'string' ? answers.intent : undefined;
+  if (intent === 'train') return STEP_BLUEPRINTS.filter((step) => step.key === 'develop-init');
+
+  const keys =
+    answers.coverage === 'pick' && Array.isArray(answers.steps) ? answers.steps : intent ? SHOOT_STEPS : [];
   return STEP_BLUEPRINTS.filter((step) => keys.includes(step.key));
 }
 
-const hasImport = (steps: StepBlueprint[]): boolean => steps.some((step) => step.key === 'import');
-
 /**
- * Variable questions implied by the chosen steps.
- *
- * `raw` is the one variable everything else hangs off. With an import step it is
- * derived (`${shoot}/raw`) because that is where the offload will put the files;
- * without one the photographs already exist somewhere, so it is asked directly.
+ * Variable questions the chosen steps imply — the only things a default cannot
+ * stand in for. One folder covers a whole shoot: the offload writes into it and
+ * every later step reads it.
  */
-function varQuestions(steps: StepBlueprint[]): TextQuestion[] {
+function varQuestions(steps: StepBlueprint[], training: boolean): TextQuestion[] {
   const needed = new Set(steps.flatMap((step) => step.vars));
   const questions: TextQuestion[] = [];
 
@@ -91,20 +111,21 @@ function varQuestions(steps: StepBlueprint[]): TextQuestion[] {
       default: 'E:/DCIM/100CANON',
     });
   }
-  if (needed.has('raw')) {
+  if (needed.has('shoot')) {
     questions.push(
-      hasImport(steps)
+      training
         ? {
             kind: 'text',
             id: 'vars.shoot',
-            label: 'Shoot folder',
-            hint: 'The photographs land in <shoot>/raw',
-            default: 'D:/Shoots/my-shoot',
+            label: 'Folder of photographs you have already edited',
+            hint: 'Your look is learned from the edits in it',
+            default: 'D:/Shoots/my-catalog',
           }
         : {
             kind: 'text',
-            id: 'vars.raw',
-            label: 'Folder holding the photographs',
+            id: 'vars.shoot',
+            label: 'Shoot folder',
+            hint: 'Where the photographs are (or where the offload will put them)',
             default: 'D:/Shoots/my-shoot',
           },
     );
@@ -116,44 +137,31 @@ function varQuestions(steps: StepBlueprint[]): TextQuestion[] {
       label: 'Artist or studio name',
       hint: 'Written as the Artist/Creator tag',
       // A placeholder rather than an empty default: `--template` answers every
-      // question for you, and an empty Artist tag written over a card is worse
+      // question for you, and an empty Artist tag written over a shoot is worse
       // than an obviously-wrong one waiting to be edited.
       default: 'Your Name',
-    });
-  }
-  if (needed.has('dataset')) {
-    questions.push({
-      kind: 'text',
-      id: 'vars.dataset',
-      label: 'Training dataset file',
-      hint: 'JSONL written by develop export and read by develop train',
-      default: 'develop-dataset.jsonl',
-    });
-  }
-  if (needed.has('profileFile')) {
-    questions.push({
-      kind: 'text',
-      id: 'vars.profileFile',
-      label: 'Profile file to write',
-      default: 'my-style.json',
     });
   }
   return questions;
 }
 
 /** Every question the current answers imply, in the order they are asked. */
-export function wizardQuestions(answers: Answers, context: CatalogContext = DEFAULT_CONTEXT): Question[] {
-  const questions: Question[] = [presetQuestion()];
+export function wizardQuestions(answers: Answers, _context: CatalogContext = DEFAULT_CONTEXT): Question[] {
+  const questions: Question[] = [intentQuestion()];
 
-  const preset = typeof answers.preset === 'string' ? answers.preset : undefined;
-  if (preset === undefined) return questions;
+  const intent = typeof answers.intent === 'string' ? answers.intent : undefined;
+  if (intent === undefined) return questions;
 
-  questions.push(nameQuestion(preset), stepsQuestion(preset));
-  if (!Array.isArray(answers.steps)) return questions;
+  if (intent !== 'train') {
+    questions.push(coverageQuestion());
+    if (answers.coverage === undefined) return questions;
+    if (answers.coverage === 'pick') {
+      questions.push(stepsQuestion());
+      if (!Array.isArray(answers.steps)) return questions;
+    }
+  }
 
-  const steps = selectedSteps(answers);
-  questions.push(...varQuestions(steps));
-  for (const step of steps) questions.push(...step.questions(context));
+  questions.push(...varQuestions(selectedSteps(answers), intent === 'train'));
   return questions;
 }
 
@@ -171,18 +179,15 @@ export function presetAnswers(
   context: CatalogContext = DEFAULT_CONTEXT,
   overrides: Answers = {},
 ): Answers {
-  const answers: Answers = { preset: presetId, ...overrides };
+  const answers: Answers = { intent: presetId, ...overrides };
   let guard = 0;
   for (;;) {
     const question = nextQuestion(answers, context);
     if (!question) return answers;
     answers[question.id] = defaultOf(question);
-    if (++guard > 200) throw new Error('pipeline init: question list did not converge');
+    if (++guard > 100) throw new Error('pipeline init: question list did not converge');
   }
 }
-
-/** Concurrency the `defaults:` block suggests when any step accepts the flag. */
-export const DEFAULT_CONCURRENCY = 8;
 
 function draftVars(answers: Answers, steps: StepBlueprint[]): DraftVar[] {
   const needed = new Set(steps.flatMap((step) => step.vars));
@@ -192,20 +197,9 @@ function draftVars(answers: Answers, steps: StepBlueprint[]): DraftVar[] {
   };
 
   const vars: DraftVar[] = [];
-  if (needed.has('card')) {
-    vars.push({ name: 'card', value: value('vars.card'), comment: 'the card, or wherever the offload reads from' });
-  }
-  if (needed.has('raw')) {
-    if (hasImport(steps)) {
-      vars.push({ name: 'shoot', value: value('vars.shoot') });
-      vars.push({ name: 'raw', value: '${shoot}/raw', comment: 'a var may build on the ones above it' });
-    } else {
-      vars.push({ name: 'raw', value: value('vars.raw') });
-    }
-  }
+  if (needed.has('card')) vars.push({ name: 'card', value: value('vars.card') });
+  if (needed.has('shoot')) vars.push({ name: 'shoot', value: value('vars.shoot') });
   if (needed.has('studio')) vars.push({ name: 'studio', value: value('vars.studio') });
-  if (needed.has('dataset')) vars.push({ name: 'dataset', value: value('vars.dataset') });
-  if (needed.has('profileFile')) vars.push({ name: 'profileFile', value: value('vars.profileFile') });
   return vars;
 }
 
@@ -214,28 +208,34 @@ export function buildDraft(answers: Answers, context: CatalogContext = DEFAULT_C
   const steps = selectedSteps(answers);
   if (steps.length === 0) throw new Error('pipeline init: a pipeline needs at least one step');
 
-  const defaults: Record<string, PipelineValue> = {};
-  if (steps.some((step) => step.concurrent)) defaults.concurrency = DEFAULT_CONCURRENCY;
-
-  const name = typeof answers.name === 'string' && answers.name.trim().length > 0 ? answers.name.trim() : undefined;
+  const intent = typeof answers.intent === 'string' ? answers.intent : PRESETS[0]!.id;
+  const name =
+    typeof answers.name === 'string' && answers.name.trim().length > 0
+      ? answers.name.trim()
+      : (findPreset(intent)?.name ?? 'my-pipeline');
 
   return {
     name,
     vars: draftVars(answers, steps),
-    defaults,
-    steps: steps.map((step) => step.build(answers, context)),
+    // No `defaults:` block: concurrency is per-machine and every command already
+    // picks one. The header says where to add it when a run needs a different one.
+    defaults: {} as Record<string, PipelineValue>,
+    steps: steps.map((step) => step.build(context)),
   };
 }
 
 /** The comment block written above a generated file. */
 export function draftHeader(fileName: string): string[] {
   return [
-    'Written by `shoots pipeline init`. It is an ordinary pipeline file: edit it,',
-    'version it, share it. Every step is a shoots command you could have typed.',
+    'Scaffolding from `shoots pipeline init`. Every step runs on its own defaults;',
+    'the commented lines under each one are the flags worth reaching for first.',
     '',
     `  shoots pipeline ${fileName} --dry-run   # print the command lines, run nothing`,
     `  shoots pipeline ${fileName}             # run it`,
     `  shoots pipeline ${fileName} --var shoot=D:/Shoots/next-one`,
+    '',
+    'A `defaults:` block above the steps applies a flag to every step that takes',
+    'it — `concurrency: 8`, for one.',
   ];
 }
 

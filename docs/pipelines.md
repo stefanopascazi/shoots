@@ -7,8 +7,9 @@ idea as a CI config, applied to a photography workflow.
 shoots pipeline <config.yaml> [--var name=value] [--from <id>] [--dry-run]
 ```
 
-Not a YAML person? `shoots pipeline init` asks what the pipeline should do and
-writes the file for you — the same file described below, with its comments. See
+Not a YAML person? `shoots pipeline init` asks two to four questions and writes
+the scaffolding — the format described below, with every command left on its own
+defaults and the interesting flags offered as commented hints you edit in. See
 [`pipeline init`](./commands/pipeline.md#pipeline-init).
 
 A pipeline is a list of shoots commands, in order, sharing one set of variables.

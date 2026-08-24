@@ -14,6 +14,15 @@ export interface DraftStep {
   with: Record<string, PipelineValue>;
   /** Written above the step, as a `#` line. */
   comment?: string;
+  /**
+   * Flags worth knowing about, written under the step as commented hints.
+   *
+   * The generated file is scaffolding, not a finished configuration: it carries
+   * the arguments only its author can supply and leaves every command on its own
+   * defaults. These lines are how the next flag is discovered without going to
+   * the docs — the file teaches the format it is written in.
+   */
+  notes?: string[];
 }
 
 export interface DraftVar {
