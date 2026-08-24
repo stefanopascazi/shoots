@@ -36,7 +36,12 @@ export interface MouseWheel {
    * terminal's own scroll translation. Returns the new state.
    */
   setReporting(on: boolean): boolean;
-  /** Tear down: reporting off and detach the pump. Safe to call more than once. */
+  /**
+   * Tear down: reporting off, pump detached, and the real stdin left as it was
+   * found — out of raw mode and paused. That last part is what lets the process
+   * exit on its own: a stdin still flowing is a live handle, and the shell is
+   * the only thing that put it there. Safe to call more than once.
+   */
   stop(): void;
 }
 
@@ -120,6 +125,10 @@ export function createMouseWheel(source: NodeJS.ReadStream): MouseWheel {
         pumping = false;
         source.off('data', onData);
       }
+      // Listening put stdin into flowing mode and Ink put it into raw mode;
+      // undo both, or the event loop stays alive with nothing left to do.
+      source.setRawMode?.(false);
+      source.pause();
     },
   };
 }

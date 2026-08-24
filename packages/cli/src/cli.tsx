@@ -110,14 +110,15 @@ async function main(): Promise<void> {
 
   const args = process.argv.slice(2);
   if (args.length === 0) {
-    if (process.stdout.isTTY && process.stdin.isTTY) {
-      await launchShell();
-      return;
-    }
-    program.outputHelp();
-    return;
+    if (process.stdout.isTTY && process.stdin.isTTY) await launchShell();
+    else program.outputHelp();
+  } else {
+    await program.parseAsync(process.argv);
   }
-  await program.parseAsync(process.argv);
+
+  // Every path lands here — including the shell, which used to return early and
+  // leave the process hanging on its own stdin after `/exit`.
+  //
   // Batch commands use native addons (onnxruntime, sharp/libvips) and the Ink
   // progress view, whose thread pools / stdin handles can keep the event loop
   // alive after the work is finished. For a one-shot CLI the correct behavior is
