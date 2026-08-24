@@ -3,12 +3,19 @@
 > Internal engineering note, deliberately outside `docs/` (that directory is
 > mirrored to the public site by `scripts/sync-webapp-content.mjs`).
 >
-> Updated 2026-08-03. Compare against `BASELINE.md` for the numbers this is
+> Updated 2026-08-24. Compare against `BASELINE.md` for the numbers this is
 > trying to move.
 
 ## The problem this addresses
 
 The develop predictor's bottleneck is its **input**, not its regressor.
+
+> **Read Phase 2.7 before acting on anything below.** The premise stated here
+> survived Phase 2 and was narrowed to one slider by Phase 2.5; Phase 2.7 then
+> built that slider's estimator and measured it against the shipped model, where
+> it is worth +0.3 points against a ±5.2 fold spread. The bullets in this section
+> are the 2026-08-03 reasoning, kept because the later phases are answers to
+> them — not because they still stand unqualified.
 
 - CLIP is trained to be *invariant* to exposure, white balance and contrast —
   the exact quantities the tone sliders depend on.
@@ -248,7 +255,74 @@ but a median of 4 frames each, so only a fifth qualify. Ten photographers giving
 would not. That reframes [[Phase 5]]: ask for *many small catalogs*, not few
 large ones.
 
-## Phase 3 — train the encoder · weeks · gated on Phase 2.5
+## Phase 2.7 — the estimator wired in · RUN 2026-08-24 · **null, and the reason matters**
+
+`tools/export-estimator`. Phase 2.5 said "do this first — days, not weeks": feed
+the synthetic exposure estimate into the frame head for `Exposure2012` and diff
+against `BASELINE.md`. Done. It does not work, and the *shape* of the failure is
+the useful part.
+
+The estimator was fitted exactly as Phase 2.5 fitted it — ridge on the 50
+photometric features to the `ev` label, λ = 0.3, `variant != 0`, `clip <= 0.05`,
+the 48 catalog shoots withheld — frozen as coefficients plus its own
+standardization, and applied as one column of `baseFeatures`. Its held-out label
+recovery reproduces Phase 2: **0.3668 ± 0.0101** against Phase 2's 0.369.
+
+A/B on today's code, same `train_v2.jsonl`, `--boldness 1 --group-by folder`.
+The control masks the column off, which reproduces `BASELINE.md` exactly
+(0.0759 / 0.0342, `Exposure2012` 13.8% end-end / 9.3% in-shoot, 21/77 constant)
+— so the comparison is clean and not against a stale figure.
+
+| | colour headline | colour in-shoot | `Exposure2012` end-end | `Exposure2012` in-shoot |
+|---|---:|---:|---:|---:|
+| control (column masked off) | 0.0759 | 0.0342 | 13.8% | **9.3%** |
+| prior **added** to the 4 tone columns | 0.0774 | 0.0347 | 14.8% | **9.6%** |
+| prior **replacing** the 4 tone columns | 0.0646 | 0.0260 | 5.9% | **3.5%** |
+
+`Exposure2012` carries ±5.2% between folds. **+0.3 is not a movement.**
+
+### It is not a domain gap, which was the obvious suspect
+
+Phase 2.5 read its features off the pairs dataset's 512px renders; the trainer
+reads them off the develop export's. Checked on the 499 matched frames: the two
+readings correlate at **0.986**. Individual columns do shift systematically
+(`satStd` 1.68 training sd, `clipShadow` 1.50) but they cancel in the projection.
+The estimate transfers; it simply buys nothing.
+
+### What was actually wrong with the +5.5%
+
+**Phase 2.5 measured the estimate against a *gated* frame head — against nothing
+at all.** Its stated baseline was "no per-frame modulation: the shoot's own
+level, i.e. deviation zero". But the shipped frame head is not gated for
+`Exposure2012`: it has four hand-picked tone columns and already extracts 9.3%
+in-shoot from them. The question that decides a feature is the *incremental* one,
+and Phase 2.5 never asked it.
+
+The third row settles what the estimator is worth on its own terms: a
+50-column projection whose coefficients come from 18k synthetic degradations is
+a **worse** summary of a frame's exposure state than four photometric columns
+fitted on the photographer's own edits — 3.5% against 9.3%. More training data
+for the projection does not change that; the four columns are not
+information-poor, they are fitted on the right target.
+
+**Lesson, and it generalises past this experiment:** a skill number measured
+against a constant is not a reason to add a feature to a model that is already
+beating that constant. Every future candidate gets measured incrementally against
+what ships, or it does not get measured.
+
+### Consequences
+
+- The column does not ship. `SCHEMA_VERSION` stays at 9 and no retrain is forced.
+- `tools/export-estimator` and `evEstimator.json` stay as the record. Any encoder
+  Phase 3 produces is scored against **this ridge**, not against nothing — the
+  bar is 0.367 label recovery *and* an incremental gain over the four tone
+  columns.
+- **Phase 3's remaining premise is now much weaker.** Its bet was already down to
+  one slider after Phase 2.5; that slider's estimate has now been built and
+  measured, and it is dominated by four columns the tool already has. A stronger
+  estimator of the same quantity has to beat 9.3%, not 0%.
+
+## Phase 3 — train the encoder · weeks · gated on Phase 2.5 and 2.7
 
 A small CNN or fine-tuned compact backbone over the degraded image, predicting
 the degradation vector plus a low-dimensional embedding.
@@ -262,7 +336,11 @@ Hard constraints, both already established:
   PPR10K, INRetouch) is non-commercial, and PPR10K extends the ban to derived
   data.
 
-**Gate:** beats the Phase 2 ridge on held-out label recovery.
+**Gate:** beats the Phase 2 ridge on held-out label recovery (0.367 for `ev`),
+**and** — the gate Phase 2.7 added — improves `Exposure2012` in-shoot skill over
+the four tone columns already in `featureSets.ts`, which stand at 9.3%. Label
+recovery alone is not evidence: the frozen ridge recovers 0.367 and still moves
+the model by +0.3 ± 5.2.
 
 **Known risk, and the check for it:** the encoder learns distance from *as-shot*,
 and as-shot is not "correct" — the camera's metering and AWB carry their own
@@ -300,8 +378,8 @@ path. It should be started in parallel with Phase 1, not after Phase 4.
 
 ```
 Phase 0 ──────────────► ship (independent of everything below)
-Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4
-Phase 5 ──────────────────────────────────► (parallel, long lead)
+Phase 1 ──► Phase 2 ──► Phase 2.5 ──► Phase 2.7 ──► Phase 3 ──► Phase 4
+Phase 5 ─────────────────────────────────────────────────────► (parallel, long lead)
 ```
 
 Phase 2 is the branch point. Everything after it is conditional on a measurement
@@ -310,6 +388,9 @@ of this work ended without a conclusion.
 
 ## Falsified — do not retry
 
+- **The frozen EV estimator as a frame-head feature.** Phase 2.7: +0.3 in-shoot
+  points against a ±5.2 fold spread when added, −5.8 when it replaces the four
+  tone columns. Refitting it on more synthetic samples addresses none of that.
 - Hand-rolled photometric priors as target anchors (median-luma → Exposure,
   clipHigh → Highlights, clipShadow → Shadows). Skill went **negative**:
   Exposure −1.1, Shadows −0.9, Blacks −0.8.

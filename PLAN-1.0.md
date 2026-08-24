@@ -43,7 +43,7 @@ the three promises above.
 ## Work order
 
 ```
-now, days      A1  EV estimator into the frame head      gate: Exposure2012 in-shoot > 9.3%
+CLOSED         A1  EV estimator into the frame head      GATE FAILED — reverted
 now, days      A2  tempMeasured anchor                   gate: Temperature MAE −22 K
 now, week      A3  B&W branch restructure                gate: in-shoot > −0.0021
 now, days      A4  drop negative-skill parameters        gate: no shipped param < 0
@@ -64,90 +64,66 @@ Track A is the only one with a **hard deadline**: every change to the delta
 space or the feature vector must land inside the pre-1.0 schema window. After
 the freeze each one costs a major.
 
+A1 closed as a null on 2026-08-24 (below). It cost a day and removed the largest
+unmeasured claim in the project, which is what the track is for.
+
 ---
 
 # Track A — the schema window
 
-All four land in **one** `SCHEMA_VERSION` bump (9 → 10), one migration entry,
-one `develop train`. Shipping them separately would force three retrains for
-one benefit.
+A2, A3 and A4 land in **one** `SCHEMA_VERSION` bump (9 → 10), one migration
+entry, one `develop train`. Shipping them separately would force three retrains
+for one benefit. (A1 was the fourth and closed as a null without touching the
+schema.)
 
 **None of them needs a re-export.** Verified against `train_v2.jsonl`:
-`features` is the stored 50-wide colour vector (A1 derives from it), and
-`asShot.tempMeasured` is present on 2421 of 2422 records (A2 reads it). The
-migration is therefore `Required: yes / Affects: profile` — not `dataset`.
+`features` is the stored 50-wide colour vector, and `asShot.tempMeasured` is
+present on 2421 of 2422 records (A2 reads it). The migration is therefore
+`Required: yes / Affects: profile` — not `dataset`.
 
-## A1 — the EV estimator scalar into the frame head
+## A1 — the EV estimator scalar into the frame head · CLOSED 2026-08-24 · **reverted**
 
-**The measured, banked, unspent win.** `ENCODER-PLAN.md` Phase 2.5:
-`+0.0553 ± 0.0035` within-shoot skill on `Exposure2012`, with **22 of 24 shoots
-agreeing on the sign**. It comes from a linear ridge on features the tool
-already computes. Phase 2.5 says "do this first — days, not weeks"; it was run
-2026-08-04 and no commit has touched the develop model since.
+Built, measured, reverted. Full write-up is Phase 2.7 in `ENCODER-PLAN.md`; the
+short version:
 
-### Why it is not redundant with the columns already there
+| | colour in-shoot | `Exposure2012` in-shoot |
+|---|---:|---:|
+| control (column masked off, reproduces `BASELINE.md`) | 0.0342 | **9.3%** |
+| prior added to the four tone columns | 0.0347 | **9.6%** |
+| prior replacing the four tone columns | 0.0260 | **3.5%** |
 
-`Exposure2012`'s frame mask allows four colour columns
-(`lumaMedian`, `lumaMean`, `shadowFloor`, `lumaP99`). The EV estimator is a
-projection of **all 50**, with coefficients fitted on 25,213 synthetic samples
-instead of 553 catalog frames. It is transfer learning through a frozen linear
-map: information the n=553 ridge could never afford to fit, delivered as one
-column.
+`Exposure2012` carries ±5.2% between folds, so +0.3 is not a movement. The
+domain-gap suspicion was checked and cleared: the estimate read off the export's
+render correlates at 0.986 with the one read off the pairs render.
 
-### Steps
+**Why Phase 2.5's +5.5% did not survive contact.** It was measured against a
+*gated* frame head — against no per-frame modulation at all. The shipped head is
+not gated for `Exposure2012`; it has four hand-picked tone columns already
+extracting 9.3%. A feature is decided by its incremental contribution, and that
+question was never asked. The third row above is the answer when it is: a
+projection of 50 columns fitted on 18k synthetic degradations is a *worse*
+summary of a frame's exposure state than four columns fitted on the
+photographer's own edits.
 
-1. **Export the estimator.** Extend `tools/label-recovery` (or add
-   `tools/export-estimator`) to emit the fitted `ev` ridge as JSON:
-   `{ mean[50], std[50], w[50], bias, yspread, ybar, featureNames[50], provenance }`.
-   `fitRidge` in `tools/lib/fit.ts:38` carries its own standardization, so all
-   of it must travel — a bare weight vector is unusable.
-   - Training set: `pairs.jsonl`, `variant !== 0`, `clip <= 0.05`, λ = 0.3.
-   - Pin `featureNames` and assert against `COLOR_FEATURE_NAMES` at load: if the
-     colour block ever reorders, the estimator must fail loudly, not silently
-     read the wrong columns.
+**What was kept.** `tools/export-estimator` and its `evEstimator.json` — the
+artifact is the record, and any encoder Phase 3 produces is now scored against
+*this ridge* rather than against nothing. Nothing shipped changed:
+`SCHEMA_VERSION` stays at 9 and no retrain is forced.
 
-2. **Check the JSON into the package** — `packages/cli/src/develop/develop/evEstimator.json`
-   plus a loader in `evEstimator.ts` exposing `estimateEv(colour: number[]): number`.
-   ~150 numbers; no model download, no new dependency, works offline.
+**What this changes downstream.**
 
-3. **Add the block to the feature layout.** `packages/cli/src/develop/develop/assemble.ts`:
-   `baseFeatures` becomes `[ embedding | colour | prior | asShot ]` with
-   `PRIOR_DIM = 1`. Add `prior: number` to `FeatureLayout`
-   (`develop/featureSets.ts:36`) and thread it through `frameWidth`,
-   `levelWidth`, `frameMask`, `levelMask`, and every construction site of a
-   layout in `train/train.ts`.
-
-4. **Gate the block by parameter, not globally.** In `PARAM_SETS`, only
-   `Exposure2012` gets `prior: true` initially. The measurement covers exactly
-   one slider; `Highlights2012` reads +0.0022 ± 0.0056 and everything else is at
-   or below chance. Opening it wider is a second experiment, not this one.
-
-5. **Bump `SCHEMA_VERSION` to 10** (`develop/schema.ts:219`) — once, for all of
-   Track A.
-
-### Gate
-
-`develop train --data train_v2.jsonl --boldness 1 --group-by folder`, diffed
-against `BASELINE.md`:
-
-- **`Exposure2012` in-shoot > 9.3%** and outside the ±fold spread. Phase 2.5
-  predicts roughly 9.3 → 14–15%.
-- Colour headline within-shoot skill ≥ 0.0342 (no regression elsewhere).
-- If in-shoot does not move outside ±fold: **revert the block, do not tune it.**
-  A null here also kills Track E, and that is a useful answer.
-
-### Tests
-
-- `packages/cli/test/unit/evEstimator.test.ts` — new. Loader validates the JSON
-  shape; `estimateEv` reproduces a known `predict()` output from a small fixture
-  (fit a 3-feature ridge in the test, round-trip it through the JSON format,
-  assert equality to 1e-9); a `featureNames` mismatch throws.
-- `packages/cli/test/unit/featureAssembly.test.ts` — extend. `baseFeatures`
-  width is `embedding + 50 + 1 + AS_SHOT_DIM`; the prior column sits at the
-  documented index; `deviationFrom` subtracts it like any other column.
-- `packages/cli/test/unit/labelSets.test.ts` — extend. `frameMask` opens the
-  prior column for `Exposure2012` and closes it for every other parameter;
-  `frameWidth`/`levelWidth` account for it.
+- **Track A is now three items, not four**, and the schema window is
+  correspondingly cheaper — A2 alone would not have justified a forced retrain,
+  which is exactly the trade Phase 0 flagged. It still needs A3 or A4 to travel
+  with it.
+- **Track E's premise is materially weaker.** Its bet was down to one slider
+  after Phase 2.5; that slider's estimator has now been built and is dominated by
+  columns the tool already has. A stronger estimator of the same quantity has to
+  beat 9.3%, not 0%.
+- **The rule that generalises**, now written into the file: a skill number
+  measured against a constant is not a reason to add a feature to a model already
+  beating that constant. Every future candidate is measured incrementally against
+  what ships.
 
 ## A2 — `tempMeasured` as the Temperature anchor
 
@@ -249,8 +225,7 @@ branches, at `--boldness 0` and `--boldness 1`.
 
 One entry in `packages/cli/src/release-notes/migrations.ts`:
 
-> **0.8.0 — Retrain: the exposure prior, a measured white point, and a B&W
-> branch that fits**
+> **0.8.0 — Retrain: a measured white point, and a B&W branch that fits**
 > **Required:** yes · **Affects:** profile
 
 Must state: no re-export is needed (`develop train` alone is enough); the
@@ -262,7 +237,7 @@ gates on `--check`.
 
 ## A — regenerate the baseline
 
-`BASELINE.md` is regenerated **once**, after all four land, from a single
+`BASELINE.md` is regenerated **once**, after all three land, from a single
 `develop train --boldness 1 --group-by folder` run on the unchanged
 `train_v2.jsonl`. Its own rule applies: a figure is only a baseline for the
 model that produced it, so no intermediate table is written.
@@ -474,9 +449,14 @@ binding here:
 4. Read **within-shoot**, not the headline.
 5. Regenerate `BASELINE.md` when the change lands — once, at the end of Track A.
 
-**A gate that fails is a result, not a setback.** A1 returning nothing outside
-±fold kills Track E and saves weeks; that is the plan working. Revert, record
-the number in `ENCODER-PLAN.md`, do not tune the block until it passes.
+**A gate that fails is a result, not a setback.** This is not hypothetical any
+more: A1 returned +0.3 against ±5.2, was reverted the same day, and the number
+now lives in `ENCODER-PLAN.md` as Phase 2.7. It cost one day and took the
+strongest unmeasured claim in the project off the table.
+
+**Measure incrementally against what ships, never against a constant.** A1's
++5.5% was real and irrelevant, because its baseline was a gated head the model
+does not use. This is the rule that would have caught it before the work started.
 
 **Platform coverage** is handled outside CI: the owner runs the suite on Windows
 and Linux personally. `ci.yml` stays ubuntu-only by decision, not omission.
@@ -485,7 +465,7 @@ and Linux personally. `ci.yml` stays ubuntu-only by decision, not omission.
 
 # Release sequencing
 
-**0.8.0 — the schema window.** Track A entire, plus B1. One migration,
+**0.8.0 — the schema window.** Track A (A2, A3, A4), plus B1. One migration,
 `Required: yes / Affects: profile`. The last release that may break a profile.
 
 **0.9.0 — the contract.** B2, B3, B4, B5. After this, a profile survives a minor

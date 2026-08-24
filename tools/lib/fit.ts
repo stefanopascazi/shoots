@@ -33,6 +33,14 @@ export interface Fitted {
   predict(x: number[]): number;
   /** Mean of the training target — the constant this model has to beat. */
   ybar: number;
+  /** Weights over the *standardized* columns. */
+  coef: number[];
+  /** Intercept in the standardized target space. */
+  bias: number;
+  /** Column mean/std the inputs are standardized by. */
+  stats: ColStats;
+  /** Target sd the standardized prediction is scaled back up by. */
+  yspread: number;
 }
 
 /** Ridge on raw (unstandardized) inputs; standardization is internal. */
@@ -48,6 +56,10 @@ export function fitRidge(X: number[][], y: number[], lambda: number): Fitted {
   const b = fit.bias[0]!;
   return {
     ybar,
+    coef: w,
+    bias: b,
+    stats: fx,
+    yspread,
     predict(x: number[]): number {
       const xs = standardize(x, fx);
       let dot = b;
