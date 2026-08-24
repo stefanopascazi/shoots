@@ -37,7 +37,7 @@ needs first-party catalogs (below), not a better encoder.
 
 ---
 
-## Phase 0 — the as-shot WB prior · CLOSED 2026-08-03 · **already shipped**
+## Phase 0 — the as-shot WB prior · CLOSED 2026-08-03 · **already shipped** · lever rejected 2026-08-24
 
 **The premise was wrong, and the win is already banked.** `Temperature` is
 declared `{ transform: 'logK', ref: 'asShotTemp' }` in `develop/schema.ts`, so
@@ -59,17 +59,59 @@ on `train_v2.jsonl`, 553 edited frames, whole sessions held out over 48 shoots:
 available lever. `Temperature`'s −2.1% in `BASELINE.md` is the *ridge* failing to
 beat this prior, which is why it gates; the prior itself is doing its job.
 
-**The one remaining lever**, and it is small: switching the anchor from
-`tempAsShot` (the WB dial) to `tempMeasured` (what the body metered from the
-light) is worth **+3.7% ± 2.3%**, winning 11 of 12 fold reshuffles — 22 K of MAE.
-It is a one-line change in `refValue`, but it redefines the Temperature delta
-space and so needs a `SCHEMA_VERSION` bump that invalidates every trained
-profile. **Not worth forcing a retrain on its own; bundle it with the next schema
-change.**
+~~**The one remaining lever**, and it is small: switching the anchor from
+`tempAsShot` to `tempMeasured` is worth **+3.7% ± 2.3%**, winning 11 of 12 fold
+reshuffles — 22 K of MAE.~~ **Measured properly on 2026-08-24 and dropped — see
+below.**
 
 *Lesson for this file: the note said "the as-shot prior beats ridge 2x" and that
 was read as an unimplemented lever for three rounds. A recorded skill number
 without its baseline stated is not actionable.*
+
+### `tempMeasured` as the reference · CLOSED 2026-08-24 · **rejected**
+
+`tools/wb-anchor` reproduces the table above (A 874 K, B 469 K, C 453 K) and then
+asks the question the 2026-08-03 measurement did not: is the gain spread across
+shoots, or manufactured by a few?
+
+|  | value |
+|---|---|
+| pooled gain, C over B | 15 K (skill 0.033) — against B's own ±11.9 shuffle spread |
+| shoots C improves | **12 / 28** |
+| per-shoot margin | median **−13 K**, worst −245 K, best +452 K |
+
+The pooled figure is carried by one shoot. `2026-04-25` (n=59, the second-largest
+in the catalog) is where the two references disagree most — |log meas/asShot| =
+0.157 — and it alone accounts for most of the 15 K.
+
+**The mechanism, which is the part worth keeping.** What decides a reference is
+not how close it sits to the chosen Kelvin but how *steady* an offset it needs:
+a gated parameter emits one scalar per shoot, so within-shoot spread of
+`log(chosen / ref)` is the whole story.
+
+| | B (`tempAsShot`) | C (`tempMeasured`) |
+|---|---:|---:|
+| mean within-shoot sd of log(chosen/ref) | **0.0835** | 0.0842 |
+| shoots where the reference is **exact** (one ratio explains the whole shoot) | **8 / 28** | **0 / 28** |
+| shoots needing a steadier offset | 18 | 10 |
+
+`tempAsShot` is exact in 8 shoots of 28 because the photographer's chosen Kelvin
+is a fixed ratio of *the dial they set* — they picked a white balance and either
+kept it or moved it by one uniform amount. `tempMeasured` re-meters frame by
+frame, so substituting it injects variation into precisely the shoots that had
+none to explain, and every one of those 8 exact shoots is destroyed. On 207 of
+553 frames the two values are identical anyway, so the change is a no-op there
+and noise on most of the rest.
+
+**Rejected.** `Temperature` keeps `ref: 'asShotTemp'`. 15 K of pooled MAE, driven
+by one shoot, at the price of invalidating every trained profile, is not a trade.
+
+**And it is the same error as Phase 2.7, in a different disguise.** There the
+baseline was wrong (a gated head, not the shipped one); here the *aggregation*
+was wrong — a pooled mean over shoots of wildly different size, reported without
+the per-shoot breakdown that Phase 2.5 had already shown to be the load-bearing
+column. Both notes recorded a real number. Neither recorded the number that
+decides anything.
 
 ## Phase 1 — the dataset · BUILT 2026-08-03 · `test/datapairs`
 
@@ -391,6 +433,9 @@ of this work ended without a conclusion.
 - **The frozen EV estimator as a frame-head feature.** Phase 2.7: +0.3 in-shoot
   points against a ±5.2 fold spread when added, −5.8 when it replaces the four
   tone columns. Refitting it on more synthetic samples addresses none of that.
+- **`tempMeasured` as the `Temperature` reference.** Phase 0, closed 2026-08-24:
+  15 K of pooled MAE carried by one shoot, 12/28 shoots improved, and it destroys
+  all 8 shoots where `tempAsShot` is an exact reference. `tools/wb-anchor`.
 - Hand-rolled photometric priors as target anchors (median-luma → Exposure,
   clipHigh → Highlights, clipShadow → Shadows). Skill went **negative**:
   Exposure −1.1, Shadows −0.9, Blacks −0.8.

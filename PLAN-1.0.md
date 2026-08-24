@@ -5,9 +5,11 @@
 >
 > Written 2026-08-24 against `0.7.3`. Companion to
 > `packages/cli/src/develop/BASELINE.md` (the numbers to beat) and
-> `packages/cli/src/develop/ENCODER-PLAN.md` (where tracks A1, D and E come
+> `packages/cli/src/develop/ENCODER-PLAN.md` (where tracks A1, A2, D and E come
 > from). This file supersedes neither: it says what ships for 1.0 and in what
 > order.
+>
+> Updated 2026-08-24: A1 and A2 both measured and closed as nulls.
 
 ## What 1.0 promises
 
@@ -44,10 +46,10 @@ the three promises above.
 
 ```
 CLOSED         A1  EV estimator into the frame head      GATE FAILED — reverted
-now, days      A2  tempMeasured anchor                   gate: Temperature MAE −22 K
+CLOSED         A2  tempMeasured anchor                   GATE FAILED — rejected
 now, week      A3  B&W branch restructure                gate: in-shoot > −0.0021
 now, days      A4  drop negative-skill parameters        gate: no shipped param < 0
-               └─► ONE SCHEMA_VERSION 9→10, one migration, one retrain
+               └─► A3 alone now needs the schema bump; A4 does not
 
 now, parallel  C   collect 30 shoots × 10 photographers  long lead — starts first
 now, days      B1  remove --xmp
@@ -64,22 +66,24 @@ Track A is the only one with a **hard deadline**: every change to the delta
 space or the feature vector must land inside the pre-1.0 schema window. After
 the freeze each one costs a major.
 
-A1 closed as a null on 2026-08-24 (below). It cost a day and removed the largest
-unmeasured claim in the project, which is what the track is for.
+**Both delta-space changes have now closed as nulls** (A1 and A2, 2026-08-24).
+That is a better outcome than it sounds: the deadline existed because changes to
+the delta space are majors after the freeze, and there are none left wanting to
+land. What remains of Track A is A3, which changes the B&W parameter set and so
+still needs one bump, and A4, which needs no schema change at all. The pressure
+on the window has largely gone, and 1.0 is closer, not further.
 
 ---
 
 # Track A — the schema window
 
-A2, A3 and A4 land in **one** `SCHEMA_VERSION` bump (9 → 10), one migration
-entry, one `develop train`. Shipping them separately would force three retrains
-for one benefit. (A1 was the fourth and closed as a null without touching the
-schema.)
+A1 and A2 both closed as nulls without touching the schema, so what is left is
+A3 (which changes the B&W parameter set and needs the bump) and A4 (which does
+not). They still travel together: one `SCHEMA_VERSION` bump (9 → 10), one
+migration entry, one `develop train`.
 
-**None of them needs a re-export.** Verified against `train_v2.jsonl`:
-`features` is the stored 50-wide colour vector, and `asShot.tempMeasured` is
-present on 2421 of 2422 records (A2 reads it). The migration is therefore
-`Required: yes / Affects: profile` — not `dataset`.
+**Neither needs a re-export.** The migration is `Required: yes / Affects:
+profile` — not `dataset`.
 
 ## A1 — the EV estimator scalar into the frame head · CLOSED 2026-08-24 · **reverted**
 
@@ -125,34 +129,38 @@ artifact is the record, and any encoder Phase 3 produces is now scored against
   beating that constant. Every future candidate is measured incrementally against
   what ships.
 
-## A2 — `tempMeasured` as the Temperature anchor
+## A2 — `tempMeasured` as the Temperature anchor · CLOSED 2026-08-24 · **rejected**
 
-`ENCODER-PLAN.md` Phase 0: **+3.7% ± 2.3%**, winning 11 of 12 fold reshuffles,
-22 K of held-out MAE (471 K → 449 K). One line, but it redefines the Temperature
-delta space — which is exactly why it waits for a schema bump it can share.
+Measured with `tools/wb-anchor`, which reproduces Phase 0's table (A 874 K,
+B 469 K, C 453 K) and then asks what Phase 0 did not: is the gain spread across
+shoots, or carried by a few?
 
-### Steps
+| | |
+|---|---|
+| pooled gain of `tempMeasured` over `tempAsShot` | 15 K (skill 0.033), against B's own ±11.9 shuffle spread |
+| shoots it improves | **12 / 28** |
+| per-shoot margin | median **−13 K**, worst −245 K, best +452 K |
 
-1. `develop/schema.ts:38` — add `'measuredTemp'` to `DeltaRef`.
-2. `refValue` (`schema.ts:302`) — `case 'measuredTemp': return meta.tempMeasured ?? meta.tempAsShot ?? 5500`.
-   The double fallback matters: `tempMeasured` comes from EXIF
-   `ColorTempMeasured` (`adapters/acr/ingest.ts:200`) and a body that does not
-   report it must degrade to today's behaviour, not to 5500 K.
-3. `schema.ts:125` — `Temperature` switches `ref: 'asShotTemp'` → `'measuredTemp'`.
+One shoot carries it: `2026-04-25`, n=59, where the two references disagree most.
 
-### Gate
+**The mechanism.** What decides a reference is not how close it sits to the
+chosen Kelvin but how *steady* an offset it needs — a gated parameter emits one
+scalar per shoot, so the within-shoot spread of `log(chosen / ref)` is the whole
+story. `tempAsShot` is **exact in 8 shoots of 28** (spread zero: one ratio
+explains the entire shoot) because the photographer's chosen Kelvin is a fixed
+ratio of the dial they set. `tempMeasured` re-meters frame by frame and destroys
+all 8, while on 207 of 553 frames the two values are identical anyway.
 
-Held-out Temperature MAE ≤ 452 K on `train_v2.jsonl` (from 471 K), whole
-sessions held out. Report the share of records lacking `tempMeasured` alongside
-it: on a catalog where that share is high the win shrinks toward zero, and the
-number must not be read as a regression.
+**Rejected.** `Temperature` keeps `ref: 'asShotTemp'`, `SCHEMA_VERSION` stays 9.
+15 K of pooled MAE from one shoot is not worth invalidating every trained
+profile. Full write-up sits under Phase 0 in `ENCODER-PLAN.md`; `tools/wb-anchor`
+reproduces it in one command.
 
-### Tests
-
-- `packages/cli/test/unit/developSchema.test.ts` — extend. `encodeDelta` /
-  `decodeDelta` round-trip for `Temperature` against `tempMeasured`; the
-  fallback chain resolves `tempMeasured → tempAsShot → 5500` in order; a
-  `measuredTemp` param with both fields null encodes delta 0 at 5500 K.
+**The same error as A1, in a different disguise.** A1's baseline was wrong; A2's
+*aggregation* was wrong — a pooled mean over shoots of wildly different size,
+reported without the per-shoot column Phase 2.5 had already shown to be the
+load-bearing one. Both notes recorded a real number; neither recorded the number
+that decides anything.
 
 ## A3 — restructure the B&W branch
 
@@ -225,7 +233,7 @@ branches, at `--boldness 0` and `--boldness 1`.
 
 One entry in `packages/cli/src/release-notes/migrations.ts`:
 
-> **0.8.0 — Retrain: a measured white point, and a B&W branch that fits**
+> **0.8.0 — Retrain: a black-and-white branch that fits its own evidence**
 > **Required:** yes · **Affects:** profile
 
 Must state: no re-export is needed (`develop train` alone is enough); the
@@ -237,7 +245,7 @@ gates on `--check`.
 
 ## A — regenerate the baseline
 
-`BASELINE.md` is regenerated **once**, after all three land, from a single
+`BASELINE.md` is regenerated **once**, after A3 and A4 land, from a single
 `develop train --boldness 1 --group-by folder` run on the unchanged
 `train_v2.jsonl`. Its own rule applies: a figure is only a baseline for the
 model that produced it, so no intermediate table is written.
@@ -454,9 +462,20 @@ more: A1 returned +0.3 against ±5.2, was reverted the same day, and the number
 now lives in `ENCODER-PLAN.md` as Phase 2.7. It cost one day and took the
 strongest unmeasured claim in the project off the table.
 
-**Measure incrementally against what ships, never against a constant.** A1's
-+5.5% was real and irrelevant, because its baseline was a gated head the model
-does not use. This is the rule that would have caught it before the work started.
+Two rules came out of A1 and A2, and between them they would have caught both
+before either was started:
+
+1. **Measure incrementally against what ships, never against a constant.** A1's
+   +5.5% was real and irrelevant, because its baseline was a gated head the model
+   does not use.
+2. **Report the per-shoot breakdown, never a pooled mean alone.** A2's 15 K was
+   real and came from one shoot out of 28. Phase 2.5 had already established that
+   the sign-agreement column beats the pooled figure; A2's note predates that
+   lesson and was never revisited against it.
+
+Both failures share a shape: a number that was true, recorded without the
+comparison that makes it actionable. A recorded result now carries its baseline
+and its per-shoot spread, or it is not a result.
 
 **Platform coverage** is handled outside CI: the owner runs the suite on Windows
 and Linux personally. `ci.yml` stays ubuntu-only by decision, not omission.
@@ -465,7 +484,7 @@ and Linux personally. `ci.yml` stays ubuntu-only by decision, not omission.
 
 # Release sequencing
 
-**0.8.0 — the schema window.** Track A (A2, A3, A4), plus B1. One migration,
+**0.8.0 — the schema window.** Track A (A3, A4), plus B1. One migration,
 `Required: yes / Affects: profile`. The last release that may break a profile.
 
 **0.9.0 — the contract.** B2, B3, B4, B5. After this, a profile survives a minor
