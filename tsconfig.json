@@ -1,0 +1,12 @@
+{
+  // One program for the whole monorepo.
+  //
+  // Every package's tsconfig is the same file with a different `include`, and
+  // `@shoots/*` resolves to source (see tsconfig.base.json) — so checking the
+  // CLI already pulled core, imaging, inference and match into its program.
+  // Running the per-package check five times re-checked the same files four
+  // extra times; this is that work, once. The per-package configs stay for
+  // editors and for `npm run typecheck -w @shoots/<pkg>` while working on one.
+  "extends": "./tsconfig.base.json",
+  "include": ["packages/*/src"]
+}

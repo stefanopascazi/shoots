@@ -106,11 +106,15 @@ npm run dev -w @shoots/cli
 ### Type checking
 
 ```sh
-npm run typecheck                 # tsc --noEmit per package
+npm run typecheck                 # tsc --noEmit, once, over every package
+npm run typecheck -w @shoots/cli  # just one, while working on it
 ```
 
-> **Build first.** `typecheck` needs cross-package `.d.ts` files to exist, so run
-> `npm run build` before it on a clean checkout.
+> No build needed. `@shoots/*` resolves to source (see `tsconfig.base.json`), so
+> a fresh clone typechecks before anything has been built. The root config is
+> one program over every `packages/*/src`: checking the CLI already pulled the
+> other packages in, so running the per-package check five times was the same
+> work four extra times.
 
 ### Clean
 
@@ -361,9 +365,9 @@ npm version patch      # or minor / major
 
 That triggers:
 
-- `preversion` → `npm run typecheck && npm run build && npm test`, then
+- `preversion` → `npm run typecheck && npm test`, then
   `npm run docs:migrations -- --check` — a stale `docs/migrations.md` stops the
-  release before the bump
+  release before the bump. (`npm test` builds; the release used to build twice)
 - `version` → `bun scripts/check-release-version.ts`, which **refuses a number
   that disagrees with the migration notes**: a release carrying an entry that
   invalidates a stored profile or dataset cannot go out as a patch, and a note
@@ -436,7 +440,9 @@ See [Preference learning](./preference-learning.md).
 ## Testing
 
 ```sh
-npm test              # builds the CLI, then `bun test packages/cli/test`
+npm test              # builds every package, then runs the suite
+npm run test:built    # the suite alone, against the dist already built
+npm run test:unit     # the fast path: unit tests only, no build
 ```
 
 The suite lives in `packages/cli/test` and drives the built CLI as a black box —

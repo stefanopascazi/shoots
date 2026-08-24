@@ -40,7 +40,9 @@ jobs:
 
       - run: npm ci
       - run: npm run typecheck
-      # `npm test` builds too. Kept as its own step so a build break is reported
-      # as one, instead of arriving as a wall of module-resolution failures.
+      # Build and test are separate steps so a build break is reported as one,
+      # instead of arriving as a wall of module-resolution failures — hence
+      # `test:built`, which runs the suite against the dist just built rather
+      # than building it a second time.
       - run: npm run build
-      - run: npm test
+      - run: npm run test:built
