@@ -89,6 +89,11 @@ before anything is written. `--plain` asks the same questions one line at a
 time — press enter to take every default. Without a terminal it refuses rather
 than guessing, so use `--template` for an unattended file.
 
+Inside the `shoots` shell, `/pipeline init` runs the same wizard in-process
+(the shell owns the terminal, so a child process has no stdin to ask with).
+It accepts `[file]`, `--var` and `--name` there; `--template`, `--plain` and
+`--stdout` are spawned as an ordinary command, exactly as they are outside.
+
 Three presets seed the step list, which you then edit:
 
 | Template | Steps |

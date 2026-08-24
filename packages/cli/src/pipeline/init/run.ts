@@ -78,6 +78,52 @@ function validateGenerated(yaml: string, program: Command): string[] {
   }
 }
 
+export interface RenderedPipeline {
+  yaml: string;
+  steps: number;
+  /** Anything the command tree objects to. Empty is the normal case. */
+  issues: string[];
+}
+
+/** Answers → the finished file text, checked against the real commands. */
+export function renderPipelineDraft(
+  answers: Answers,
+  context: CatalogContext,
+  fileName: string,
+  program: Command,
+): RenderedPipeline {
+  const draft = buildDraft(answers, context);
+  const yaml = renderPipelineYaml(draft, { header: draftHeader(fileName) });
+  return { yaml, steps: draft.steps.length, issues: validateGenerated(yaml, program) };
+}
+
+export interface WrittenPipeline extends RenderedPipeline {
+  file: string;
+  fileName: string;
+  /** The file was already there and has been replaced. */
+  replaced: boolean;
+}
+
+/**
+ * Render and write, in one call.
+ *
+ * Shared with the shell's in-process wizard: both front-ends must produce the
+ * same file, validated the same way, or "it worked in the shell" becomes a real
+ * sentence somebody has to debug.
+ */
+export async function writePipelineDraft(
+  answers: Answers,
+  context: CatalogContext,
+  file: string,
+  program: Command,
+): Promise<WrittenPipeline> {
+  const fileName = path.basename(file);
+  const replaced = existsSync(file);
+  const rendered = renderPipelineDraft(answers, context, fileName, program);
+  await writeFile(file, rendered.yaml, 'utf8');
+  return { ...rendered, file, fileName, replaced };
+}
+
 export async function runPipelineInit(
   target: string | undefined,
   options: PipelineInitOptions,
@@ -152,32 +198,29 @@ export async function runPipelineInit(
 
   warnUnusedVars(answers, overrides, context);
 
-  const draft = buildDraft(answers, context);
-  const yaml = renderPipelineYaml(draft, { header: draftHeader(fileName) });
-
-  const issues = validateGenerated(yaml, program);
-  for (const issue of issues) logWarn(issue);
-
   if (options.stdout) {
+    const { yaml, issues } = renderPipelineDraft(answers, context, fileName, program);
+    for (const issue of issues) logWarn(issue);
     process.stdout.write(yaml);
     return;
   }
 
-  await writeFile(file, yaml, 'utf8');
+  const written = await writePipelineDraft(answers, context, file, program);
+  for (const issue of written.issues) logWarn(issue);
 
   if (io.json) {
+    const draft = buildDraft(answers, context);
     printJson({
       command: 'pipeline init',
       file,
       pipeline: draft.name ?? null,
       steps: draft.steps.map((step) => ({ id: step.id, run: step.run })),
-      issues,
+      issues: written.issues,
     });
     return;
   }
 
-  const count = selectedSteps(answers).length;
-  printHuman(io, `\n✓ ${exists ? 'replaced' : 'wrote'} ${fileName} — ${count} step(s)`);
+  printHuman(io, `\n✓ ${written.replaced ? 'replaced' : 'wrote'} ${fileName} — ${written.steps} step(s)`);
   printHuman(io, '\nNext:');
   printHuman(io, `  shoots pipeline ${fileName} --dry-run   # see the commands, run nothing`);
   printHuman(io, `  shoots pipeline ${fileName}`);
@@ -197,6 +240,10 @@ async function runInkWizard(
   ]);
 
   let result: Answers | null = null;
+  // The component never unmounts itself (in the shell it is one overlay among
+  // several); out here, finishing the wizard is finishing the command. The
+  // callback only ever fires on a keypress, so `app` is assigned by then.
+  let teardown: (() => void) | undefined;
   const app = render(
     React.createElement(InitWizard, {
       context,
@@ -205,9 +252,11 @@ async function runInkWizard(
       exists,
       onDone: (answers: Answers | null) => {
         result = answers;
+        teardown?.();
       },
     }),
   );
+  teardown = () => app.unmount();
   await app.waitUntilExit();
   return result;
 }

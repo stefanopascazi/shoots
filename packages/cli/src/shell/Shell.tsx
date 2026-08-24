@@ -28,6 +28,9 @@ import { openInSystemViewer } from './triage/open.js';
 import { ReviewOverlay } from './triage/ReviewOverlay.js';
 import { commitDecision, runTriage, type ReviewDecision, type ReviewItem } from './triage/triageService.js';
 import { isSemanticLabel, SEMANTIC_LABELS, type SemanticLabel } from '../triage/schema.js';
+import type { Answers } from '@shoots/core';
+import { InitWizard } from '../pipeline/init/InitWizard.js';
+import { finishInit, InitArgumentError, isInteractiveInit, prepareInit, type InitSession } from './pipelineInit.js';
 import { AUTHOR, VERSION } from '../version.js';
 
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
@@ -179,6 +182,13 @@ export function Shell({ mouse }: ShellProps = {}) {
   // Interactive triage: analysis progress, then a review queue of rescued frames.
   const [triageBusy, setTriageBusy] = useState<{ done: number; total: number } | null>(null);
   const [triage, setTriage] = useState<TriageSession | null>(null);
+  // `/pipeline init`: the wizard runs here, since a child process has no stdin.
+  const [init, setInit] = useState<InitSession | null>(null);
+  // The same keypress reaches both useInput handlers, and state updates land a
+  // render later — so the key that closes the wizard would be typed into the
+  // prompt underneath it. This ref closes that window: set before the wizard
+  // opens, cleared a tick after it closes.
+  const initActive = useRef(false);
   // Scrollback: how many lines the viewport is scrolled up from the bottom.
   // 0 = pinned to the latest output (live). Driven by PgUp/PgDn/Home/End since
   // the alt screen buffer disables the terminal's own scroll.
@@ -335,6 +345,14 @@ export function Shell({ mouse }: ShellProps = {}) {
       return;
     }
 
+    // ---- pipeline init: same reason — it has questions to ask, and a child
+    // process here gets no stdin. `--template` and friends still spawn. ----
+    if (name === 'pipeline' && isInteractiveInit(args)) {
+      pushEcho(line);
+      startPipelineInit(args);
+      return;
+    }
+
     // ---- CLI commands, spawned out-of-process ----
     const spec = findCliCommand(name);
     if (!spec) {
@@ -379,6 +397,54 @@ export function Shell({ mouse }: ShellProps = {}) {
       setRunning(null);
     });
   };
+
+  // ---- pipeline init (in-process; `--template` stays a spawnable one-liner) ----
+  function startPipelineInit(args: string[]): void {
+    void (async () => {
+      try {
+        const session = await prepareInit(args, cwd);
+        initActive.current = true;
+        setInit(session);
+      } catch (err) {
+        const detail = err instanceof InitArgumentError ? err.message : String(err);
+        pushLines([
+          [span(`  ✗ ${detail}`, { color: 'red' })],
+          [span('    /pipeline init [file] [--var name=value] [--name <name>]', { color: 'cyan' })],
+          BLANK,
+        ]);
+      }
+    })();
+  }
+
+  function finishPipelineInit(session: InitSession, answers: Answers | null): void {
+    setInit(null);
+    setTimeout(() => {
+      initActive.current = false;
+    }, 0);
+    if (!answers) {
+      pushLines([[span('  nothing written', { dim: true })], BLANK]);
+      return;
+    }
+    void (async () => {
+      try {
+        const written = await finishInit(session, answers);
+        pushLines([
+          [
+            span(`  ✓ ${written.replaced ? 'replaced' : 'wrote'} ${written.fileName}`, { color: 'green' }),
+            span(` — ${written.steps} step(s)`, { dim: true }),
+          ],
+          ...written.issues.map((issue): Line => [span(`  ! ${issue}`, { color: 'yellow' })]),
+          [span(`  /pipeline ${written.fileName} --dry-run`, { color: 'cyan' }), span('   see the commands, run nothing', { dim: true })],
+          BLANK,
+        ]);
+      } catch (err) {
+        pushLines([
+          [span(`  ✗ could not write it: ${err instanceof Error ? err.message : String(err)}`, { color: 'red' })],
+          BLANK,
+        ]);
+      }
+    })();
+  }
 
   // ---- interactive triage (in-process; the batch `cull` stays scriptable) ----
   const numOrUndef = (s: string | undefined): number | undefined => {
@@ -566,6 +632,9 @@ export function Shell({ mouse }: ShellProps = {}) {
       return;
     }
 
+    // ---- the pipeline wizard owns the keyboard while it is open ----
+    if (init || initActive.current) return; // InitWizard has its own useInput
+
     // ---- interactive triage takes over the keyboard while reviewing ----
     if (triageBusy) return; // analysis in progress: ignore input
     if (triage) {
@@ -658,13 +727,18 @@ export function Shell({ mouse }: ShellProps = {}) {
   const usageRows = activeSpec && suggestions.length === 0 ? 1 : 0;
   // Rough height of the review overlay: border + header + heatmap + legend + keys.
   const reviewRows = triage ? triage.items[triage.index].focusMap.rows + 9 : 0;
-  const bottomRows = triage
-    ? reviewRows
-    : triageBusy
-      ? 1
-      : running
-        ? 1 + runningTail.length
-        : 3 /* bordered input */ + suggestionRows + usageRows + 1; /* status bar */
+  // The wizard is the tallest overlay (its review screen previews the file), so
+  // it gets a fixed slice of the terminal rather than a guess per question.
+  const initRows = Math.max(12, Math.min(32, rows - 6));
+  const bottomRows = init
+    ? initRows
+    : triage
+      ? reviewRows
+      : triageBusy
+        ? 1
+        : running
+          ? 1 + runningTail.length
+          : 3 /* bordered input */ + suggestionRows + usageRows + 1; /* status bar */
   const rawVisible = Math.max(3, rows - bottomRows - 1);
   const maxOffset = Math.max(0, lines.length - rawVisible);
   const clampedOffset = Math.min(Math.max(0, scrollOffset), maxOffset);
@@ -695,7 +769,15 @@ export function Shell({ mouse }: ShellProps = {}) {
         ))}
       </Box>
 
-      {triage ? (
+      {init ? (
+        <InitWizard
+          context={init.context}
+          initial={init.initial}
+          fileName={init.fileName}
+          exists={init.exists}
+          onDone={(answers) => finishPipelineInit(init, answers)}
+        />
+      ) : triage ? (
         <ReviewOverlay
           item={triage.items[triage.index]}
           index={triage.index}

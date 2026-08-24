@@ -8,47 +8,13 @@
  * be handed back until the review screen is confirmed.
  */
 import { describe, expect, test } from 'bun:test';
-import { PassThrough } from 'node:stream';
 import { createElement } from 'react';
 import { render } from 'ink';
 import { makeContext, type Answers } from '@shoots/core';
 import { InitWizard } from '../../src/pipeline/init/InitWizard.js';
+import { DOWN, ENTER, ESC, SPACE, fakeTerminal, sleep } from './inkTerminal.js';
 
 const CONTEXT = makeContext({ profiles: ['generic', 'wedding'], editors: ['acr'], labels: ['reject'] });
-
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * Just enough of a TTY for Ink. A real stream, not a bare emitter: Ink decodes
- * stdin itself, so a stubbed `setEncoding` would silently hand it Buffers and
- * every keypress would be dropped.
- */
-function fakeTerminal() {
-  const stdin = new PassThrough() as PassThrough & {
-    isTTY: boolean;
-    setRawMode(): void;
-    ref(): void;
-    unref(): void;
-  };
-  stdin.isTTY = true;
-  stdin.setRawMode = () => {};
-  stdin.ref = () => {}; // Ink refs stdin when it turns raw mode on
-  stdin.unref = () => {};
-
-  // Only the newest frame is interesting: Ink redraws the whole screen on every
-  // update, so accumulating them would make every assertion pass on history.
-  const frames: string[] = [];
-  const stdout = new PassThrough() as PassThrough & { columns: number; rows: number };
-  stdout.columns = 100;
-  stdout.rows = 40;
-  stdout.write = ((data: string) => {
-    frames.push(data);
-    return true;
-  }) as PassThrough['write'];
-
-  const screen = (): string => [...frames].reverse().find((frame) => frame.includes('◉')) ?? '';
-  return { stdin, stdout, screen };
-}
 
 interface Session {
   press(input: string): Promise<void>;
@@ -94,9 +60,6 @@ function start(initial: Answers = {}): Session {
 }
 
 const ENTER = '\r';
-const DOWN = '[B';
-const ESC = '';
-const SPACE = ' ';
 
 /** Enter until the review screen appears (or the safety bound is hit). */
 async function pressThrough(session: Session, times = 20): Promise<void> {

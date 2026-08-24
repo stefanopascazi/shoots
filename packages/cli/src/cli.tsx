@@ -1,60 +1,18 @@
 /**
  * shoots — scriptable batch automation for photography workflows.
- * Entry point: command registration only; all logic lives in commands/*.
+ * Entry point: argv, the shell, and process lifetime. The command tree itself
+ * is built in program.ts; all logic lives in commands/*.
  *
  * `shoots` with no arguments on a TTY opens the interactive shell.
  */
-import { Command } from 'commander';
-import { registerImportCommand } from './commands/import.js';
-import { registerRenameCommand } from './commands/rename.js';
-import { registerExifCommand } from './commands/exif.js';
-import { registerCullCommand } from './commands/cull.js';
-import { registerRateCommand } from './commands/rate.js';
-import { registerTriageCommand } from './commands/triage.js';
-import { registerEmbeddingsCommand } from './commands/embeddings.js';
-import { registerMatchCommand } from './commands/match.js';
-import { registerDevelopCommand } from './commands/develop.js';
-import { registerPipelineCommand } from './commands/pipeline.js';
-import { registerScheduleCommand } from './commands/schedule.js';
-import { registerCacheCommand } from './commands/cache.js';
-import { registerSetupCommand } from './commands/setup.js';
-import { registerDoctorCommand } from './commands/doctor.js';
-import { registerUpdateCommand } from './commands/update.js';
-import { registerReleaseNotesCommand } from './commands/release-notes.js';
+import { buildProgram } from './program.js';
 import { assertShellCatalogInSync } from './shell/catalog.js';
 import { installCrashHandlers } from './crash.js';
-import { VERSION } from './version.js';
 
 // Before anything else: keep the runtime's own crash banner out of our output.
 installCrashHandlers();
 
-const program = new Command();
-
-program
-  .name('shoots')
-  .description(
-    'Batch automation for photography workflows: import, rename, tag, cull, rate.\n' +
-      'An orchestration layer for your pipeline — not an editor, not a DAM.\n\n' +
-      'Run with no arguments to open the interactive shell.',
-  )
-  .version(VERSION);
-
-registerImportCommand(program);
-registerRenameCommand(program);
-registerExifCommand(program);
-registerCullCommand(program);
-registerRateCommand(program);
-registerTriageCommand(program);
-registerEmbeddingsCommand(program);
-registerMatchCommand(program);
-registerDevelopCommand(program);
-registerPipelineCommand(program);
-registerScheduleCommand(program);
-registerCacheCommand(program);
-registerSetupCommand(program);
-registerDoctorCommand(program);
-registerUpdateCommand(program);
-registerReleaseNotesCommand(program);
+const program = buildProgram();
 
 program
   .command('shell')

@@ -9,7 +9,7 @@
  * questions exist is derived from the answers, never stored.
  */
 import React, { useMemo, useState } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import {
   buildDraft,
   defaultOf,
@@ -31,6 +31,11 @@ interface InitWizardProps {
   fileName: string;
   /** True when the target file is already there: the review screen says so. */
   exists: boolean;
+  /**
+   * Called once, with the answers to write or null if the wizard was abandoned.
+   * Tearing the screen down is the caller's job — inside the shell this is one
+   * overlay among several, and exiting the Ink app would close the shell.
+   */
   onDone(answers: Answers | null): void;
 }
 
@@ -44,7 +49,6 @@ function summarize(value: AnswerValue): string {
 }
 
 export function InitWizard({ context, initial, fileName, exists, onDone }: InitWizardProps): React.JSX.Element {
-  const { exit } = useApp();
   const [answers, setAnswers] = useState<Answers>(initial);
   const [asked, setAsked] = useState<string[]>([]);
   const [text, setText] = useState('');
@@ -106,7 +110,6 @@ export function InitWizard({ context, initial, fileName, exists, onDone }: InitW
     if (key.escape) {
       if (asked.length === 0) {
         onDone(null);
-        exit();
         return;
       }
       back();
@@ -117,10 +120,8 @@ export function InitWizard({ context, initial, fileName, exists, onDone }: InitW
       // Review screen: write it, go back one answer, or leave with nothing.
       if (key.return || input.toLowerCase() === 'y') {
         onDone(answers);
-        exit();
       } else if (input.toLowerCase() === 'n' || input.toLowerCase() === 'q') {
         onDone(null);
-        exit();
       } else if (input.toLowerCase() === 'b') {
         back();
       }
