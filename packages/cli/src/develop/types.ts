@@ -95,8 +95,34 @@ export interface HeadEval {
   /** De-shrinking slope actually applied at prediction time. */
   response: number;
   gated: boolean;
-  gateReason?: 'low-skill' | 'degenerate';
+  gateReason?: GateReason;
 }
+
+/**
+ * Why a head or a parameter emits a constant.
+ *
+ * `negative-skill` is the unconditional floor: whatever the gate threshold says,
+ * a parameter whose end-to-end held-out skill is below zero is *worse than the
+ * photographer's own average*, and shipping it would be a prediction that costs
+ * accuracy to make. It is separate from `low-skill`, which means "positive but
+ * not clear of its own noise" — a judgement call the boldness knob moves.
+ */
+export type GateReason = 'low-skill' | 'negative-skill' | 'degenerate';
+
+/**
+ * What a parameter actually does at prediction time.
+ *
+ * The three answers the model is allowed to give, and the reason abstention is
+ * one of them: a slider the evidence cannot support is left at the photographer's
+ * own constant rather than moved on a guess.
+ */
+export type ParamState =
+  /** Both heads live: the value follows this photograph. */
+  | 'predicted'
+  /** Frame head gated: one value for the whole shoot, honestly stated as such. */
+  | 'leveled'
+  /** Both heads gated: the photographer's catalog-wide constant. */
+  | 'constant';
 
 /** Per-parameter held-out evaluation — the go/no-go evidence. */
 export interface ParamEval {
@@ -147,7 +173,16 @@ export interface ParamEval {
   degenerate: boolean;
   /** Both heads gated: the parameter emits the photographer's constant, full stop. */
   gated: boolean;
-  gateReason?: 'low-skill' | 'degenerate';
+  gateReason?: GateReason;
+  /**
+   * What this parameter does at prediction time — the contract a reader can
+   * check. Derived from the two heads, and stated rather than inferred so a
+   * script does not have to reconstruct it from `gated` and `frame.gated`.
+   *
+   * An anchored slider reports the state of its *heads*, which is not what
+   * inference uses for it: the anchor replaces both. See `anchors` on the branch.
+   */
+  state: ParamState;
 }
 
 /**
@@ -246,6 +281,13 @@ export interface BranchModel {
   withinSessionSkill: number | null;
   /** Params emitting the photographer's constant — both heads gated. */
   gatedParams: string[];
+  /**
+   * Params forced to a constant because their end-to-end skill came out negative
+   * — the model was measurably worse than the photographer's own average for
+   * them. A subset of {@link gatedParams}, listed separately because it is the
+   * one gate reason no threshold can turn off.
+   */
+  negativeSkillParams?: string[];
   /** Params with no per-frame modulation: the frame head is gated. */
   flatParams: string[];
   /** Skill at or below which the level head is gated (0 disables gating). */

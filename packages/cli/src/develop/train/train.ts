@@ -50,6 +50,7 @@ import {
 } from '../develop/schema.js';
 import { baseFeatures, deviationFrom, targetDeltas, actualAbsVec, renderOneHot, AS_SHOT_DIM } from '../develop/assemble.js';
 import { applyMask, frameMask, levelMask, featureSetKey, type FeatureLayout } from '../develop/featureSets.js';
+import { gateReasonFor, paramState } from '../develop/paramState.js';
 import { buildSessionContext, contextFor, sessionKey } from '../develop/session.js';
 import { buildNormalEquations, solveRidge } from './regress.js';
 import { VERSION } from '../../version.js';
@@ -908,8 +909,46 @@ function trainBranch(
     }
   }
 
+  // ── the floor no threshold can lower ───────────────────────────────────────
+  // The gate above asks whether a parameter's skill is clear of its own noise,
+  // and `--boldness` moves that bar on purpose. This asks something the knob has
+  // no business answering: is the model *worse than the photographer's average*?
+  // A negative end-to-end skill says exactly that, and shipping it means paying
+  // accuracy for the privilege of making a prediction.
+  //
+  // It runs here, after the end-to-end pass that produces the number and after
+  // the anchors, because an anchored slider does not predict through the heads —
+  // its row in the end-to-end table describes machinery inference does not use,
+  // and gating on it would silence a slider that works (`Dehaze` reads −0.5% in
+  // the heads and ships at 0.258 tail skill).
+  const negativeSkill: string[] = [];
+  for (let k = 0; k < params.length; k++) {
+    const stats = endToEnd[k];
+    if (!stats) continue;
+    if (levelFit.head.gated[k] && frameFit.head.gated[k]) continue;
+    if (levelFit.degenerate[k] || frameFit.degenerate[k]) continue;
+    if (anchors[params[k]!.key]) continue;
+    if (stats.skill >= 0) continue;
+    negativeSkill.push(params[k]!.key);
+    levelFit.head.gated[k] = true;
+    frameFit.head.gated[k] = true;
+    levelFit.head.response[k] = 1;
+    frameFit.head.response[k] = 1;
+    // The parameter now emits the constant, so its measured numbers have to say
+    // so. Leaving the error of a model that no longer runs would report a
+    // regression the profile cannot produce.
+    if (levelShipped[k]) levelShipped[k]!.skill = 0;
+    if (frameShipped[k]) frameShipped[k]!.skill = 0;
+    stats.modelMae = stats.baselineMae;
+    stats.skill = 0;
+    stats.skillSd = 0;
+    const random = endToEndRandom[k];
+    if (random) { random.modelMae = random.baselineMae; random.skill = 0; random.skillSd = 0; }
+  }
+
   const deltaStats = columnStats(deltas);
   const bothDegenerate = params.map((_, k) => levelFit.degenerate[k]! && frameFit.degenerate[k]!);
+  const forcedConstant = new Set(negativeSkill);
 
   const headEval = (stats: ParamStats | undefined, shipped: ParamStats | undefined, head: HeadModel, degenerate: boolean, k: number): HeadEval => ({
     lambda: head.paramLambda[k]!,
@@ -918,7 +957,7 @@ function trainBranch(
     shippedSkill: round4(shipped?.skill ?? stats?.skill ?? 0),
     response: round4(head.response[k]!),
     gated: head.gated[k]!,
-    ...(head.gated[k] ? { gateReason: degenerate ? ('degenerate' as const) : ('low-skill' as const) } : {}),
+    ...(head.gated[k] ? { gateReason: gateReasonFor(degenerate, forcedConstant.has(params[k]!.key)) } : {}),
   });
 
   const perParam: ParamEval[] = params.map((param, k) => {
@@ -940,8 +979,9 @@ function trainBranch(
       degenerate: bothDegenerate[k]!,
       gated: levelEval.gated && frameEval.gated,
       ...(levelEval.gated && frameEval.gated
-        ? { gateReason: bothDegenerate[k] ? ('degenerate' as const) : ('low-skill' as const) }
+        ? { gateReason: gateReasonFor(bothDegenerate[k]!, forcedConstant.has(param.key)) }
         : {}),
+      state: paramState(levelEval.gated, frameEval.gated),
     };
   });
 
@@ -966,6 +1006,7 @@ function trainBranch(
     imageDependentSkillRandom: skillOf(endToEndRandom),
     withinSessionSkill: skillOf(frameShipped),
     gatedParams: perParam.filter((p) => p.gated).map((p) => p.key),
+    ...(negativeSkill.length > 0 ? { negativeSkillParams: negativeSkill } : {}),
     flatParams: perParam.filter((p) => p.frame.gated && !p.gated).map((p) => p.key),
     gateThreshold,
     frameGateThreshold,

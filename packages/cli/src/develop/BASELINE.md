@@ -4,6 +4,12 @@
 > mirrored to the public site by `scripts/sync-webapp-content.mjs`, and these are
 > one photographer's catalog figures, not user documentation.
 
+> **Superseded in part since 2026-08-24.** A4 forces any parameter with a
+> negative end-to-end skill to the photographer's constant, so every "constant
+> (both heads gated)" count below is low — the colour branch now reads 38/77
+> rather than 21/77, and B&W 13/41. The skill figures themselves are unchanged.
+> The file is regenerated in full once A3 lands; see `PLAN-1.0.md`.
+
 Regenerated whenever the feature vector or the fit changes. **Compare against
 this file, never against numbers quoted in an older run.** Three separate
 conclusions were drawn against stale baselines before this file existed — a

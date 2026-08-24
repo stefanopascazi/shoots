@@ -9,7 +9,8 @@
 > from). This file supersedes neither: it says what ships for 1.0 and in what
 > order.
 >
-> Updated 2026-08-24: A1 and A2 both measured and closed as nulls.
+> Updated 2026-08-24: A1 and A2 measured and closed as nulls, A4 shipped. Two of
+> the three 1.0 promises are now enforced in code rather than asserted here.
 
 ## What 1.0 promises
 
@@ -18,12 +19,14 @@ things, and nothing more:
 
 - **The contract is frozen.** Flags, `--json` keys and exit codes do not change
   without a major. A profile trained on 1.0 keeps working across 1.x.
-- **Every parameter states its own evidence.** A prediction says whether it is
-  per-frame, per-shoot, or abstained — and abstention is a first-class answer,
-  not a failure.
-- **Nothing shipped has negative held-out skill.** Today four colour parameters
-  do (`SaturationAdjustmentMagenta` −6.5%, `RedHue` −3.3%, `GreenHue` −2.2%,
-  `BlueSaturation` −1.8%).
+- **Every parameter states its own evidence.** *Shipped in A4* — every parameter
+  is `predicted`, `leveled` or `constant`, recorded on the profile and reported by
+  `develop train`, `develop status` and `develop predict --json`. Abstention is a
+  first-class answer, not a failure.
+- **Nothing shipped has negative held-out skill.** *Enforced since A4* — the
+  trainer forces any such parameter to the photographer's constant, whatever the
+  gate threshold says. On the reference catalog that is 17 colour parameters and
+  2 B&W ones.
 
 ## What 1.0 does not promise
 
@@ -47,9 +50,9 @@ the three promises above.
 ```
 CLOSED         A1  EV estimator into the frame head      GATE FAILED — reverted
 CLOSED         A2  tempMeasured anchor                   GATE FAILED — rejected
+CLOSED         A4  drop negative-skill parameters        GATE MET — shipped
 now, week      A3  B&W branch restructure                gate: in-shoot > −0.0021
-now, days      A4  drop negative-skill parameters        gate: no shipped param < 0
-               └─► A3 alone now needs the schema bump; A4 does not
+               └─► A3 is the only item left needing the schema bump
 
 now, parallel  C   collect 30 shoots × 10 photographers  long lead — starts first
 now, days      B1  remove --xmp
@@ -77,13 +80,13 @@ on the window has largely gone, and 1.0 is closer, not further.
 
 # Track A — the schema window
 
-A1 and A2 both closed as nulls without touching the schema, so what is left is
-A3 (which changes the B&W parameter set and needs the bump) and A4 (which does
-not). They still travel together: one `SCHEMA_VERSION` bump (9 → 10), one
-migration entry, one `develop train`.
+A1 and A2 both closed as nulls without touching the schema. A4 shipped without
+touching it either. **A3 is the only item left in the window**, and it is the
+only reason a `SCHEMA_VERSION` bump (9 → 10) and a forced retrain are still on
+the table for 0.8.0.
 
-**Neither needs a re-export.** The migration is `Required: yes / Affects:
-profile` — not `dataset`.
+It needs no re-export. The migration is `Required: yes / Affects: profile` — not
+`dataset`.
 
 ## A1 — the EV estimator scalar into the frame head · CLOSED 2026-08-24 · **reverted**
 
@@ -196,38 +199,79 @@ Target: ~5 free parameters, down from 41.
 - `packages/cli/test/unit/anchor.test.ts` — extend, if the anchor selection code
   changes shape.
 
-## A4 — stop shipping parameters with negative skill
+## A4 — stop shipping parameters with negative skill · CLOSED 2026-08-24 · **shipped**
 
-Four colour parameters ship today with negative held-out skill
-(`SaturationAdjustmentMagenta` −6.5%, `RedHue` −3.3%, `GreenHue` −2.2%,
-`BlueSaturation` −1.8%). All four sit inside their own ±fold, so the honest
-reading is "no signal" rather than "actively harmful" — but shipping a
-prediction that cannot beat the constant contradicts promise 3.
+Done. Promise 3 is now enforced by the trainer rather than asserted in this file.
 
-### Steps
+### What shipped
 
-1. In the evaluation pass (`train/evaluate.ts`), record each parameter's final
-   state as one of `predicted` (frame head survives the gate), `leveled` (level
-   head only) or `constant` (both gated).
-2. Force `constant` when held-out skill ≤ 0, regardless of gate threshold.
-3. Store the three-state map in the profile and surface it: `develop status`
-   lists it, `develop predict --json` reports it per parameter, and a human-
-   readable line says how many sliders were moved and how many abstained.
+A floor the `--boldness` knob cannot lower. The existing gate asks whether a
+parameter's skill is clear of its own noise, which is a judgement call and is
+what boldness moves. This asks a different question the knob has no business
+answering: **is the model worse than the photographer's own average?** A negative
+end-to-end held-out skill says exactly that, and shipping it means paying
+accuracy for the privilege of making a prediction.
 
-This is also what makes promise 2 verifiable rather than rhetorical.
+It runs after the end-to-end pass that produces the number and after the anchors,
+because an anchored slider does not predict through the heads — its row in the
+end-to-end table describes machinery inference does not use. `Dehaze` reads
+−0.5% there and ships at 0.258 tail skill; gating on that row would silence a
+slider that works.
 
-### Gate
+A forced parameter has both heads gated, response 1, and its reported numbers
+rewritten to what it now emits (`modelMae = baselineMae`, skill 0) — leaving the
+error of a model that no longer runs would report a regression the profile cannot
+produce.
 
-No parameter in the shipped profile has negative held-out skill, on both
-branches, at `--boldness 0` and `--boldness 1`.
+### The three states, now stated rather than inferred
 
-### Tests
+`packages/cli/src/develop/develop/paramState.ts`. Every parameter is
+`predicted`, `leveled` or `constant`, recorded on the profile and surfaced in
+three places: the `develop train` report, `develop status`, and
+`develop predict --json` (a `parameters` map per branch, plus a line on stderr).
+`gateReason` gained `negative-skill` alongside `low-skill` and `degenerate`.
 
-- `packages/cli/test/unit/evaluate.test.ts` — extend. A parameter with negative
-  skill resolves to `constant`; one with frame-head skill above the gate
-  resolves to `predicted`; one with level-only skill resolves to `leveled`.
-- `packages/cli/test/unit/releaseNotes.test.ts` — unaffected, but the new
-  migration entry needs its row (see B5).
+An anchored slider reports `predicted` whatever its heads did — the anchor
+replaces both, and reading the heads' gates is how `Dehaze` comes back labelled a
+constant.
+
+### Gate — met
+
+`train_v2.jsonl`, whole sessions held out, both boldness settings:
+
+| | colour | B&W |
+|---|---|---|
+| parameters forced to constant | **17** | **2** |
+| negative-skill rows still shipping (boldness 1) | 0 | 0 |
+| negative-skill rows still shipping (boldness 0) | 0 | 0 |
+
+The colour branch forces `Tint`, `RedHue`, `GreenHue`, `GreenSaturation`,
+`BlueHue`, `BlueSaturation`, `PostCropVignetteAmount`, `GrainAmount`,
+`ToneCurvePoint224`, `SaturationAdjustmentGreen`, `SaturationAdjustmentMagenta`,
+`ColorGradeMidtoneHue`, `ColorGradeMidtoneSat` and the four split-toning
+parameters. B&W forces `Blacks2012` and `ToneCurvePoint128`.
+
+The one row left negative is `Dehaze` at −0.5%, which is anchored and therefore
+excluded by design.
+
+### What it did not do, and that is the point
+
+The headline barely moved: 0.0759 / 0.0342 before and after. The 17 forced
+parameters carry **2.07%** of the weighted baseline MAE between them — they were
+small contributors that happened to be wrong, not a hidden reserve of skill.
+Nothing here was ever going to raise a score. What changed is that the profile
+stopped making 19 predictions it measurably could not support.
+
+The colour branch now reports 38/77 constant rather than 21/77. That is the
+honest number, and it is the first time the profile's own report says how many
+sliders it declines to move.
+
+### Schema
+
+None. A4 adds fields to the profile and changes no stored layout, so
+`SCHEMA_VERSION` stays at 9 and no retrain is forced — a profile trained before
+this simply reports no `state` and has it reconstructed from the gates it does
+carry.
 
 ## A — combined migration
 
@@ -235,6 +279,9 @@ One entry in `packages/cli/src/release-notes/migrations.ts`:
 
 > **0.8.0 — Retrain: a black-and-white branch that fits its own evidence**
 > **Required:** yes · **Affects:** profile
+
+A4 needs no entry of its own: it adds fields and changes no stored layout, so an
+old profile keeps working and simply reports fewer details.
 
 Must state: no re-export is needed (`develop train` alone is enough); the
 feedback journal survives; `develop calibrate` must be re-run because the
@@ -245,7 +292,7 @@ gates on `--check`.
 
 ## A — regenerate the baseline
 
-`BASELINE.md` is regenerated **once**, after A3 and A4 land, from a single
+`BASELINE.md` is regenerated **once**, after A3 lands, from a single
 `develop train --boldness 1 --group-by folder` run on the unchanged
 `train_v2.jsonl`. Its own rule applies: a figure is only a baseline for the
 model that produced it, so no intermediate table is written.
@@ -484,7 +531,7 @@ and Linux personally. `ci.yml` stays ubuntu-only by decision, not omission.
 
 # Release sequencing
 
-**0.8.0 — the schema window.** Track A (A3, A4), plus B1. One migration,
+**0.8.0 — the schema window.** A3 and B1 (A4 is already in). One migration,
 `Required: yes / Affects: profile`. The last release that may break a profile.
 
 **0.9.0 — the contract.** B2, B3, B4, B5. After this, a profile survives a minor

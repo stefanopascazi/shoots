@@ -16,7 +16,8 @@ import { buildSessionContext, contextFor, soloSessionCount } from '../develop/se
 import { baseFeatures } from '../develop/assemble.js';
 import { applyMarks, countPending } from '../../triage/apply.js';
 import { makeIo } from '../../io.js';
-import type { DevelopProfile } from '../types.js';
+import type { DevelopProfile, ParamState } from '../types.js';
+import { countStates, stateMap, summariseStates } from '../develop/paramState.js';
 
 export interface PredictArgs {
   data: string;
@@ -191,11 +192,28 @@ export async function runPredict(args: PredictArgs): Promise<void> {
   // Stamped, because `feedback` has to know whether this prediction predates the
   // photographs entering the training set — that ordering is the whole of what
   // makes a later comparison held-out or worthless (see journal.isInSample).
+  // What the profile promised, alongside what it produced. A prediction that
+  // does not say which of its sliders followed the photograph and which are the
+  // photographer's own constant reads as a decision on every one of them.
+  const parameters: Partial<Record<Treatment, Record<string, ParamState>>> = {};
+  for (const treatment of new Set(predictions.map((p) => p.treatment))) {
+    const branch = profile.branches[treatment];
+    if (branch) parameters[treatment] = stateMap(branch);
+  }
+  for (const [treatment, states] of Object.entries(parameters)) {
+    const branch = profile.branches[treatment as Treatment]!;
+    process.stderr.write(
+      `${treatment}: ${summariseStates(countStates(states), branch.negativeSkillParams?.length ?? 0)}\n`,
+    );
+  }
+
   const payload = {
     command: 'develop-predict' as const,
     at: new Date().toISOString(),
     profile: profile.name,
     count: predictions.length,
+    /** Per branch, what each parameter did: predicted | leveled | constant. */
+    parameters,
     predictions,
   };
   if (args.out) {

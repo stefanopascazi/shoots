@@ -14,6 +14,7 @@ import { startSteps } from '../../progress.js';
 import { makeIo } from '../../io.js';
 import { applyIntensities, describeIntensities, review } from '../review/index.js';
 import type { BranchModel } from '../types.js';
+import { countStates, stateMap, summariseStates } from '../develop/paramState.js';
 
 export interface TrainArgs {
   data: string;
@@ -135,6 +136,16 @@ function writeBranch(w: NodeJS.WritableStream, b: BranchModel, lambdaAuto: boole
     }
     w.write('  "tail" is skill on the worst fifth of frames — the ones a constant fails. It is\n');
     w.write('  what selects an anchor; "mean" may be worse, never by more than tail gains.\n\n');
+  }
+  // The contract, stated before the caveats: what this profile will move, what
+  // it will move once per shoot, and what it will leave alone.
+  const states = stateMap(b);
+  w.write(`\n  ${summariseStates(countStates(states), b.negativeSkillParams?.length ?? 0)}\n`);
+  if (b.negativeSkillParams && b.negativeSkillParams.length > 0) {
+    w.write(
+      '  forced to your constant — predicting them lost to your own average: ' +
+        `${b.negativeSkillParams.join(', ')}\n`,
+    );
   }
   if (b.gatedParams.length > 0) {
     const alsoAnchored = b.gatedParams.filter((k) => b.anchors?.[k]).length;

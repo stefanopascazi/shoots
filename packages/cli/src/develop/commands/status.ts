@@ -12,6 +12,7 @@ import { developExportPath, developFeedbackPath, developProfilePath, developShoo
 import { loadJournal, shootCount } from '../feedback/journal.js';
 import { makeIo, printHuman, printJson } from '../../io.js';
 import type { DevelopProfile } from '../types.js';
+import { countStates, stateMap, summariseStates } from '../develop/paramState.js';
 
 export interface StatusArgs {
   json?: boolean;
@@ -103,6 +104,12 @@ export async function runStatus(args: StatusArgs): Promise<void> {
             `${flat}/${branch.perParam.length} params identical across a shoot`,
         );
       }
+      // What the profile actually promises, in the vocabulary a prediction uses.
+      printHuman(
+        io,
+        `                  ${' '.repeat(5)} ` +
+          summariseStates(countStates(stateMap(branch)), branch.negativeSkillParams?.length ?? 0),
+      );
     }
     const calibration = profile.calibration;
     if (calibration) {
