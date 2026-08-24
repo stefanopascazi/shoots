@@ -18,6 +18,7 @@ import {
   ESC,
   SPACE,
   fakeTerminal,
+  pressUntil,
   renderOptions,
   sleep,
   waitFor,
@@ -29,10 +30,19 @@ const CONTEXT = makeContext({ profiles: ['generic', 'wedding'], editors: ['acr']
 
 interface Session {
   press(input: string): Promise<void>;
+  /**
+   * Send a key until the screen shows it landed. Ink drops a key written while
+   * it is swapping stdin handlers between renders, which a loaded machine hits
+   * often enough to matter — see `pressUntil`.
+   */
+  pressFor(input: string, text: string): Promise<void>;
+  shows(text: string): boolean;
   /** Wait for text to reach the screen — rendering is asynchronous. */
   expectScreen(text: string): Promise<void>;
   /** Wait for the wizard to hand its answers back (or to refuse to). */
   settled(): Promise<void>;
+  /** Send a key until the wizard finishes — for the one that ends it. */
+  pressUntilDone(input: string): Promise<void>;
   result(): Answers | null;
   screen(): string;
   /** Tear the app down. */
@@ -65,7 +75,11 @@ function start(initial: Answers = {}): Session {
       await sleep(20); // let the keypress land; the assertions do the waiting
     },
     expectScreen: (text: string) => waitForScreen(terminal, text),
+    pressFor: (input: string, text: string) =>
+      pressUntil(terminal, input, () => terminal.screen().includes(text), { interval: 500 }),
+    shows: (text: string) => terminal.screen().includes(text),
     settled: () => waitFor(() => finished, 'the wizard to finish'),
+    pressUntilDone: (input: string) => pressUntil(terminal, input, () => finished, { interval: 500 }),
     result: () => result,
     screen: terminal.screen,
     done: async () => {
@@ -92,8 +106,7 @@ describe('the Ink wizard', () => {
     await pressThrough(session);
     expect(session.screen()).toContain('version: 2');
 
-    await session.press('y');
-    await session.settled();
+    await session.pressUntilDone('y');
     await session.done();
 
     const answers = session.result()!;
@@ -107,8 +120,7 @@ describe('the Ink wizard', () => {
     await pressThrough(session);
     expect(session.result()).toBeNull(); // on the review screen, still nothing
 
-    await session.press('n');
-    await session.settled();
+    await session.pressUntilDone('n');
     await session.done();
     expect(session.result()).toBeNull();
   }, 20_000);
@@ -117,23 +129,17 @@ describe('the Ink wizard', () => {
     const session = start();
     await session.expectScreen('What are you setting up?');
 
-    await session.press(ENTER); // intent: work on a shoot
-    await session.press(DOWN); // coverage → pick the steps
-    await session.press(ENTER);
-    await session.expectScreen('Which steps?');
-    await session.press(SPACE); // steps: toggle the first choice (import) off
-    // Wait for the toggle to render: pressing enter before the component has
-    // re-rendered would commit the selection the handler closed over.
-    await session.expectScreen('[ ] import');
-    await session.press(ENTER);
+    await session.pressFor(ENTER, 'The whole pass'); // intent: work on a shoot
+    await session.pressFor(DOWN, '❯ Pick the steps');
+    await session.pressFor(ENTER, 'Which steps?');
+    await session.pressFor(SPACE, '[ ] import'); // toggle the offload off
+    await session.pressFor(ENTER, 'Shoot folder');
 
     // Dropping the offload drops the question only the offload needed.
-    await session.expectScreen('Shoot folder');
-    expect(session.screen()).not.toContain('Card or source folder');
+    expect(session.shows('Card or source folder')).toBe(false);
 
     await pressThrough(session);
-    await session.press('y');
-    await session.settled();
+    await session.pressUntilDone('y');
     await session.done();
 
     const answers = session.result()!;
@@ -145,17 +151,12 @@ describe('the Ink wizard', () => {
   test('esc steps back one answer, and cancels outright on the first question', async () => {
     const session = start();
     await session.expectScreen('What are you setting up?');
-    await session.press(ENTER); // intent answered
-    await session.press(ENTER); // coverage answered
-    await session.expectScreen('Card or source folder');
+    await session.pressFor(ENTER, 'The whole pass'); // intent answered
+    await session.pressFor(ENTER, 'Card or source folder'); // coverage answered
 
-    await session.press(ESC);
-    await session.expectScreen('The whole pass'); // back on the previous question
-
-    await session.press(ESC); // back to the intent
-    await session.expectScreen('What are you setting up?');
-    await session.press(ESC); // nothing left to undo: cancel
-    await session.settled();
+    await session.pressFor(ESC, 'The whole pass'); // back on the previous question
+    await session.pressFor(ESC, 'What are you setting up?'); // back to the intent
+    await session.pressUntilDone(ESC); // nothing left to undo: cancel
     await session.done();
     expect(session.result()).toBeNull();
   }, 20_000);

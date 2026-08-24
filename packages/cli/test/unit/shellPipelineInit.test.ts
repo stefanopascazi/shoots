@@ -12,7 +12,7 @@ import path from 'node:path';
 import { createElement } from 'react';
 import { render } from 'ink';
 import { Shell } from '../../src/shell/Shell.js';
-import { ENTER, ESC, fakeTerminal, renderOptions, sleep, waitForScreen } from './inkTerminal.js';
+import { ENTER, ESC, fakeTerminal, pressUntil, renderOptions, waitForScreen } from './inkTerminal.js';
 import { InitArgumentError, isInteractiveInit, parseInitArgs } from '../../src/shell/pipelineInit.js';
 import { DEFAULT_INIT_FILE } from '../../src/pipeline/init/run.js';
 
@@ -70,18 +70,20 @@ describe('the shell opens the wizard in-process', () => {
   test('typing /pipeline init shows the first question, not "needs a terminal"', async () => {
     const terminal = fakeTerminal(110, 40);
     const app = render(createElement(Shell), renderOptions(terminal));
+    const shows = (text: string) => (): boolean => terminal.screen().includes(text);
     try {
       await waitForScreen(terminal, 'Type / for commands');
       terminal.stdin.write('/pipeline init wizard-test.yaml');
-      await sleep(50);
-      terminal.stdin.write(ENTER);
+      await waitForScreen(terminal, '/pipeline init wizard-test.yaml');
 
-      await waitForScreen(terminal, 'What are you setting up?');
+      // Enter is safe to repeat here: on the prompt an empty line does nothing,
+      // and once the wizard is up this stops pressing. Asserting on the header
+      // rather than on the first question keeps a repeat from failing the test.
+      await pressUntil(terminal, ENTER, shows('◉ shoots pipeline init'));
       expect(terminal.screen()).not.toContain('needs a terminal');
 
-      // Esc on the first question abandons it and hands the prompt back.
-      terminal.stdin.write(ESC);
-      await waitForScreen(terminal, 'nothing written');
+      // Esc abandons the wizard and hands the prompt back.
+      await pressUntil(terminal, ESC, shows('nothing written'));
     } finally {
       app.unmount();
     }

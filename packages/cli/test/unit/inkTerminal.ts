@@ -96,3 +96,36 @@ export async function waitForScreen(
   }
   await sleep(settle);
 }
+
+/**
+ * Send a key until it visibly lands, or give up.
+ *
+ * Ink re-registers its stdin handler on every render (the callback identity
+ * changes), so a key written into the gap between the old listener coming off
+ * and the new one going on is simply dropped — rare on a laptop, routine on a
+ * loaded runner. There is no acknowledgement to wait for, so the only reliable
+ * answer is to look for the effect and press again if it is not there.
+ *
+ * Only use this for keys that are harmless to repeat: enter on the shell's
+ * prompt (an empty line does nothing), escape on a screen that is already gone.
+ * Never for a key that advances state on every press.
+ */
+export async function pressUntil(
+  terminal: FakeTerminal,
+  key: string,
+  check: () => boolean,
+  { timeout = 10_000, interval = 400 }: { timeout?: number; interval?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (check()) return;
+    terminal.stdin.write(key);
+    await sleep(interval);
+    if (check()) return;
+    if (Date.now() > deadline) {
+      throw new Error(`key never landed. Last frame:
+${terminal.screen() || '(nothing drawn)'}`);
+    }
+  }
+}
+
