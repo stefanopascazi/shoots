@@ -55,6 +55,12 @@ CLOSED         A4  drop negative-skill parameters        GATE MET — shipped
 CLOSED         A3  B&W branch restructure                PREMISE FALSIFIED — not built
                └─► nothing left in Track A. No schema bump, no forced retrain.
 
+next           B1  remove --xmp                          days
+               B2  profile migration instead of refusal  gate: a v9 profile loads on v10
+               B3  freeze the --json contract
+               B4  version the pipeline file
+               B5  reconcile docs/roadmap.md + migrations
+
 now, parallel  C   collect 30 shoots × 10 photographers  long lead — starts first
 now, days      B1  remove --xmp
 then, week     B2  profile migration instead of refusal  gate: a v9 profile loads on v10
@@ -272,7 +278,7 @@ it changes the honest picture substantially:
 Half the colour branch's claimed predictions were parameters whose frame head had
 been measured at a slope of zero.
 
-## Open decision — the frame-head floor
+## Decided — the frame-head floor stays out
 
 A4 forces a parameter to a constant when its **end-to-end** skill is negative.
 The same argument applies one level down, and the numbers are worse there:
@@ -302,15 +308,28 @@ sliders most visible in the editor. Whether "worse on average but worth opening
 in Lightroom" is acceptable for the frame head is a taste judgement, and it is
 the photographer's.
 
-Three options, none of them free:
+**Decision, 2026-08-24: leave it.** `--boldness` stays the only knob on the frame
+head. B&W within-shoot keeps reading −0.0021 and the report now says so out loud,
+which is the honest outcome rather than a hidden one.
 
-1. **Leave it.** Boldness stays the only knob. `within-shoot` keeps reading
-   slightly negative on B&W, and the report says so honestly.
-2. **Floor at zero, always.** Symmetric with A4. Costs reach on the tonal sliders
-   at boldness 1; needs a look in Lightroom before it ships.
-3. **Floor at zero for the B&W branch only.** Defensible on the evidence — 15 of
-   17 there against 9 of 14 in colour — but a per-branch rule is a special case,
-   and special cases are how a gate stops being explicable.
+The reasoning, recorded so it is not reopened by the next reader of that −0.0021:
+
+- The trade is already exposed and already chosen. Anyone who wants the floor
+  gets it by lowering `--boldness`, which is what that knob is for.
+- A floor at zero would have reached the sliders most visible in the editor —
+  `Exposure2012`, `Contrast2012`, `Shadows2012`, `Clarity2012`, `Texture` — on
+  the strength of a number the boldness documentation explicitly says not to
+  judge them by.
+- A per-branch variant was rejected as a special case. A gate that needs a table
+  of exceptions stops being explicable, and explicability is most of what the
+  three-state contract is for.
+
+**A4 and this are not in tension, and the line between them is worth stating.**
+A4's floor is on the *whole parameter*: end-to-end negative means the model loses
+to the photographer's own average outright, and no taste setting justifies
+shipping that. The frame head is a *component* of a parameter that may still be
+winning overall, and trading some of its average error for reach is a documented,
+deliberate choice. One is a correctness floor; the other is a taste knob.
 
 ## A — combined migration
 
