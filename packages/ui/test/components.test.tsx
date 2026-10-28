@@ -7,7 +7,9 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   IconButton,
+  LabelPicker,
   NavItem,
   PhotoTile,
   Progress,
@@ -176,6 +178,27 @@ describe('content components', () => {
   });
 });
 
+describe('photo marks', () => {
+  test('LabelPicker marks the chosen label and names every swatch', () => {
+    const html = render(<LabelPicker value="green" onChange={() => {}} keys={{ red: '6' }} />);
+    expect(html.match(/aria-checked="true"/g)?.length).toBe(1);
+    expect(html).toContain('aria-label="Purple"');
+    expect(html).toContain('title="Red (6)"');
+  });
+
+  test('PhotoTile shows the colour label as a strip', () => {
+    expect(render(<PhotoTile name="a" label="red" />)).toContain('sh-photo__label--red');
+    expect(render(<PhotoTile name="a" />)).not.toContain('sh-photo__label');
+  });
+
+  test('Checkbox is a native, labelled checkbox', () => {
+    const html = render(<Checkbox checked hint="why">Blur check</Checkbox>);
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain('checked');
+    expect(html).toContain('why');
+  });
+});
+
 describe('every class a component renders is styled', () => {
   const samples = [
     <Button variant="danger" size="sm" icon="trash" loading>
@@ -202,6 +225,11 @@ describe('every class a component renders is styled', () => {
     </NavItem>,
     <PhotoTile name="x" src="/a.jpg" flag="pick" rating={2} />,
     <StarRating value={2} onChange={() => {}} />,
+    <LabelPicker value="red" onChange={() => {}} />,
+    <PhotoTile name="x" label="purple" />,
+    <Checkbox checked={false} hint="h" disabled>
+      x
+    </Checkbox>,
   ];
 
   test('no orphan sh-* class', () => {

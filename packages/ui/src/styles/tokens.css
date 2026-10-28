@@ -42,6 +42,13 @@
   --sh-info: #6aa7f0;
   --sh-info-soft: rgb(106 167 240 / 0.14);
 
+  /* Lightroom colour labels: one set for both themes, as they mark photographs, not chrome. */
+  --sh-label-red: #e5484d;
+  --sh-label-yellow: #f2c230;
+  --sh-label-green: #3fb27f;
+  --sh-label-blue: #3e8ef7;
+  --sh-label-purple: #a46ee8;
+
   --sh-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
   --sh-shadow-md: 0 4px 16px rgb(0 0 0 / 0.35);
   --sh-shadow-lg: 0 12px 40px rgb(0 0 0 / 0.5);

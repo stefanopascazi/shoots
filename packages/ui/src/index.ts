@@ -13,6 +13,7 @@ export { Badge, type BadgeProps, type Tone } from './components/feedback/Badge.j
 export { Progress, clampFraction, type ProgressProps } from './components/feedback/Progress.js';
 export { Spinner } from './components/feedback/Spinner.js';
 
+export { Checkbox, type CheckboxProps } from './components/forms/Checkbox.js';
 export { Field, Input, Select, Textarea, type FieldProps } from './components/forms/Field.js';
 export { Segmented, type SegmentedOption, type SegmentedProps } from './components/forms/Segmented.js';
 export { Slider, fillPercent, type SliderProps } from './components/forms/Slider.js';
@@ -30,3 +31,4 @@ export { Stat, type StatProps } from './components/data/Stat.js';
 
 export { Filmstrip, PhotoGrid, PhotoTile, type PhotoFlag, type PhotoTileProps } from './components/photo/PhotoTile.js';
 export { StarRating, clampStars, MAX_STARS, type StarRatingProps } from './components/photo/StarRating.js';
+export { LabelPicker, PHOTO_LABELS, type LabelPickerProps, type PhotoLabel } from './components/photo/LabelPicker.js';

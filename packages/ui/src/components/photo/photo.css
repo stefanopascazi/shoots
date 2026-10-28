@@ -67,3 +67,26 @@ button.sh-stars__star:hover { opacity: 1; }
 .sh-photo__flag .sh-badge--success { color: #7fe0b2; }
 .sh-photo__flag .sh-badge--danger { color: #ffa3a3; }
 .sh-photo__flag .sh-badge--warning { color: #ffd27a; }
+
+/* Colour label: a strip along the bottom of the tile, as in Lightroom's grid. */
+.sh-photo__label { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; }
+.sh-photo__label--red, .sh-labels__swatch--red { background: var(--sh-label-red); }
+.sh-photo__label--yellow, .sh-labels__swatch--yellow { background: var(--sh-label-yellow); }
+.sh-photo__label--green, .sh-labels__swatch--green { background: var(--sh-label-green); }
+.sh-photo__label--blue, .sh-labels__swatch--blue { background: var(--sh-label-blue); }
+.sh-photo__label--purple, .sh-labels__swatch--purple { background: var(--sh-label-purple); }
+
+/* Label picker */
+.sh-labels { display: inline-flex; gap: 6px; }
+.sh-labels__swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity var(--sh-fast) var(--sh-ease), transform var(--sh-fast) var(--sh-ease);
+}
+.sh-labels__swatch:hover { opacity: 0.9; }
+.sh-labels__swatch[aria-checked="true"] { opacity: 1; border-color: var(--sh-fg); transform: scale(1.08); }

@@ -178,3 +178,10 @@
   color: var(--sh-fg);
   box-shadow: var(--sh-shadow-sm), 0 0 0 1px var(--sh-border);
 }
+
+/* Checkbox */
+.sh-check { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; font-size: var(--sh-text-md); }
+.sh-check--disabled { opacity: 0.5; cursor: not-allowed; }
+.sh-check__box { width: 16px; height: 16px; margin: 2px 0 0; flex: none; accent-color: var(--sh-accent); cursor: inherit; }
+.sh-check__text { display: grid; gap: 2px; }
+.sh-check__hint { color: var(--sh-fg-subtle); font-size: var(--sh-text-sm); }

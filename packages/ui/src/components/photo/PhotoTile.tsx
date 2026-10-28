@@ -3,6 +3,7 @@ import type { ComponentChildren } from 'preact';
 import { cx } from '../../cx.js';
 import { Icon } from '../../icons/Icon.js';
 import { Badge } from '../feedback/Badge.js';
+import type { PhotoLabel } from './LabelPicker.js';
 import { StarRating } from './StarRating.js';
 
 /** `review` marks a frame waiting for a person's decision. */
@@ -19,6 +20,8 @@ export interface PhotoTileProps {
   name: string;
   rating?: number;
   flag?: PhotoFlag;
+  /** Lightroom colour label, shown as a strip along the bottom. */
+  label?: PhotoLabel;
   selected?: boolean;
   /** Width / height, e.g. 1.5 for 3:2. */
   ratio?: number;
@@ -27,7 +30,7 @@ export interface PhotoTileProps {
   onClick?: () => void;
 }
 
-export function PhotoTile({ src, name, rating, flag, selected, ratio, meta, onClick }: PhotoTileProps) {
+export function PhotoTile({ src, name, rating, flag, label, selected, ratio, meta, onClick }: PhotoTileProps) {
   return (
     <button
       type="button"
@@ -54,6 +57,7 @@ export function PhotoTile({ src, name, rating, flag, selected, ratio, meta, onCl
         {meta}
         {rating !== undefined && rating > 0 && <StarRating value={rating} size={11} />}
       </span>
+      {label && <span class={`sh-photo__label sh-photo__label--${label}`} aria-label={`${label} label`} />}
     </button>
   );
 }
