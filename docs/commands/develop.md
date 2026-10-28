@@ -69,8 +69,8 @@ develop/
     prediction.json                  what we proposed        → feedback
 ```
 
-`feedback.jsonl` is the one file here that cannot be rebuilt — `clean` never
-touches it, `--all` or not.
+`feedback.jsonl` is the one file here that cannot be rebuilt — `clean` leaves
+it alone, `--all` or not, unless you name it with `--only journal`.
 
 Every one of these accepts `--dry-run`.
 
@@ -91,12 +91,15 @@ shoots develop init <path> [options]
 | `--name <name>` | `my-style` | Profile name |
 | `--baseline <mode>` | `external` | Baseline render (note: **not** the `export` default) |
 | `--everything` | off | Export every file, not only those carrying an edit |
+| `--catalog <file>` | — | Read the edits from a Lightroom catalog export (written by the plug-in) instead of the sidecars |
 | `--dry-run` | off | Print the steps and the paths, write nothing |
 
 It also takes every `train` flag — `--lambda`, `--folds`, `--group-by`,
 `--boldness`, `--anchor-gain`, `--gate-threshold`, `--embedding-dim`, `--all` — plus `--model`,
-`--concurrency` and `--editor`. If the export fails it stops rather than
-training on a half-written dataset.
+`--concurrency` and `--editor`. If the export fails, or finds no edited photo, it
+stops rather than training on a half-written dataset or on one an earlier run
+left behind. With `--json`, stdout carries a single report:
+`{ command: 'develop-init', dataset, profile }`.
 
 ---
 
@@ -166,11 +169,24 @@ Removes the per-shoot working directories. Both files in them are regenerable �
 the dataset from the photographs, the record by predicting again.
 
 ```
-shoots develop clean [--all] [--dry-run] [--json]
+shoots develop clean [--all] [--only <parts>] [--dry-run] [--json]
 ```
 
 `--all` also removes the training dataset and the profile, which cost a full
 export and a train to rebuild. The profile is **not** touched otherwise.
+
+`--only` removes exactly the parts named, comma-separated:
+
+| Part | What goes |
+| --- | --- |
+| `shoots` | The per-shoot working directories (the default) |
+| `dataset` | The training dataset |
+| `profile` | The fitted profile, calibration included |
+| `calibration` | Only the calibration: the profile keeps its fit |
+| `journal` | The feedback journal — **not rebuildable**, removed only when named |
+
+With `--json`, each entry of `removed` carries its `part`, `path`, `label` and
+`bytes`.
 
 ---
 
@@ -195,6 +211,7 @@ shoots develop export <path> --out <file> [options]
 | --- | --- | --- |
 | `--out <file>` | **required** | Write the JSONL dataset here |
 | `--editor <id>` | `acr` | Which editor's develop settings to read: `acr` \| `rapidraw` |
+| `--catalog <file>` | — | Read the edits from a Lightroom catalog export (written by the plug-in) instead of `--editor`'s sidecars |
 | `--baseline <mode>` | `embedded-preview` | Baseline render strategy: `embedded-preview` \| `external` |
 | `--edited-only` | off | Only run the expensive embedding/render on files that actually carry develop settings |
 | `--model <kind>` | `onnx` | Inference backend |
@@ -216,8 +233,8 @@ the 553 edited ones moved the weighted skill by 0.02pp. Keep using it — it is
 four times faster here for no measurable loss.
 
 Do *not* use it when exporting a new,
-unedited shoot to predict on — there is nothing to filter on yet, and you would
-export an empty dataset.
+unedited shoot to predict on — there is nothing to filter on yet. Finding no
+edited file is an error with `--edited-only` (exit 1), not an empty dataset.
 
 ### `--baseline`
 

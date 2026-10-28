@@ -131,7 +131,7 @@ shoots setup
 | Variable | Effect |
 | --- | --- |
 | `SHOOTS_DEBUG` | Print the full stack trace when an unexpected error escapes a command (see `packages/cli/src/crash.ts`). Off by default: batch output stays one readable `error:` line. |
-| `SHOOTS_PROGRESS_FILE` | Append progress to this file as JSON lines (`phase`, `steps`, `download` events), for a host that runs `shoots` as a child process and polls — the Lightroom plug-in does. Never affects stdout or the exit code. |
+| `SHOOTS_PROGRESS_FILE` | Append progress to this file as JSON lines (`phase`, `steps`, `download` events; a `phase` may carry a `url`, such as the calibration review page), for a host that runs `shoots` as a child process and polls — the Lightroom plug-in does. The last line is `{ "kind": "exit", "code": n }`, written as the process ends, so a host can tell a finished run from a killed one without waiting on it. Never affects stdout or the exit code. |
 
 ### Build-time only
 
