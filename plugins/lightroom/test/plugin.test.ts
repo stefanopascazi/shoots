@@ -113,6 +113,10 @@ describe('Outbox', () => {
     expect(fields('{"rating":4,"pick":-1}')).toEqual({ rating: 4, pickStatus: -1 });
     expect(fields('{"rating":null,"pick":0}')).toEqual({ pickStatus: 0 });
     expect(fields('{"rating":9,"pick":7}')).toEqual({ rating: 5 });
+    expect(fields('{"label":"green"}')).toEqual({ colorNameForLabel: 'green' });
+    expect(fields('{"label":"none"}')).toEqual({ colorNameForLabel: 'none' });
+    // An unknown label sets nothing (an empty Lua table reads back as []).
+    expect(fields('{"label":"pink"}')).toEqual([]);
   });
 
   test('the acknowledgement lists applied and missing ids', () => {

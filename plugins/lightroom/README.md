@@ -23,7 +23,7 @@ stops when the plug-in stops renewing its lease: when Lightroom quits, crashes,
 or "Close shoots" is chosen.
 
 While the app is open, the plug-in checks it every few seconds. What you send
-from the app with **Send to Lightroom** (ratings, rejects, your Keep decisions)
+from the app with **Send to Lightroom** (stars, flags, colour labels)
 is written into the catalog as one undo step, "shoots: Apply from the app" —
 no sidecars. Photos the catalog does not have are reported back to the app.
 

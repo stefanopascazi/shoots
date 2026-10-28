@@ -30,6 +30,9 @@ function Outbox.items(body)
   return items
 end
 
+-- Lightroom's colour label names; 'none' clears the label.
+local LABELS = { red = true, yellow = true, green = true, blue = true, purple = true, none = true }
+
 --- The catalog fields one change sets, in Lightroom's terms. A null field is left alone.
 function Outbox.fields(item)
   local fields = {}
@@ -37,6 +40,7 @@ function Outbox.fields(item)
   if rating then fields.rating = math.max(0, math.min(5, math.floor(rating + 0.5))) end
   local pick = tonumber(item.pick)
   if pick == -1 or pick == 0 or pick == 1 then fields.pickStatus = pick end
+  if type(item.label) == 'string' and LABELS[item.label] then fields.colorNameForLabel = item.label end
   return fields
 end
 

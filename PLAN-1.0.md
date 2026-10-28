@@ -51,6 +51,11 @@ launch.
       `@shoots/core` `openSqlite`): settings, recent folders, last cull/rate per
       photo (dropped when the file changes), keep/reject decisions. Reopens the last
       folder unless the launch URL names one (`?folder=`, for the plugin to pass).
+- [x] Manual control in the app, on Lightroom's keys: flags (P/X/U), stars (1–5, 0 none),
+      colour labels (6–9, purple on the panel; same key clears). Each overrides
+      shoots field by field and travels with Send to Lightroom. Selective reset
+      (blur check / ratings / marks / send history) per folder or photo, and
+      Clear app memory — both in the app database only, never in Lightroom.
 
 **Not verified yet:** anything inside a real Lightroom (SDK calls, Plug-in Manager
 panel), and the installer launched by the plugin (needs a release carrying
@@ -60,7 +65,7 @@ panel), and the installer launched by the plugin (needs a release carrying
 
 1. **Field test on the Lightroom PC.** Copy `dist-bin/shoots.exe` (from
    `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
-   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too),
+   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`),
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
    breaks.
 2. **Release `0.7.4`** (features, no migration note → patch) once the field test
