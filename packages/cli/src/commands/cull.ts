@@ -18,6 +18,7 @@ import {
   type BlurAnalysis,
 } from '@shoots/imaging';
 import { DerivedCache } from '../cache/store.js';
+import { reportFocusMap } from '../focusMap.js';
 import { analyzeBlurCached } from '../cache/blur.js';
 import {
   logError,
@@ -78,7 +79,7 @@ export function registerCullCommand(program: Command): void {
     .option('--dry-run', 'analyze and report, but skip copying and report-file writes')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
-    .option('--review', 'interactively review the uncertain (shallow-DoF) shots — available only inside the `shoots` shell')
+    .option('--review', 'deprecated: review the verdicts in the shoots app (Lightroom › Plug-in Extras › Open shoots); still works inside the `shoots` shell')
     .action(runCull);
 }
 
@@ -92,7 +93,7 @@ async function runCull(targetPath: string | undefined, options: CullOptions): Pr
   // --review is an interactive mode that only the shell can host (it owns the
   // Ink terminal). Reaching runCull with it set means a plain batch invocation.
   if (options.review) {
-    logError('--review needs the interactive shell: run `shoots`, then `/cull <path> --review --mark`');
+    logError('--review needs the interactive shell and is deprecated: review the verdicts in the shoots app (Lightroom › Plug-in Extras › Open shoots), or run `shoots`, then `/cull <path> --review --mark`');
     process.exitCode = 2;
     return;
   }
@@ -237,12 +238,13 @@ async function runCull(targetPath: string | undefined, options: CullOptions): Pr
   const blurry = results.filter((r) => r.verdict === 'blurry');
   const rescued = results.filter((r) => r.rescued);
 
-  // ---- aperture context (EXIF FNumber), best-effort ----
-  // Reported alongside the scores so borderline/rescued frames can be judged:
-  // a low global score at a narrow aperture means something different than at
-  // f/1.4. Needs exiftool (already ensured for RAW batches); if it isn't
-  // available we simply omit the column rather than failing the cull.
-  const apertureByFile = await readApertures(io, files.map((f) => f.path));
+  // ---- frame context (EXIF FNumber, Orientation), best-effort ----
+  // Aperture is reported alongside the scores so borderline/rescued frames can
+  // be judged: a low global score at a narrow aperture means something different
+  // than at f/1.4. Orientation turns the focus map upright. Needs exiftool
+  // (already ensured for RAW batches); if it isn't available the aperture is
+  // omitted and the map stays as measured, rather than failing the cull.
+  const contextByFile = await readFrameContext(io, files.map((f) => f.path));
 
   const round2 = (n: number): number => Math.round(n * 100) / 100;
 
@@ -311,8 +313,9 @@ async function runCull(targetPath: string | undefined, options: CullOptions): Pr
       focusPeak: round2(r.focusPeak),
       verdict: r.verdict,
       rescued: r.rescued,
-      aperture: apertureByFile.get(normalizePath(r.file)) ?? null,
+      aperture: contextByFile.get(normalizePath(r.file))?.aperture ?? null,
       pixelSource: r.pixelSource,
+      focusMap: reportFocusMap(r, contextByFile.get(normalizePath(r.file))?.orientation ?? 1),
     })),
     errors,
     relocated: destRoot
@@ -429,22 +432,33 @@ function normalizePath(p: string): string {
   return p.replace(/\\/g, '/');
 }
 
+interface FrameContext {
+  aperture?: number;
+  /** EXIF orientation, 1–8; 1 when unknown. */
+  orientation: number;
+}
+
 /**
- * Batch-read the aperture (EXIF FNumber) for a set of files. Best-effort: any
+ * Batch-read aperture and orientation for a set of files. Best-effort: any
  * failure (exiftool missing, unreadable files) yields an empty map rather than
- * aborting the cull — aperture is report context, not a decision input.
+ * aborting the cull — both are report context, not decision inputs.
  */
-async function readApertures(io: ReturnType<typeof makeIo>, files: string[]): Promise<Map<string, number>> {
-  const map = new Map<string, number>();
+async function readFrameContext(io: ReturnType<typeof makeIo>, files: string[]): Promise<Map<string, FrameContext>> {
+  const map = new Map<string, FrameContext>();
   try {
-    const records = await readMetadata(files, { tags: ['FNumber'] });
+    // 'Orientation#' asks exiftool for the numeric value (1–8) instead of its description.
+    const records = await readMetadata(files, { tags: ['FNumber', 'Orientation#'] });
     for (const rec of records) {
       const raw = rec.FNumber;
       const f = typeof raw === 'number' ? raw : Number.parseFloat(String(raw ?? ''));
-      if (Number.isFinite(f)) map.set(normalizePath(rec.SourceFile), f);
+      const o = Number(rec.Orientation);
+      map.set(normalizePath(rec.SourceFile), {
+        aperture: Number.isFinite(f) ? f : undefined,
+        orientation: Number.isInteger(o) && o >= 1 && o <= 8 ? o : 1,
+      });
     }
   } catch (err) {
-    logVerbose(io, `Aperture unavailable (exiftool): ${err instanceof Error ? err.message : String(err)}`);
+    logVerbose(io, `Aperture and orientation unavailable (exiftool): ${err instanceof Error ? err.message : String(err)}`);
   }
   return map;
 }
