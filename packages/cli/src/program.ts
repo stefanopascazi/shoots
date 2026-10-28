@@ -24,6 +24,7 @@ import { registerSetupCommand } from './commands/setup.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerUpdateCommand } from './commands/update.js';
 import { registerReleaseNotesCommand } from './commands/release-notes.js';
+import { registerAppCommand } from './commands/app.js';
 import { VERSION } from './version.js';
 
 /** Every shoots command, registered. `shell` is added by the entry point. */
@@ -55,6 +56,7 @@ export function buildProgram(): Command {
   registerDoctorCommand(program);
   registerUpdateCommand(program);
   registerReleaseNotesCommand(program);
+  registerAppCommand(program);
 
   return program;
 }

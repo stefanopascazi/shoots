@@ -10,5 +10,5 @@
   "extends": "./tsconfig.base.json",
   "include": ["packages/*/src"],
   // Browser code with DOM types and Preact JSX: checked as its own program.
-  "exclude": ["packages/ui/src"]
+  "exclude": ["packages/ui/src", "packages/app/src"]
 }

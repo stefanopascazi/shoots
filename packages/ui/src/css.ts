@@ -1,3 +1,4 @@
+/// <reference path="./stylesheets.d.ts" />
 import tokens from './styles/tokens.css' with { type: 'text' };
 import base from './styles/base.css' with { type: 'text' };
 import actions from './components/actions/actions.css' with { type: 'text' };

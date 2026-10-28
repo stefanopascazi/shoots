@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@shoots/app": "^0.1.0",
     "@shoots/core": "^0.1.0",
     "@shoots/imaging": "^0.1.0",
     "@shoots/inference": "^0.1.0",

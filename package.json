@@ -13,11 +13,11 @@
     "node": ">=20.9.0"
   },
   "scripts": {
-    "build": "npm run build -w @shoots/ui -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/match -w @shoots/cli",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/ui",
+    "build": "npm run build -w @shoots/ui -w @shoots/app -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/match -w @shoots/cli",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/ui && tsc --noEmit -p packages/app",
     "test": "npm run build && npm run test:built",
-    "test:built": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/ui/test packages/cli/test plugins/lightroom/test --timeout 120000",
-    "test:unit": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/ui/test packages/cli/test/unit plugins/lightroom/test",
+    "test:built": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/ui/test packages/app/test packages/cli/test plugins/lightroom/test --timeout 120000",
+    "test:unit": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/ui/test packages/app/test packages/cli/test/unit plugins/lightroom/test",
     "clean": "node -e \"for (const p of ['ui','core','imaging','inference','match','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
     "shoots": "node packages/cli/dist/cli.js",
     "build:binary": "bun scripts/build-binary.ts",

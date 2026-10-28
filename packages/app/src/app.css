@@ -1,0 +1,100 @@
+/* App-level layout on top of @shoots/ui. Components stay in the design system. */
+.app-page { display: flex; flex-direction: column; gap: var(--sh-space-4); }
+.app-page > .sh-page-header { margin-bottom: var(--sh-space-1); }
+.app-center { display: grid; place-items: center; padding: var(--sh-space-10); }
+
+.app-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sh-space-4); }
+.app-inline-field { display: inline-flex; align-items: center; gap: var(--sh-space-2); font-size: var(--sh-text-sm); }
+.app-inline-field .sh-select { width: auto; max-width: 320px; height: var(--sh-control-sm); }
+
+.app-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.app-summary > * { padding: var(--sh-space-4) var(--sh-space-5); border-right: 1px solid var(--sh-border); }
+.app-summary > *:last-child { border-right: 0; }
+
+.app-job .sh-card__body { display: grid; gap: var(--sh-space-3); }
+.app-job__row { display: flex; align-items: center; gap: var(--sh-space-3); }
+.app-job__text { display: grid; gap: 2px; flex: 1; min-width: 0; font-size: var(--sh-text-sm); }
+
+.app-theme { width: 100%; }
+.app-theme .sh-segmented__item { flex: 1; justify-content: center; }
+
+/* Folder picker */
+.app-picker { display: grid; gap: var(--sh-space-3); }
+.app-picker__path { display: flex; align-items: center; gap: var(--sh-space-2); min-width: 0; }
+.app-picker__current {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sh-fg);
+  direction: rtl;
+  text-align: left;
+}
+.app-picker__list {
+  height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-md);
+  background: var(--sh-surface-2);
+  padding: 4px;
+}
+.app-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--sh-radius-sm);
+  background: none;
+  color: var(--sh-fg);
+  text-align: left;
+  cursor: pointer;
+}
+.app-picker__item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-picker__item:hover { background: var(--sh-surface-3); }
+.app-picker__empty { display: grid; place-items: center; height: 100%; }
+.app-picker__count { margin-right: auto; align-self: center; font-size: var(--sh-text-sm); }
+.sh-dialog:has(.app-picker) { width: min(560px, calc(100vw - 32px)); }
+
+/* Photo viewer */
+.app-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  background: #08090b;
+}
+.app-viewer__stage { display: grid; place-items: center; min-height: 0; padding: var(--sh-space-6); }
+.app-viewer__stage img { max-width: 100%; max-height: calc(100vh - 48px); object-fit: contain; border-radius: var(--sh-radius-sm); }
+.app-viewer__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-space-5);
+  padding: var(--sh-space-5);
+  overflow-y: auto;
+  border-left: 1px solid var(--sh-border);
+  background: var(--sh-surface);
+}
+.app-viewer__head { display: flex; align-items: flex-start; gap: var(--sh-space-2); }
+.app-viewer__head > div { flex: 1; min-width: 0; }
+.app-viewer__name { font-weight: 600; overflow-wrap: anywhere; }
+.app-viewer__meta { font-size: var(--sh-text-xs); margin-top: 2px; }
+.app-viewer__nav { display: flex; align-items: center; gap: var(--sh-space-2); margin-top: auto; flex-wrap: wrap; }
+.app-viewer__keys { font-size: var(--sh-text-xs); margin-left: auto; }
+@media (max-width: 760px) {
+  .app-viewer { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .app-viewer__panel { border-left: 0; border-top: 1px solid var(--sh-border); max-height: 45vh; }
+}
+
+.app-facts { display: grid; grid-template-columns: max-content 1fr; gap: 10px var(--sh-space-4); margin: 0; font-size: var(--sh-text-sm); }
+.app-facts dt { color: var(--sh-fg-muted); }
+.app-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.app-facts__tags { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.app-health { display: grid; gap: var(--sh-space-4); grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); align-items: start; }
+.app-health__name { font-weight: 500; white-space: nowrap; }
+.app-health__detail { overflow-wrap: anywhere; }
+@media (max-width: 980px) { .app-health { grid-template-columns: 1fr; } }

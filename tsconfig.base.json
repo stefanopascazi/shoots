@@ -24,7 +24,8 @@
       "@shoots/imaging": ["packages/imaging/src/index.ts"],
       "@shoots/inference": ["packages/inference/src/index.ts"],
       "@shoots/match": ["packages/match/src/index.ts"],
-      "@shoots/ui": ["packages/ui/src/index.ts"]
+      "@shoots/ui": ["packages/ui/src/index.ts"],
+      "@shoots/app": ["packages/app/src/index.ts"]
     }
   }
 }

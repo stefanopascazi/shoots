@@ -1,0 +1,12 @@
+{
+  // Browser code: DOM types and Preact's JSX, checked as its own program.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "types": []
+  },
+  "include": ["src"],
+  "exclude": ["src/index.ts"]
+}

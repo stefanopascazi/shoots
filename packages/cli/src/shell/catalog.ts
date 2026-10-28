@@ -118,7 +118,8 @@ export function findCommand(name: string): CommandSpec | undefined {
  * launches the shell (running it from inside the shell is meaningless) and
  * `help` is commander's own implicit command.
  */
-const NON_CATALOG_COMMANDS = new Set(['shell', 'help']);
+// `app` is started by the Lightroom plug-in only, never from the shell.
+const NON_CATALOG_COMMANDS = new Set(['shell', 'help', 'app']);
 
 /**
  * Enforce the convention "every CLI command also lives in the Ink shell".
