@@ -16,11 +16,12 @@
     "build": "npm run build -w @shoots/core -w @shoots/imaging -w @shoots/inference -w @shoots/match -w @shoots/cli",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && npm run test:built",
-    "test:built": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/cli/test --timeout 120000",
-    "test:unit": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/cli/test/unit",
+    "test:built": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/cli/test plugins/lightroom/test --timeout 120000",
+    "test:unit": "bun test packages/core/test packages/imaging/test packages/inference/test packages/match/test packages/cli/test/unit plugins/lightroom/test",
     "clean": "node -e \"for (const p of ['core','imaging','inference','match','cli']) require('fs').rmSync(`packages/${p}/dist`, { recursive: true, force: true })\"",
     "shoots": "node packages/cli/dist/cli.js",
     "build:binary": "bun scripts/build-binary.ts",
+    "build:lrplugin": "bun plugins/lightroom/build.ts",
     "build:icon": "bun scripts/generate-icon.ts",
     "build:screens": "bun scripts/capture-screens.tsx",
     "docs:migrations": "bun scripts/generate-migrations-doc.ts",
@@ -33,6 +34,8 @@
   "devDependencies": {
     "@huggingface/transformers": "^4.2.0",
     "@types/node": "^24.0.0",
+    "adm-zip": "^0.6.1",
+    "fengari": "^0.1.5",
     "tsup": "^8.3.5",
     "typescript": "^5.6.3"
   },

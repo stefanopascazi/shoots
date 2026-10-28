@@ -3,6 +3,7 @@ dist/
 dist-bin/
 dist-tools/
 dist-models/
+dist-plugin/
 *.tsbuildinfo
 *.log
 .DS_Store
@@ -11,6 +12,7 @@ test/
 # guards the root `test/` sandbox (datasets, preview dumps) and matches at every
 # level, which silently swallowed packages/cli/test.
 !packages/*/test/
+!plugins/*/test/
 
 # local develop-predictor experiment artifacts (datasets / profiles)
 /train_*.json
