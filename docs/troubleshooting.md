@@ -450,7 +450,9 @@ See [Migration notes](./migrations.md).
 
 ### The dataset is empty
 
-Almost always `--edited-only` on a folder with no develop settings.
+Almost always `--edited-only` on a folder with no develop settings. That case
+now stops with an error (exit 1), so `develop init` never goes on to fit the
+dataset an earlier run left behind.
 
 ```sh
 # Training set from an EDITED catalog — --edited-only is correct

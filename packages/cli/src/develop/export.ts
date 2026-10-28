@@ -68,6 +68,9 @@ import type { AsShotMeta, Treatment } from './develop/schema.js';
 import { ensureClipModelReady, ensureExiftoolReady, ensureLibrawReady } from '../tools.js';
 // Nothing here knows how an editor stores an edit: the adapter does.
 import { DEFAULT_EDITOR, EDITOR_IDS, resolveAdapter } from './adapters/registry.js';
+import { catalogAdapter } from './adapters/lightroom/index.js';
+import { loadCatalogExport } from './adapters/lightroom/catalog.js';
+import type { EditAdapter } from './adapters/types.js';
 
 /** Used only when the capture read returned nothing for a file. */
 const EMPTY_AS_SHOT: AsShotMeta = {
@@ -86,7 +89,11 @@ export interface DevelopExportOptions {
   baseline: string;
   /** Which editor's develop settings to read (see adapters/registry.ts). */
   editor?: string;
+  /** A Lightroom catalog export from the plug-in: edits are read from it instead of the editor's sidecars. */
+  catalog?: string;
   editedOnly?: boolean;
+  /** No human summary on stdout: a pipeline that owns the JSON envelope sets it. */
+  quiet?: boolean;
   json?: boolean;
   verbose?: boolean;
 }
@@ -133,7 +140,17 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     process.exitCode = 2;
     return;
   }
-  const adapter = resolveAdapter(editorId);
+  let adapter: EditAdapter;
+  try {
+    adapter = options.catalog ? catalogAdapter(await loadCatalogExport(options.catalog)) : resolveAdapter(editorId);
+  } catch (err) {
+    logError(`could not read the catalog export: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 2;
+    return;
+  }
+  const say = (line: string): void => {
+    if (!options.quiet) printHuman(io, line);
+  };
 
   // The external neutral baseline needs a RAW developer (see rawDeveloper.ts).
   // Unless the user pointed us at their own via SHOOTS_RAW_DEVELOPER, provision
@@ -167,7 +184,7 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   });
   scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
-    printHuman(io, 'No image files found.');
+    say('No image files found.');
     if (io.json) printJson({ command: 'develop-export', model: model.name, dim: 0, results: [], summary: { total: 0, exported: 0, failed: 0, withDevelop: 0 } });
     return;
   }
@@ -208,13 +225,18 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   if (options.editedOnly) {
     // Worth surfacing outside --verbose: this is the number that decides how long
     // the expensive pass will take, and a surprising 0 is the usual mistake.
-    printHuman(io, `edited-only: ${workFiles.length}/${files.length} files carry a real edit`);
+    say(`edited-only: ${workFiles.length}/${files.length} files carry a real edit`);
     if (neutral > 0) {
-      printHuman(io, `  skipped ${neutral} with crs defaults only (never actually edited), ${untouched} with no crs at all`);
+      say(`  skipped ${neutral} with crs defaults only (never actually edited), ${untouched} with no crs at all`);
     }
   }
   if (workFiles.length === 0) {
-    printHuman(io, options.editedOnly ? 'No edited files found (crs settings are all at their neutral defaults).' : 'No files to process.');
+    // A training set with nothing in it is a failure, as below: `develop init`
+    // would otherwise go on to fit whatever dataset an earlier run left behind.
+    if (options.editedOnly) {
+      logError('No edited files found (develop settings are all at their neutral defaults).');
+      markFailure();
+    } else say('No files to process.');
     return;
   }
 
@@ -380,7 +402,7 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
     return;
   }
 
-  printHuman(io, `Wrote develop dataset to ${options.out}: ${ok.length} images, ${withDevelop} with develop settings (baseline: ${baseline}).`);
+  say(`Wrote develop dataset to ${options.out}: ${ok.length} images, ${withDevelop} with develop settings (baseline: ${baseline}).`);
   if (io.json) printJson({ command: 'develop-export', model: model.name, dim, colorDim: COLOR_FEATURE_NAMES.length, baseline, out: options.out, summary });
 
   if (withDevelop === 0 && ok.length > 0) {
@@ -391,7 +413,7 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
       logError('No develop settings found on any file — check that XMP sidecars / crs metadata are present.');
       markFailure();
     } else {
-      printHuman(io, '  (no develop settings on these files — the expected shape of a set to predict on)');
+      say('  (no develop settings on these files — the expected shape of a set to predict on)');
     }
   }
   for (const e of errors) logError(`${e.file}: ${oneLine(e.error)}`);

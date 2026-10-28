@@ -439,6 +439,9 @@ shoots develop refine ~/Shoots/2026-07-new
 of the steps they wrap, and accept `--dry-run`. `edit` refuses to overwrite
 sidecars that already carry a real edit unless you pass `--force`.
 
+`init` and `export` also take `--catalog <file>`: the develop settings then come
+from a Lightroom catalog export written by the plug-in, not from the sidecars.
+
 Import the sidecars in Lightroom and every frame opens on your look, ready to
 refine. `shoots develop status` says what the machine holds; `shoots develop
 clean` drops the per-shoot working files and leaves the profile alone.

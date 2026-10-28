@@ -59,6 +59,8 @@ export interface InitArgs extends CommonArgs {
   all?: boolean;
   /** Export every file, not only those carrying an edit. */
   everything?: boolean;
+  /** Read the edits from a Lightroom catalog export instead of the sidecars. */
+  catalog?: string;
 }
 
 export interface EditArgs extends CommonArgs {
@@ -95,6 +97,7 @@ const exportOptions = (args: CommonArgs, out: string, editedOnly: boolean): Deve
   editor: args.editor,
   editedOnly,
   json: false, // the pipeline owns the JSON envelope
+  quiet: args.json,
   verbose: args.verbose,
 });
 
@@ -115,7 +118,10 @@ export async function runInit(targetPath: string, args: InitArgs): Promise<void>
       command: 'develop-init' as const,
       dryRun: true,
       steps: [
-        { step: 'export', path: targetPath, out: datasetPath, baseline: args.baseline, editedOnly: !args.everything },
+        {
+          step: 'export', path: targetPath, out: datasetPath, baseline: args.baseline, editedOnly: !args.everything,
+          ...(args.catalog ? { catalog: path.resolve(args.catalog) } : {}),
+        },
         { step: 'train', data: datasetPath, name: args.name, out: profilePath },
       ],
     };
@@ -133,7 +139,7 @@ export async function runInit(targetPath: string, args: InitArgs): Promise<void>
   await mkdir(path.dirname(profilePath), { recursive: true });
 
   printHuman(io, `[1/2] Building the training dataset → ${datasetPath}`);
-  await runDevelopExport(targetPath, exportOptions(args, datasetPath, !args.everything));
+  await runDevelopExport(targetPath, { ...exportOptions(args, datasetPath, !args.everything), catalog: args.catalog });
   if (failed()) {
     logError('export failed — stopping before train (the dataset would be incomplete)');
     return;

@@ -64,6 +64,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--name <name>', 'profile name', 'my-style')
     .option('--baseline <mode>', `baseline render: ${BASELINES.join(' | ')}`, 'external')
     .option('--everything', 'export every file, not only those carrying an edit')
+    .option('--catalog <file>', 'read the edits from a Lightroom catalog export (written by the plug-in) instead of the sidecars')
     .option('--model <kind>', 'inference backend', 'onnx')
     .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
     .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
@@ -126,6 +127,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--baseline <mode>', `baseline render strategy: ${BASELINES.join(' | ')}`, 'embedded-preview')
     .option('--editor <id>', `which editor's develop settings to read: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--edited-only', 'only run the expensive embedding/render on files that carry develop settings (for training-set builds)')
+    .option('--catalog <file>', 'read the edits from a Lightroom catalog export (written by the plug-in) instead of the sidecars')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runDevelopExport);
