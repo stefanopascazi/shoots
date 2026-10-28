@@ -27,6 +27,8 @@ export interface CatalogExport {
   folder: string;
   /** false: the catalog has no folder by that path (spelled differently, or not imported). */
   found: boolean;
+  /** When not found: the catalog's top folders as Lightroom spells them. */
+  roots: string[];
   photos: CatalogPhoto[];
 }
 
@@ -49,7 +51,8 @@ export function parseCatalogExport(text: string): CatalogExport {
     if (!photo || typeof photo.path !== 'string' || !photo.settings || typeof photo.settings !== 'object') continue;
     photos.push({ path: photo.path, settings: photo.settings as Record<string, CatalogSetting> });
   }
-  return { version: r.version, folder: typeof r.folder === 'string' ? r.folder : '', found: r.found !== false, photos };
+  const roots = Array.isArray(r.roots) ? r.roots.filter((x): x is string => typeof x === 'string') : [];
+  return { version: r.version, folder: typeof r.folder === 'string' ? r.folder : '', found: r.found !== false, roots, photos };
 }
 
 export async function loadCatalogExport(file: string): Promise<CatalogExport> {

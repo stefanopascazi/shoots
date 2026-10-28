@@ -10,6 +10,7 @@ local LrHttp = import 'LrHttp'
 local LrTasks = import 'LrTasks'
 
 local AppSession = require 'AppSession'
+local CatalogFolders = require 'CatalogFolders'
 local Outbox = require 'Outbox'
 
 local AppOutbox = {}
@@ -18,7 +19,7 @@ local WRITE_TIMEOUT_SECONDS = 10
 
 -- A master and its virtual copies share one file, so all of them take the change.
 local function photosAt(catalog, path)
-  local master = catalog:findPhotoByPath(path)
+  local master = CatalogFolders.photo(catalog, path)
   if not master then return nil end
   local photos = { master }
   for _, copy in ipairs(master:getRawMetadata('virtualCopies') or {}) do

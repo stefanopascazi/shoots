@@ -9,6 +9,7 @@ local LrHttp = import 'LrHttp'
 
 local AppSession = require 'AppSession'
 local CatalogExport = require 'CatalogExport'
+local CatalogFolders = require 'CatalogFolders'
 local Sync = require 'Sync'
 
 local AppSync = {}
@@ -23,12 +24,12 @@ local missing = {}
 --- Read the watched folder and send what changed since the last read.
 function AppSync.run(session, watch)
   local catalog = LrApplication.activeCatalog()
-  local folder = catalog:getFolderByPath(CatalogExport.folderPath(watch.folder))
+  local folder = CatalogFolders.find(catalog, CatalogExport.folderPath(watch.folder))
   if not folder then
     if missing[watch.folder] then return end
     missing[watch.folder] = true
     -- Raised so the lease loop reports it: the app would otherwise just never follow.
-    error('Lightroom has no folder ' .. watch.folder .. ': open it in the app as the Folders panel shows it', 0)
+    error(CatalogFolders.missing(catalog, watch.folder), 0)
   end
 
   local photos = folder:getPhotos(watch.recursive)

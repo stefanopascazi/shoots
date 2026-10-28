@@ -129,6 +129,13 @@ describe('DurableJobs', () => {
     expect(ended.error).toContain('Lightroom has no folder \\\\NAS\\Photos');
   });
 
+  test('the failure names the folders the catalog does have', async () => {
+    const { jobs } = setup();
+    const job = jobs.start({ kind: 'catalog', folder: 'Z:\\Photos' });
+    const body = { version: 1, folder: 'Z:\\Photos', found: false, roots: ['\\\\NAS\\root'], photos: [] };
+    expect((await jobs.provideCatalog(job.id, JSON.stringify(body))).error).toContain('start at: \\\\NAS\\root.');
+  });
+
   test('export only keeps the file, reports how it reads, and starts nothing', async () => {
     const { root, jobs, spawned } = setup();
     const job = jobs.start({ kind: 'catalog', folder: 'F' });

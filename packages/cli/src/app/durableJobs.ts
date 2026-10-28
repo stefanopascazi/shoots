@@ -212,7 +212,8 @@ export class DurableJobs {
         state: 'failed',
         error:
           `Lightroom has no folder ${data.folder}. Choose it as Lightroom shows it in the Folders panel: ` +
-          'a network share is \\\\NAS\\share, not the drive letter it may also be mapped to, or the other way round.',
+          'a network share is \\\\NAS\\share, not the drive letter it may also be mapped to, or the other way round.' +
+          (data.roots.length > 0 ? ` Its catalog folders start at: ${data.roots.join(', ')}.` : ''),
       });
       return this.get(id)!;
     }

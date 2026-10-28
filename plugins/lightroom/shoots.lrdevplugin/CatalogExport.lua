@@ -133,10 +133,13 @@ end
 function CatalogExport.encodeRaw(v) return anything(v, 0) end
 
 --- The body that says the catalog has no such folder, so the app can say so
---- instead of reporting a folder with nothing edited in it.
-function CatalogExport.notFound(folder)
+--- instead of reporting a folder with nothing edited in it. `roots` are the
+--- catalog's top folders as Lightroom spells them, to show a spelling difference.
+function CatalogExport.notFound(folder, roots)
+  local quoted = {}
+  for i, r in ipairs(roots or {}) do quoted[i] = quote(r) end
   return '{"version":' .. string.format('%d', CatalogExport.VERSION)
-    .. ',"folder":' .. quote(folder) .. ',"found":false,"photos":[]}'
+    .. ',"folder":' .. quote(folder) .. ',"found":false,"roots":[' .. table.concat(quoted, ',') .. '],"photos":[]}'
 end
 
 --- The body for `POST /api/catalog/export`: `photos` is a list of { path, settings, raw? }.

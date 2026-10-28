@@ -10,7 +10,7 @@ describe('parseCatalogExport', () => {
     const data = parseCatalogExport(
       JSON.stringify({ version: 1, folder: '/s', photos: [{ path: '/s/a.cr3', settings: { Exposure2012: 1 } }, { path: 3 }, null] }),
     );
-    expect(data).toEqual({ version: 1, folder: '/s', found: true, photos: [{ path: '/s/a.cr3', settings: { Exposure2012: 1 } }] });
+    expect(data).toEqual({ version: 1, folder: '/s', found: true, roots: [], photos: [{ path: '/s/a.cr3', settings: { Exposure2012: 1 } }] });
   });
 
   test('refuses what it cannot read, naming the version', () => {

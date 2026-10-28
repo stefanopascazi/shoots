@@ -10,6 +10,7 @@ local LrHttp = import 'LrHttp'
 
 local AppSession = require 'AppSession'
 local CatalogExport = require 'CatalogExport'
+local CatalogFolders = require 'CatalogFolders'
 
 local AppExport = {}
 
@@ -22,13 +23,13 @@ local POST_TIMEOUT_SECONDS = 120
 --- `report(done, total)` tells the app how far the reading got.
 function AppExport.run(session, request, report)
   local catalog = LrApplication.activeCatalog()
-  local folder = catalog:getFolderByPath(CatalogExport.folderPath(request.folder))
+  local folder = CatalogFolders.find(catalog, CatalogExport.folderPath(request.folder))
   local photos = {}
   if not folder then
     -- Said out loud: an empty export would read as "nothing edited here".
     LrHttp.post(
       AppSession.endpoint(session, '/api/catalog/export?job=' .. request.job),
-      CatalogExport.notFound(request.folder),
+      CatalogExport.notFound(request.folder, CatalogFolders.roots(catalog)),
       AppSession.headers(session),
       'POST',
       POST_TIMEOUT_SECONDS

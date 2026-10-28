@@ -199,6 +199,65 @@ describe('yielding inside Lightroom', () => {
   });
 });
 
+describe('Paths', () => {
+  const same = (a: string, b: string) => runLua(`return require('Paths').same(${JSON.stringify(a)}, ${JSON.stringify(b)})`);
+  const within = (a: string, b: string) => runLua(`return require('Paths').within(${JSON.stringify(a)}, ${JSON.stringify(b)})`);
+
+  test('a share matches in any case and with either separator', () => {
+    expect(same('\\\\NAS\\root\\dir', '\\\\nas\\Root\\dir\\')).toBe(true);
+    expect(same('\\\\NAS\\root\\dir', '//NAS/root/dir')).toBe(true);
+    expect(same('\\\\NAS\\root\\dir', '\\\\NAS\\root\\dir2')).toBe(false);
+  });
+
+  test('within compares whole components', () => {
+    expect(within('\\\\NAS\\root', '\\\\nas\\root\\dir\\2025')).toBe(true);
+    expect(within('\\\\NAS\\root', '\\\\NAS\\root')).toBe(true);
+    expect(within('\\\\NAS\\ro', '\\\\NAS\\root')).toBe(false);
+    expect(within('C:\\', 'c:\\Photos')).toBe(true);
+  });
+
+  test('parent of a photo, and none at a root', () => {
+    expect(runLua(`return require('Paths').parent(${JSON.stringify('\\\\NAS\\root\\dir\\a.CR3')})`)).toBe('//NAS/root/dir');
+    expect(runLua(`return require('Paths').parent('/')`)).toBeNull();
+  });
+});
+
+describe('CatalogFolders', () => {
+  // A catalog stand-in: the exact lookups miss, as they do for a share spelled another way.
+  const catalog = `
+    local function folder(path, children, photos)
+      return { getPath = function() return path end, getChildren = function() return children or {} end,
+               getPhotos = function() return photos or {} end }
+    end
+    local photo = { id = 'p1' }
+    local dir = folder('\\\\\\\\NAS\\\\root\\\\dir', {}, { photo })
+    local root = folder('\\\\\\\\NAS\\\\root', { dir })
+    local catalog = {
+      getFolderByPath = function() return nil end,
+      findPhotoByPath = function() return nil end,
+      getFolders = function() return { folder('C:\\\\Other'), root } end,
+      batchGetRawMetadata = function(_, photos)
+        return { [photo] = { path = '\\\\\\\\NAS\\\\root\\\\dir\\\\A.CR3', isVirtualCopy = false } }
+      end,
+    }
+  `;
+
+  test('finds a share folder the exact lookup misses', () => {
+    expect(runLua(`${catalog} return require('CatalogFolders').find(catalog, '//nas/ROOT/dir'):getPath()`)).toBe('\\\\NAS\\root\\dir');
+    expect(runLua(`${catalog} return require('CatalogFolders').find(catalog, '\\\\\\\\NAS\\\\root\\\\nope')`)).toBeNull();
+  });
+
+  test('finds a photo by path through its folder', () => {
+    expect(runLua(`${catalog} return require('CatalogFolders').photo(catalog, '\\\\\\\\nas\\\\root\\\\dir\\\\a.cr3').id`)).toBe('p1');
+  });
+
+  test('a missing folder names the roots Lightroom has', () => {
+    expect(runLua(`${catalog} return require('CatalogFolders').missing(catalog, 'Z:\\\\x')`)).toBe(
+      'Lightroom has no folder Z:\\x. Its catalog folders start at: C:\\Other, \\\\NAS\\root',
+    );
+  });
+});
+
 describe('HostError', () => {
   test('a failure travels as JSON, quoted and capped', () => {
     const body = runLua<string>(`return require('HostError').body('send to Lightroom', 'AppOutbox.lua:51: "boom"\\nnext')`);
