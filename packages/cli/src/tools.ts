@@ -9,6 +9,7 @@
 import { ensureExiftool, ensureLibraw, LibrawMirrorNotConfiguredError } from '@shoots/imaging';
 import { ensureClipModel, ModelMirrorNotConfiguredError } from '@shoots/inference';
 import { logError, logWarn, markFailure, type CliIo } from './io.js';
+import { emitProgress } from './progressChannel.js';
 
 /**
  * Shared download reporter: a status line plus a throttled percentage on stderr,
@@ -17,9 +18,15 @@ import { logError, logWarn, markFailure, type CliIo } from './io.js';
  */
 export function mirrorProgress(io: CliIo): { onStatus: (m: string) => void; onProgress: (received: number, total: number | null) => void } {
   let lastPct = -1;
+  let label = 'Downloading';
   return {
-    onStatus: (message) => process.stderr.write(`· ${message}...\n`),
+    onStatus: (message) => {
+      label = message;
+      emitProgress({ kind: 'phase', label: message });
+      process.stderr.write(`· ${message}...\n`);
+    },
     onProgress: (received, total) => {
+      emitProgress({ kind: 'download', label, received, total });
       if (io.json || !total) return;
       const pct = Math.floor((received / total) * 100);
       if (pct === lastPct) return;

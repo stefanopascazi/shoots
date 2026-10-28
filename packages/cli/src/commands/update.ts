@@ -12,6 +12,7 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { compareSemver, downloadFile } from '@shoots/core';
 import { logError, makeIo, printHuman, printJson } from '../io.js';
+import { emitProgress } from '../progressChannel.js';
 import { VERSION } from '../version.js';
 
 const REPO = process.env.SHOOTS_REPO ?? 'stefanopascazi/shoots';
@@ -143,6 +144,7 @@ async function runUpdate(options: UpdateOptions): Promise<void> {
     await downloadFile(asset.browser_download_url, staged, {
       sha256,
       onProgress: (received, total) => {
+        emitProgress({ kind: 'download', label: `Downloading shoots ${latest}`, received, total });
         if (io.json || !total) return;
         const pct = Math.floor((received / total) * 100);
         if (pct === lastPct) return;

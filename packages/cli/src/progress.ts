@@ -6,6 +6,7 @@
 import { EventEmitter } from 'node:events';
 import type { JobProgress } from '@shoots/core';
 import type { CliIo } from './io.js';
+import { emitProgress } from './progressChannel.js';
 
 /** A long, indeterminate startup step (scanning, bulk metadata reads, model load). */
 export interface PhaseHandle {
@@ -30,6 +31,11 @@ export function startPhase(io: CliIo, label: string): PhaseHandle {
   const started = Date.now();
   const elapsed = (): string => `${((Date.now() - started) / 1000).toFixed(1)}s`;
   let detail = '';
+  emitProgress({ kind: 'phase', label });
+  const setDetail = (d: string): void => {
+    detail = d;
+    emitProgress({ kind: 'phase', label, detail: d });
+  };
 
   // Match startProgress: the Ink view keys off stdout being a TTY but draws on
   // stderr, so that stdout stays clean for the result.
@@ -37,7 +43,7 @@ export function startPhase(io: CliIo, label: string): PhaseHandle {
   if (!interactive) {
     if (io.verbose) process.stderr.write(`· ${label}…\n`);
     return {
-      update: (d) => { detail = d; },
+      update: setDetail,
       done: (d) => {
         if (io.verbose) process.stderr.write(`· ${label} — ${d ?? detail ?? 'done'} (${elapsed()})\n`);
       },
@@ -55,7 +61,7 @@ export function startPhase(io: CliIo, label: string): PhaseHandle {
   timer.unref?.();
 
   return {
-    update: (d) => { detail = d; },
+    update: setDetail,
     done: (d) => {
       clearInterval(timer);
       const final = d ?? detail;
@@ -97,7 +103,9 @@ const duration = (ms: number): string => {
  */
 export function startSteps(io: CliIo, label: string): StepsHandle {
   const started = Date.now();
-  if (io.json) return { update: () => {}, done: () => {} };
+  const emit = (done: number, total: number, detail?: string): void =>
+    emitProgress({ kind: 'steps', label, done, total, ...(detail ? { detail } : {}) });
+  if (io.json) return { update: emit, done: () => {} };
 
   const interactive = process.stdout.isTTY === true;
   let lastPaint = 0;
@@ -113,6 +121,7 @@ export function startSteps(io: CliIo, label: string): StepsHandle {
 
   return {
     update: (done, total, detail) => {
+      emit(done, total, detail);
       if (total <= 0) return;
       const fraction = Math.min(1, Math.max(0, done / total));
       if (interactive) {
@@ -174,6 +183,11 @@ export interface ProgressHandle {
  */
 export async function startProgress(io: CliIo, total: number, title: string): Promise<ProgressHandle> {
   const tracker = new ProgressTracker(total);
+  const report = (p: JobProgress): void => {
+    emitProgress({ kind: 'steps', label: title, done: p.completed, total: p.total, ...(p.label ? { detail: p.label } : {}) });
+    tracker.update(p);
+  };
+  emitProgress({ kind: 'steps', label: title, done: 0, total });
   const interactive = process.stdout.isTTY === true && !io.json;
 
   if (interactive) {
@@ -189,7 +203,7 @@ export async function startProgress(io: CliIo, total: number, title: string): Pr
     });
     return {
       tracker,
-      onProgress: (p) => tracker.update(p),
+      onProgress: report,
       stop: () => {
         instance.unmount();
         instance.cleanup();
@@ -200,7 +214,7 @@ export async function startProgress(io: CliIo, total: number, title: string): Pr
   return {
     tracker,
     onProgress: (p) => {
-      tracker.update(p);
+      report(p);
       if (io.verbose) {
         process.stderr.write(`· [${p.completed}/${p.total}] ${p.label ?? ''}\n`);
       }
