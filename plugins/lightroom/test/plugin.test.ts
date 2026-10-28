@@ -49,6 +49,51 @@ describe('Command.build', () => {
   });
 });
 
+describe('the app server launch', () => {
+  test('windows starts it in the background with start /B, output to a log', () => {
+    const line = runLua<string>(
+      `local C = require('Command') return C.detachedLine('windows', 'C:\\\\s\\\\shoots.exe', C.appArgs(), 'C:\\\\t\\\\app.log')`,
+    );
+    expect(line).toBe(`start "" /B "C:\\s\\shoots.exe" "app" > "C:\\t\\app.log" 2>&1`);
+  });
+
+  test('posix detaches with nohup and &', () => {
+    const line = runLua<string>(`local C = require('Command') return C.detachedLine('posix', '/s/shoots', C.appArgs(), '/t/app.log')`);
+    expect(line).toBe(`nohup '/s/shoots' 'app' > '/t/app.log' 2>&1 &`);
+  });
+});
+
+describe('AppSession', () => {
+  const session = { pid: 7, port: 55552, token: 'tok', url: 'http://127.0.0.1:55552/?t=tok', startedAt: 'a' };
+
+  test('parses the file the server writes', () => {
+    expect(runLua(`return require('AppSession').parse(${JSON.stringify(JSON.stringify(session, null, 2))})`)).toEqual(session);
+  });
+
+  test('missing, torn or foreign files are not a session', () => {
+    expect(runLua(`return require('AppSession').parse('')`)).toBeNull();
+    expect(runLua(`return require('AppSession').parse('{"port": 1, "tok')`)).toBeNull();
+    expect(runLua(`return require('AppSession').parse('{"port": "1"}')`)).toBeNull();
+  });
+
+  test('endpoints are on loopback, headers carry the token', () => {
+    const s = `require('Json').decode(${JSON.stringify(JSON.stringify(session))})`;
+    expect(runLua(`return require('AppSession').endpoint(${s}, '/api/host/heartbeat')`)).toBe('http://127.0.0.1:55552/api/host/heartbeat');
+    expect(runLua(`return require('AppSession').headers(${s})`)).toEqual([
+      { field: 'x-shoots-token', value: 'tok' },
+      { field: 'Content-Type', value: 'application/json' },
+    ]);
+  });
+
+  test('a restarted server counts as new', () => {
+    const A = `{ pid = 1, startedAt = 'a' }`;
+    expect(runLua(`return require('AppSession').isNew(nil, ${A})`)).toBe(true);
+    expect(runLua(`return require('AppSession').isNew(${A}, { pid = 1, startedAt = 'a' })`)).toBe(false);
+    expect(runLua(`return require('AppSession').isNew(${A}, { pid = 2, startedAt = 'b' })`)).toBe(true);
+    expect(runLua(`return require('AppSession').isNew(${A}, nil)`)).toBe(false);
+  });
+});
+
 describe('Command env and installer', () => {
   test('env goes in front, sorted, quoted per platform', () => {
     const posix = runLua<string>(`return require('Command').build('posix', '/s', { '--version' }, '/o', '/e', { SHOOTS_PROGRESS_FILE = "/t/p q.jsonl", A = 'x' })`);

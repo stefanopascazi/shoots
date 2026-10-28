@@ -38,6 +38,12 @@ launch.
 - [x] Plugin: progress bar driven by the progress file.
 - [x] `npm run build:lrplugin` → `dist-plugin/shoots.lrplugin` + versioned zip.
 - [x] Tests: pure Lua modules under fengari, part of `npm run test:unit`.
+- [x] Design system `packages/ui` (`@shoots/ui`); showcase via `bun packages/ui/showcase/build.ts`.
+- [x] Track W, first cut: `packages/app` (Preact client) served by the hidden
+      `shoots app`; Library (folder, thumbnails, find blurry, rate — dry runs) and
+      Setup (doctor). Started only by the plugin (Open/Close shoots), bound to it
+      by a heartbeat lease; token + Host/Origin checks. Verified end to end with
+      the built binary and real CR3s, minus Lightroom itself.
 
 **Not verified yet:** anything inside a real Lightroom (SDK calls, Plug-in Manager
 panel), and the installer launched by the plugin (needs a release carrying
@@ -47,7 +53,7 @@ panel), and the installer launched by the plugin (needs a release carrying
 
 1. **Field test on the Lightroom PC.** Copy `dist-bin/shoots.exe` (from
    `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
-   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: both menu items,
+   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too),
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
    breaks.
 2. **Release `0.7.4`** (features, no migration note → patch) once the field test
@@ -56,8 +62,10 @@ panel), and the installer launched by the plugin (needs a release carrying
 3. **L1 leftovers**: write `rate` keywords into the catalog; decide whether cull
    should also flag keepers; cancel support (kill the child process).
 4. **L2 catalog export** → training reads JSON, not sidecars.
-5. **Track W** — local web app, started/stopped from the plugin. Design system
-   `packages/ui` done (showcase: `bun packages/ui/showcase/build.ts`); app next.
+5. **Track W** — next: push library results back to Lightroom (needs L1/L3
+   apply), then training and calibrate in the app. Monetisation gate still to
+   decide: today only the hidden command and the lease keep the app plugin-only;
+   a signed licence checked by the server is the real one.
 6. **L3** apply predictions via `applyDevelopSettings`.
 7. Remove the Ink shell, then XMP (only after 4 and 6).
 8. Beta data program (Track C) — legal pack first.

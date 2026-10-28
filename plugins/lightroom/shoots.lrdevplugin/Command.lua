@@ -84,6 +84,27 @@ function Command.rateArgs(listPath, profile)
   return { 'rate', '--files-from', listPath, '--profile', profile, '--dry-run', '--json' }
 end
 
+--- Arguments that start the local web app server. Hidden from the CLI's help:
+--- only this plug-in starts it.
+function Command.appArgs() return { 'app' } end
+
+--- A line that starts `executable args` in the background and returns at once,
+--- so LrTasks.execute does not wait for the server. Output goes to `logPath`.
+function Command.detachedLine(platform, executable, args, logPath)
+  local parts = { Command.quote(executable, platform) }
+  for _, arg in ipairs(args) do
+    parts[#parts + 1] = Command.quote(arg, platform)
+  end
+  local line = table.concat(parts, ' ')
+  local log = Command.quote(logPath, platform)
+  if platform == 'windows' then
+    -- 'start' returns immediately; /B keeps the server windowless. The line starts
+    -- with a letter, so cmd.exe leaves its quotes alone.
+    return 'start "" /B ' .. line .. ' > ' .. log .. ' 2>&1'
+  end
+  return 'nohup ' .. line .. ' > ' .. log .. ' 2>&1 &'
+end
+
 function Command.updateArgs() return { 'update', '--json' } end
 function Command.setupArgs() return { 'setup', '--json' } end
 function Command.versionArgs() return { '--version' } end

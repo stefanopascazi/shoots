@@ -17,6 +17,11 @@ through scanning, per-photo work and downloads.
 The Plug-in Manager panel shows the installed version and carries the same
 Install/Update and Download Dependencies buttons.
 
+The app runs only through this plug-in. Its server (the hidden `shoots app`)
+binds 127.0.0.1, accepts only the session token from `~/.shoots/app.json`, and
+stops when the plug-in stops renewing its lease: when Lightroom quits, crashes,
+or "Close shoots" is chosen.
+
 ## Requirements
 
 - Lightroom Classic 6 or later.
