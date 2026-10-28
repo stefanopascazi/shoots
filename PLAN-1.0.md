@@ -24,6 +24,43 @@ The product is a **Lightroom Classic plugin** and a **local web app** it opens.
 The CLI stays as the free engine behind both. Everything else is paused until
 launch.
 
+## Status — where to pick up (2026-10-28)
+
+**Done** (all on `main`, pushed; release still `0.7.3`):
+
+- [x] Strategy recorded here and in `docs/roadmap.md` (public via the site sync).
+- [x] CLI: `cull` / `rate --files-from <list>` — explicit file list instead of a folder.
+- [x] CLI: `SHOOTS_PROGRESS_FILE` — progress as JSON lines for a polling host.
+- [x] L1 plugin skeleton, `plugins/lightroom/` — Cull Selection (blurry → rejected),
+      Rate Selection (0–5 stars), written to the catalog as one undo step.
+- [x] Plugin: install on first use (official installer), update when older than
+      the plugin, `setup` for dependencies; menu items + Plug-in Manager buttons.
+- [x] Plugin: progress bar driven by the progress file.
+- [x] `npm run build:lrplugin` → `dist-plugin/shoots.lrplugin` + versioned zip.
+- [x] Tests: pure Lua modules under fengari, part of `npm run test:unit`.
+
+**Not verified yet:** anything inside a real Lightroom (SDK calls, Plug-in Manager
+panel), and the installer launched by the plugin (needs a release carrying
+`--files-from`).
+
+**Next, in order:**
+
+1. **Field test on the Lightroom PC.** Copy `dist-bin/shoots.exe` (from
+   `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
+   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: both menu items,
+   progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
+   breaks.
+2. **Release `0.7.4`** (features, no migration note → patch) once the field test
+   passes, so the plugin's own install/update path can be tested; add the plugin
+   zip to `release.yml`.
+3. **L1 leftovers**: write `rate` keywords into the catalog; decide whether cull
+   should also flag keepers; cancel support (kill the child process).
+4. **L2 catalog export** → training reads JSON, not sidecars.
+5. **Track W** — local web app, started/stopped from the plugin.
+6. **L3** apply predictions via `applyDevelopSettings`.
+7. Remove the Ink shell, then XMP (only after 4 and 6).
+8. Beta data program (Track C) — legal pack first.
+
 ## Decided
 
 - **Remove the interactive shell (Ink).** Four files today (`shell/`,
@@ -49,18 +86,18 @@ launch.
 
 Lua, Lightroom Classic SDK. Lightroom (cloud) has no comparable SDK and is out.
 
-1. **Fast operations first**: `cull`, `rate`, picks and colour labels written
+1. **Fast operations first** (*skeleton shipped*): `cull`, `rate`, picks and colour labels written
    into the catalog. Calls the binary via `LrTasks.execute`, passes the selection
-   as a JSON file, reports through `LrProgressScope`.
+   as a path list (`--files-from`), reports through `LrProgressScope`.
 2. **Catalog export** for training (step 1 of the XMP removal above).
 3. **Apply predictions** to the selection, as a named history step / snapshot so
    the user can return to the prior state.
 4. **Open app / close app** menu items driving Track W.
 
-The binary is provisioned the way exiftool is: downloaded by the plugin to
-`~/.shoots`, SHA-256 verified. A download made by `LrHttp` carries no
-Mark-of-the-Web / quarantine attribute, so — like today's `install.ps1` /
-`install.sh` — it raises no SmartScreen or Gatekeeper prompt. **Do not bundle
+The binary is installed by running the official `install.ps1` / `install.sh`
+from the plugin (download, SHA-256 check, `~/.shoots/bin`). A download made
+that way carries no Mark-of-the-Web / quarantine attribute, so it raises no
+SmartScreen or Gatekeeper prompt. **Do not bundle
 the binary inside a zipped `.lrplugin`**: a browser-downloaded zip propagates
 the quarantine to its contents. Code signing becomes a trust and antivirus
 question, not a blocker (see Open decisions).
