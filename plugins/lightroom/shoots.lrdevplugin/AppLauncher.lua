@@ -13,13 +13,17 @@ local LrHttp = import 'LrHttp'
 local LrPathUtils = import 'LrPathUtils'
 local LrTasks = import 'LrTasks'
 
+local AppOutbox = require 'AppOutbox'
 local AppSession = require 'AppSession'
 local Command = require 'Command'
+local Outbox = require 'Outbox'
 local Runner = require 'Runner'
 
 local AppLauncher = {}
 
-local LEASE_SECONDS = 30
+-- Renews the lease and checks for changes sent from the app. Short, so a send
+-- lands in Lightroom within seconds; the server's lease window is far longer.
+local HEARTBEAT_SECONDS = 5
 local START_TIMEOUT_SECONDS = 20
 
 local function sessionPath()
@@ -33,9 +37,11 @@ local function readSession()
   return AppSession.parse(LrFileUtils.readFile(path))
 end
 
+--- POST to the server; returns the reply body on a 200, else nil.
 local function post(session, route)
   local body, headers = LrHttp.post(AppSession.endpoint(session, route), '{}', AppSession.headers(session), 'POST', 5)
-  return body ~= nil and headers ~= nil and headers.status == 200
+  if body ~= nil and headers ~= nil and headers.status == 200 then return body end
+  return nil
 end
 
 -- One lease loop per Lightroom session, renewing whichever server is current.
@@ -48,8 +54,14 @@ local function holdLease()
     local misses = 0
     while misses < 3 do
       local session = readSession()
-      if session and post(session, '/api/host/heartbeat') then misses = 0 else misses = misses + 1 end
-      LrTasks.sleep(LEASE_SECONDS)
+      local reply = session and post(session, '/api/host/heartbeat')
+      if reply then
+        misses = 0
+        if Outbox.pendingCount(reply) > 0 then pcall(AppOutbox.apply, session) end
+      else
+        misses = misses + 1
+      end
+      LrTasks.sleep(HEARTBEAT_SECONDS)
     end
     leaseRunning = false
   end)

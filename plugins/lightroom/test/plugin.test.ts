@@ -94,6 +94,33 @@ describe('AppSession', () => {
   });
 });
 
+describe('Outbox', () => {
+  test('reads the pending count off the heartbeat, 0 on anything else', () => {
+    expect(runLua(`return require('Outbox').pendingCount('{"ok":true,"pending":3}')`)).toBe(3);
+    expect(runLua(`return require('Outbox').pendingCount('{"ok":true}')`)).toBe(0);
+    expect(runLua(`return require('Outbox').pendingCount('nope')`)).toBe(0);
+    expect(runLua(`return require('Outbox').pendingCount(nil)`)).toBe(0);
+  });
+
+  test('keeps only well-formed items', () => {
+    const body = JSON.stringify({ items: [{ id: 1, path: 'C:\\a.CR3', rating: 4, pick: -1 }, { id: 'x' }, { path: 'p' }] });
+    expect(runLua(`return require('Outbox').items(${JSON.stringify(body)})`)).toEqual([{ id: 1, path: 'C:\\a.CR3', rating: 4, pick: -1 }]);
+    expect(runLua(`return require('Outbox').items('{}')`)).toEqual([]);
+  });
+
+  test('maps a change to catalog fields and leaves nulls alone', () => {
+    const fields = (item: string) => runLua(`return require('Outbox').fields(require('Json').decode(${JSON.stringify(item)}))`);
+    expect(fields('{"rating":4,"pick":-1}')).toEqual({ rating: 4, pickStatus: -1 });
+    expect(fields('{"rating":null,"pick":0}')).toEqual({ pickStatus: 0 });
+    expect(fields('{"rating":9,"pick":7}')).toEqual({ rating: 5 });
+  });
+
+  test('the acknowledgement lists applied and missing ids', () => {
+    expect(runLua(`return require('Outbox').ackBody({ 1, 2 }, {})`)).toBe('{"applied":[1,2],"missing":[]}');
+    expect(JSON.parse(runLua<string>(`return require('Outbox').ackBody({}, { 7 })`))).toEqual({ applied: [], missing: [7] });
+  });
+});
+
 describe('Command env and installer', () => {
   test('env goes in front, sorted, quoted per platform', () => {
     const posix = runLua<string>(`return require('Command').build('posix', '/s', { '--version' }, '/o', '/e', { SHOOTS_PROGRESS_FILE = "/t/p q.jsonl", A = 'x' })`);
