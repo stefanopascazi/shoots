@@ -33,6 +33,14 @@ export function stampInfoVersion(infoLua: string, version: string): string {
   );
 }
 
+/** Replace PluginVersion.lua's returned string with `version`. */
+export function stampPluginVersion(source: string, version: string): string {
+  stampInfoVersion('VERSION = {}', version); // same validation
+  const line = /return '[^']*'/;
+  if (!line.test(source)) throw new Error('PluginVersion.lua has no version to stamp');
+  return source.replace(line, `return '${version}'`);
+}
+
 /** Build into `outDir`; returns the folder and zip paths. */
 export async function buildPlugin(outDir: string, version: string): Promise<{ folder: string; zip: string }> {
   const folder = path.join(outDir, PLUGIN_FOLDER);
@@ -42,6 +50,8 @@ export async function buildPlugin(outDir: string, version: string): Promise<{ fo
 
   const infoPath = path.join(folder, 'Info.lua');
   await writeFile(infoPath, stampInfoVersion(await readFile(infoPath, 'utf8'), version), 'utf8');
+  const versionPath = path.join(folder, 'PluginVersion.lua');
+  await writeFile(versionPath, stampPluginVersion(await readFile(versionPath, 'utf8'), version), 'utf8');
 
   const zipPath = path.join(outDir, `shoots-lightroom-${version}.zip`);
   const zip = new AdmZip();

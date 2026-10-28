@@ -5,10 +5,10 @@ command over them, write the result into the catalog as a single undo step.
 
 local LrApplication = import 'LrApplication'
 local LrDialogs = import 'LrDialogs'
-local LrFileUtils = import 'LrFileUtils'
 local LrFunctionContext = import 'LrFunctionContext'
 local LrProgressScope = import 'LrProgressScope'
 
+local Installer = require 'Installer'
 local Results = require 'Results'
 local Runner = require 'Runner'
 
@@ -26,16 +26,7 @@ function Action.run(spec)
       return
     end
 
-    local binary = Runner.binary()
-    if not LrFileUtils.exists(binary) then
-      LrDialogs.message(
-        'shoots is not installed',
-        'Expected the shoots binary at:\n' .. binary
-          .. '\n\nInstall it from shoots-ai.com, or set its path in File > Plug-in Manager.',
-        'critical'
-      )
-      return
-    end
+    if not Installer.ensureReady(context) then return end
 
     -- Virtual copies share a file: one entry in the list, every copy updated.
     local platform = Runner.platform()
@@ -51,16 +42,18 @@ function Action.run(spec)
     end
 
     local progress = LrProgressScope { title = spec.title, functionContext = context }
-    progress:setCaption(string.format('%d photos', #paths))
+    progress:setCancelable(false)
     progress:setIndeterminate()
+    progress:setCaption(string.format('Starting on %d photos', #paths))
 
-    local report, err = Runner.run(binary, spec.args, paths)
+    local report, err = Runner.runOnFiles(spec.args, paths, progress)
     if not report then
       progress:done()
       LrDialogs.message(spec.title .. ' failed', err, 'critical')
       return
     end
 
+    progress:setCaption('Writing to the catalog')
     local changes, counts = spec.changes(report, platform)
     catalog:withWriteAccessDo(spec.title, function()
       for key, change in pairs(changes) do

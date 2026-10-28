@@ -1,5 +1,12 @@
--- Lightroom Classic plug-in manifest. VERSION is stamped by the build
--- (`npm run build:lrplugin`); the development copy reports 0.0.0.
+-- Lightroom Classic plug-in manifest. VERSION (here and in PluginVersion.lua) is
+-- stamped by the build (`npm run build:lrplugin`); the development copy reports 0.0.0.
+local menu = {
+  { title = 'Cull Selection (flag blurry as rejected)', file = 'CullSelection.lua', enabledWhen = 'photosSelected' },
+  { title = 'Rate Selection', file = 'RateSelection.lua', enabledWhen = 'photosSelected' },
+  { title = 'Install or Update shoots', file = 'InstallOrUpdate.lua' },
+  { title = 'Download Dependencies', file = 'SetupDependencies.lua' },
+}
+
 return {
   LrSdkVersion = 10.0,
   LrSdkMinimumVersion = 6.0,
@@ -8,16 +15,9 @@ return {
   LrPluginInfoUrl = 'https://www.shoots-ai.com',
   LrPluginInfoProvider = 'PluginInfoProvider.lua',
 
-  -- Library > Plug-in Extras
-  LrLibraryMenuItems = {
-    { title = 'Cull Selection (flag blurry as rejected)', file = 'CullSelection.lua', enabledWhen = 'photosSelected' },
-    { title = 'Rate Selection', file = 'RateSelection.lua', enabledWhen = 'photosSelected' },
-  },
-  -- File > Plug-in Extras
-  LrExportMenuItems = {
-    { title = 'Cull Selection (flag blurry as rejected)', file = 'CullSelection.lua', enabledWhen = 'photosSelected' },
-    { title = 'Rate Selection', file = 'RateSelection.lua', enabledWhen = 'photosSelected' },
-  },
+  -- Library > Plug-in Extras, and File > Plug-in Extras
+  LrLibraryMenuItems = menu,
+  LrExportMenuItems = menu,
 
   VERSION = { major = 0, minor = 0, revision = 0, display = '0.0.0' },
 }
