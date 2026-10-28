@@ -12,30 +12,102 @@
  *
  * Nor the feedback journal, `--all` or not. It is the only develop artifact that
  * is not regenerable at any price: it records what photographs looked like the
- * day they were developed, and re-reading them now cannot recover that.
+ * day they were developed, and re-reading them now cannot recover that. It goes
+ * only when named: `--only journal`.
+ *
+ * `--only <parts>` picks exactly what goes — the app's clean-up screen drives it.
+ * `calibration` strips the calibration from the profile and keeps the fit.
  */
 import path from 'node:path';
-import { readdir, rm, stat } from 'node:fs/promises';
+import { readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { developExportPath, developFeedbackPath, developProfilePath, developShootsDir } from '@shoots/core';
 import { logError, makeIo, printHuman, printJson } from '../../io.js';
 
+/** What `develop clean` can remove, each on its own. */
+export const CLEAN_PARTS = ['shoots', 'dataset', 'profile', 'calibration', 'journal'] as const;
+export type CleanPart = (typeof CLEAN_PARTS)[number];
+
 export interface CleanArgs {
   /** Also remove the training dataset and the fitted profile. */
   all?: boolean;
+  /** Comma-separated parts; replaces the default selection and --all. */
+  only?: string;
   dryRun?: boolean;
   json?: boolean;
   verbose?: boolean;
 }
 
 interface Entry {
+  part: CleanPart;
   path: string;
   label: string;
   bytes: number;
+  /** Instead of deleting `path`: rewrite it (the calibration lives inside the profile). */
+  apply?: () => Promise<void>;
 }
 
+/** The parts a set of flags selects; throws on an unknown name. */
+export function selectedParts(args: Pick<CleanArgs, 'all' | 'only'>): Set<CleanPart> {
+  if (args.only !== undefined) {
+    const names = args.only.split(',').map((p) => p.trim()).filter(Boolean);
+    const unknown = names.filter((n) => !CLEAN_PARTS.includes(n as CleanPart));
+    if (unknown.length > 0) throw new Error(`unknown part '${unknown.join(', ')}' (available: ${CLEAN_PARTS.join(', ')})`);
+    return new Set(names as CleanPart[]);
+  }
+  return new Set<CleanPart>(args.all ? ['shoots', 'dataset', 'profile'] : ['shoots']);
+}
+
+/** The profile without its calibration, or undefined when it carries none. */
+async function uncalibrated(profilePath: string): Promise<Record<string, unknown> | undefined> {
+  try {
+    const profile = JSON.parse(await readFile(profilePath, 'utf8')) as Record<string, unknown>;
+    if (!profile.calibration) return undefined;
+    delete profile.calibration;
+    return profile;
+  } catch {
+    return undefined;
+  }
+}
+
+/** What would go, part by part, under the current SHOOTS_HOME. */
+export async function cleanEntries(parts: ReadonlySet<CleanPart>): Promise<Entry[]> {
+  const entries: Entry[] = [];
+  const shoots = developShootsDir();
+  if (parts.has('shoots') && existsSync(shoots)) {
+    for (const name of await readdir(shoots)) {
+      const full = path.join(shoots, name);
+      entries.push({ part: 'shoots', path: full, label: `shoot ${name}`, bytes: await sizeOf(full) });
+    }
+  }
+  for (const [part, target, label] of [
+    ['dataset', developExportPath(), 'training dataset'],
+    ['profile', developProfilePath(), 'fitted profile'],
+    ['journal', developFeedbackPath(), 'feedback journal'],
+  ] as const) {
+    if (parts.has(part) && existsSync(target)) entries.push({ part, path: target, label, bytes: await sizeOf(target) });
+  }
+  // Pointless when the profile goes anyway.
+  if (parts.has('calibration') && !parts.has('profile')) {
+    const profilePath = developProfilePath();
+    const stripped = await uncalibrated(profilePath);
+    if (stripped) {
+      entries.push({
+        part: 'calibration',
+        path: profilePath,
+        label: 'calibration',
+        bytes: 0,
+        apply: () => writeFile(profilePath, JSON.stringify(stripped, null, 2) + '\n', 'utf8'),
+      });
+    }
+  }
+  return entries;
+}
+
+const removeEntry = (e: Entry): Promise<void> => (e.apply ? e.apply() : rm(e.path, { recursive: true, force: true }));
+
 /** Total size on disk of a file or directory tree. */
-async function sizeOf(target: string): Promise<number> {
+export async function sizeOf(target: string): Promise<number> {
   const info = await stat(target).catch(() => null);
   if (!info) return 0;
   if (info.isFile()) return info.size;
@@ -54,21 +126,15 @@ export async function runClean(args: CleanArgs): Promise<void> {
   const io = makeIo(args);
   const shoots = developShootsDir();
 
-  const entries: Entry[] = [];
-  if (existsSync(shoots)) {
-    for (const name of await readdir(shoots)) {
-      const full = path.join(shoots, name);
-      entries.push({ path: full, label: `shoot ${name}`, bytes: await sizeOf(full) });
-    }
+  let parts: Set<CleanPart>;
+  try {
+    parts = selectedParts(args);
+  } catch (err) {
+    logError(err instanceof Error ? err.message : String(err));
+    process.exitCode = 2;
+    return;
   }
-  if (args.all) {
-    for (const [target, label] of [
-      [developExportPath(), 'training dataset'],
-      [developProfilePath(), 'fitted profile'],
-    ] as const) {
-      if (existsSync(target)) entries.push({ path: target, label, bytes: await sizeOf(target) });
-    }
-  }
+  const entries = await cleanEntries(parts);
 
   const total = entries.reduce((a, e) => a + e.bytes, 0);
 
@@ -80,12 +146,12 @@ export async function runClean(args: CleanArgs): Promise<void> {
 
   if (io.json) {
     if (!args.dryRun) {
-      for (const e of entries) await rm(e.path, { recursive: true, force: true });
+      for (const e of entries) await removeEntry(e);
     }
     printJson({
       command: 'develop-clean',
       dryRun: !!args.dryRun,
-      removed: entries.map((e) => ({ path: e.path, label: e.label, bytes: e.bytes })),
+      removed: entries.map((e) => ({ part: e.part, path: e.path, label: e.label, bytes: e.bytes })),
       bytes: total,
     });
     return;
@@ -103,17 +169,17 @@ export async function runClean(args: CleanArgs): Promise<void> {
   let removed = 0;
   for (const e of entries) {
     try {
-      await rm(e.path, { recursive: true, force: true });
+      await removeEntry(e);
       removed++;
     } catch (err) {
       logError(`could not remove ${e.path}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   printHuman(io, `\nRemoved ${removed}/${entries.length}.`);
-  if (args.all) {
+  if (parts.has('profile')) {
     printHuman(io, 'The profile is gone too — `shoots develop init <catalog>` rebuilds it.');
   }
-  if (existsSync(developFeedbackPath())) {
+  if (!parts.has('journal') && existsSync(developFeedbackPath())) {
     printHuman(io, `The feedback journal is untouched: ${developFeedbackPath()}`);
   }
 }

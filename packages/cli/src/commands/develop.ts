@@ -112,6 +112,7 @@ export function registerDevelopCommand(program: Command): void {
     .command('clean')
     .description('Remove the per-shoot working files under ~/.shoots/develop (the profile survives)')
     .option('--all', 'also remove the training dataset and the fitted profile')
+    .option('--only <parts>', 'remove exactly these, comma-separated: shoots, dataset, profile, calibration, journal (the journal goes only when named)')
     .option('--dry-run', 'list what would be removed, remove nothing')
     .option('--json', 'machine-readable JSON output on stdout')
     .action(runClean);
