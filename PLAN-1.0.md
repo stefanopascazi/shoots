@@ -43,7 +43,8 @@ launch.
       `shoots app`; Library (folder, thumbnails, find blurry, rate — dry runs) and
       Setup (doctor). Started only by the plugin (Open/Close shoots), bound to it
       by a heartbeat lease; token + Host/Origin checks. Verified end to end with
-      the built binary and real CR3s, minus Lightroom itself.
+      the built binary and real CR3s, minus Lightroom itself. Without Lightroom:
+      `npm run app:dev` plays the plugin (start, lease, browser); dev-only, not shipped.
 
 **Not verified yet:** anything inside a real Lightroom (SDK calls, Plug-in Manager
 panel), and the installer launched by the plugin (needs a release carrying
