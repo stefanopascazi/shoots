@@ -41,7 +41,7 @@
   },
   "overrides": {
     "sharp": "^0.35.3",
-    "adm-zip": "^0.6.0",
+    "adm-zip": "$adm-zip",
     "onnxruntime-node": "1.27.0",
     "esbuild": "^0.28.1"
   }
