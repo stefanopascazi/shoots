@@ -69,6 +69,9 @@ launch.
       from the app). Both run **detached** with their state in
       `~/.shoots/app/jobs/<id>`; the CLI ends its progress file with an `exit`
       line, so a later server re-adopts a run that outlived Lightroom.
+- [x] Network shares: the folder picker takes a typed path (UNC); a folder the
+      catalog lacks fails with its name instead of an empty export. Browse,
+      listing and `develop export` verified over `\\localhost\C$`.
 - [x] Setup › Training data: remove dataset, profile, calibration, shoot files,
       journal (never preselected), job history and catalog exports — through
       `develop clean --only`, refused while a job runs.

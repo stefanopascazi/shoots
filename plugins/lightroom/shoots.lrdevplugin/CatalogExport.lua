@@ -21,7 +21,15 @@ function CatalogExport.request(body)
   if not ok or type(reply) ~= 'table' or type(reply.export) ~= 'table' then return nil end
   local e = reply.export
   if type(e.job) ~= 'string' or not e.job:match('^[%w%-_]+$') or type(e.folder) ~= 'string' then return nil end
-  return { job = e.job, folder = e.folder, recursive = e.recursive == true, raw = e.raw == true }
+  return { job = e.job, folder = CatalogExport.folderPath(e.folder), recursive = e.recursive == true, raw = e.raw == true }
+end
+
+--- A folder path as the catalog looks it up: no trailing separator, except on a
+--- drive root (C:\) or a bare /. A share root reads back from the app as
+--- \\NAS\Photos\, which the catalog would not find.
+function CatalogExport.folderPath(folder)
+  if folder:match('^%a:[\\/]$') or folder == '/' then return folder end
+  return (folder:gsub('[\\/]+$', ''))
 end
 
 local function numbers(list)
@@ -118,6 +126,13 @@ local function anything(v, depth)
 end
 
 function CatalogExport.encodeRaw(v) return anything(v, 0) end
+
+--- The body that says the catalog has no such folder, so the app can say so
+--- instead of reporting a folder with nothing edited in it.
+function CatalogExport.notFound(folder)
+  return '{"version":' .. string.format('%d', CatalogExport.VERSION)
+    .. ',"folder":' .. quote(folder) .. ',"found":false,"photos":[]}'
+end
 
 --- The body for `POST /api/catalog/export`: `photos` is a list of { path, settings, raw? }.
 function CatalogExport.body(folder, photos)

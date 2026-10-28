@@ -20,6 +20,8 @@
 
 /* Folder picker */
 .app-picker { display: grid; gap: var(--sh-space-3); }
+.app-picker__goto { display: flex; gap: var(--sh-space-2); }
+.app-picker__goto .sh-input { flex: 1; min-width: 0; }
 .app-picker__path { display: flex; align-items: center; gap: var(--sh-space-2); min-width: 0; }
 .app-picker__current {
   flex: 1;

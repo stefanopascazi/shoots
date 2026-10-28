@@ -180,6 +180,27 @@ describe('CatalogExport', () => {
   });
 });
 
+describe('CatalogExport, folders', () => {
+  test('a folder path loses its trailing separator, except at a drive root', () => {
+    const p = (folder: string) => runLua(`return require('CatalogExport').folderPath(${JSON.stringify(folder)})`);
+    expect(p('\\\\NAS\\Photos\\')).toBe('\\\\NAS\\Photos');
+    expect(p('\\\\NAS\\Photos\\2025')).toBe('\\\\NAS\\Photos\\2025');
+    expect(p('C:\\')).toBe('C:\\');
+    expect(p('/Volumes/Photos/')).toBe('/Volumes/Photos');
+    expect(p('/')).toBe('/');
+  });
+
+  test('the heartbeat request is normalised the same way', () => {
+    const reply = JSON.stringify({ export: { job: 'j', folder: '\\\\NAS\\Photos\\', recursive: false } });
+    expect(runLua(`return require('CatalogExport').request(${JSON.stringify(reply)}).folder`)).toBe('\\\\NAS\\Photos');
+  });
+
+  test('a folder the catalog lacks is said, not sent empty', () => {
+    const body = runLua<string>(`return require('CatalogExport').notFound(${JSON.stringify('\\\\NAS\\Photos')})`);
+    expect(parseCatalogExport(body)).toMatchObject({ folder: '\\\\NAS\\Photos', found: false, photos: [] });
+  });
+});
+
 describe('CatalogExport, export only', () => {
   test('raw settings travel as they are: nested tables, lists, odd values', () => {
     const text = runLua<string>(`return require('CatalogExport').encodeRaw({

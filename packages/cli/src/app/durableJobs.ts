@@ -26,6 +26,7 @@ import { selfInvocation } from '../selfInvoke.js';
 import { JobError, lastErrorLine, parseJson } from './jobs.js';
 import { exitCode, lastProgress } from './progress.js';
 import { inspectCatalogExport } from '../develop/adapters/lightroom/inspect.js';
+import { parseCatalogExport } from '../develop/adapters/lightroom/catalog.js';
 
 export const DURABLE_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['train', 'calibrate', 'catalog']);
 /** Jobs that start by waiting for the plug-in's catalog export. */
@@ -197,6 +198,16 @@ export class DurableJobs {
   async provideCatalog(id: string, text: string): Promise<JobStatus> {
     const record = this.active.get(id);
     if (!record || !NEEDS_CATALOG.has(record.kind) || record.phase !== 'waiting') throw new JobError('No job is waiting for that export.', 409);
+    const data = parseCatalogExport(text);
+    if (!data.found) {
+      this.finish(record, {
+        state: 'failed',
+        error:
+          `Lightroom has no folder ${data.folder}. Choose it as Lightroom shows it in the Folders panel: ` +
+          'a network share is \\\\NAS\\share, not the drive letter it may also be mapped to, or the other way round.',
+      });
+      return this.get(id)!;
+    }
     if (record.kind === 'catalog') {
       mkdirSync(this.exportsDir, { recursive: true });
       const kept = path.join(this.exportsDir, `catalog-${new Date(this.now()).toISOString().replace(/[:.]/g, '-')}.json`);

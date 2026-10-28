@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useEffect, useState } from 'preact/hooks';
-import { Alert, Button, Dialog, Icon, Spinner } from '@shoots/ui';
+import { Alert, Button, Dialog, Icon, Input, Spinner } from '@shoots/ui';
 import { api } from '../api/client.js';
 import type { BrowseResult } from '../contract.js';
 
@@ -12,15 +12,23 @@ export interface FolderPickerProps {
   onClose: () => void;
 }
 
-/** Browses folders on this machine through the server: a browser page cannot see real paths. */
+/**
+ * Browses folders on this machine through the server: a browser page cannot see real paths.
+ * A path can also be typed or pasted — the only way to reach a network share (\\NAS\Photos),
+ * which is not a drive and so never appears in the list.
+ */
 export function FolderPicker({ open, start, onPick, onClose }: FolderPickerProps) {
   const [at, setAt] = useState<string | null>(start);
   const [listing, setListing] = useState<BrowseResult>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
+  const [typed, setTyped] = useState('');
 
   useEffect(() => {
-    if (open) setAt(start);
+    if (open) {
+      setAt(start);
+      setTyped('');
+    }
   }, [open, start]);
 
   useEffect(() => {
@@ -69,6 +77,23 @@ export function FolderPicker({ open, start, onPick, onClose }: FolderPickerProps
           </Button>
           <code class="app-picker__current">{listing?.path ?? 'This computer'}</code>
         </div>
+        <form
+          class="app-picker__goto"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (typed.trim()) setAt(typed.trim());
+          }}
+        >
+          <Input
+            value={typed}
+            placeholder="Type or paste a path, e.g. \\NAS\Photos\2025"
+            aria-label="Folder path"
+            onInput={(e) => setTyped((e.currentTarget as HTMLInputElement).value)}
+          />
+          <Button size="sm" type="submit" disabled={!typed.trim()}>
+            Go
+          </Button>
+        </form>
         {error && <Alert tone="danger">{error}</Alert>}
         <div class="app-picker__list" role="listbox" aria-label="Folders">
           {loading && !listing ? (

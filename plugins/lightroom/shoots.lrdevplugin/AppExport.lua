@@ -22,7 +22,18 @@ function AppExport.run(session, request, renew)
   local catalog = LrApplication.activeCatalog()
   local folder = catalog:getFolderByPath(request.folder)
   local photos = {}
-  if folder then
+  if not folder then
+    -- Said out loud: an empty export would read as "nothing edited here".
+    LrHttp.post(
+      AppSession.endpoint(session, '/api/catalog/export?job=' .. request.job),
+      CatalogExport.notFound(request.folder),
+      AppSession.headers(session),
+      'POST',
+      POST_TIMEOUT_SECONDS
+    )
+    return
+  end
+  do
     local all = folder:getPhotos(request.recursive)
     local meta = catalog:batchGetRawMetadata(all, { 'path', 'isVirtualCopy' })
     for i, photo in ipairs(all) do
@@ -36,7 +47,7 @@ function AppExport.run(session, request, renew)
       if i % RENEW_EVERY == 0 then renew() end
     end
   end
-  -- An empty export is still sent: the run then says there was nothing to learn from.
+  -- A folder with no photos is still sent: the run then says there was nothing to learn from.
   LrHttp.post(
     AppSession.endpoint(session, '/api/catalog/export?job=' .. request.job),
     CatalogExport.body(request.folder, photos),

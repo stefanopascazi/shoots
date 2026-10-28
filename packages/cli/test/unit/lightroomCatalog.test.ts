@@ -10,7 +10,7 @@ describe('parseCatalogExport', () => {
     const data = parseCatalogExport(
       JSON.stringify({ version: 1, folder: '/s', photos: [{ path: '/s/a.cr3', settings: { Exposure2012: 1 } }, { path: 3 }, null] }),
     );
-    expect(data).toEqual({ version: 1, folder: '/s', photos: [{ path: '/s/a.cr3', settings: { Exposure2012: 1 } }] });
+    expect(data).toEqual({ version: 1, folder: '/s', found: true, photos: [{ path: '/s/a.cr3', settings: { Exposure2012: 1 } }] });
   });
 
   test('refuses what it cannot read, naming the version', () => {
@@ -40,6 +40,18 @@ describe('toCrsRecord', () => {
 
 describe('catalogIndex', () => {
   const data = parseCatalogExport(JSON.stringify({ version: 1, folder: '', photos: [{ path: 'C:/Shoot/A.CR3', settings: {} }] }));
+
+  test('network share paths match as Lightroom spells them', () => {
+    const share = parseCatalogExport(
+      JSON.stringify({ version: 1, folder: '', photos: [{ path: '\\\\NAS\\Photos\\2025\\A.CR3', settings: {} }] }),
+    );
+    expect(catalogIndex(share, true)('\\\\nas\\photos\\2025\\a.cr3')).toBeDefined();
+  });
+
+  test('an export says whether the catalog had the folder', () => {
+    expect(parseCatalogExport('{"version":1,"photos":[]}').found).toBe(true);
+    expect(parseCatalogExport('{"version":1,"found":false,"photos":[]}').found).toBe(false);
+  });
 
   test('matches case-insensitively where the file system does', () => {
     expect(catalogIndex(data, true)('c:/shoot/a.cr3')).toBeDefined();

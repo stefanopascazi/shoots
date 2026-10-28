@@ -25,6 +25,8 @@ export interface CatalogPhoto {
 export interface CatalogExport {
   version: number;
   folder: string;
+  /** false: the catalog has no folder by that path (spelled differently, or not imported). */
+  found: boolean;
   photos: CatalogPhoto[];
 }
 
@@ -47,7 +49,7 @@ export function parseCatalogExport(text: string): CatalogExport {
     if (!photo || typeof photo.path !== 'string' || !photo.settings || typeof photo.settings !== 'object') continue;
     photos.push({ path: photo.path, settings: photo.settings as Record<string, CatalogSetting> });
   }
-  return { version: r.version, folder: typeof r.folder === 'string' ? r.folder : '', photos };
+  return { version: r.version, folder: typeof r.folder === 'string' ? r.folder : '', found: r.found !== false, photos };
 }
 
 export async function loadCatalogExport(file: string): Promise<CatalogExport> {

@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { render } from 'preact-render-to-string';
 import { JobPanel } from '../src/library/JobPanel.js';
+import { FolderPicker } from '../src/library/FolderPicker.js';
 import { thumbUrl } from '../src/api/client.js';
 
 describe('JobPanel', () => {
@@ -27,5 +28,13 @@ describe('JobPanel', () => {
 describe('thumbUrl', () => {
   test('encodes Windows paths', () => {
     expect(thumbUrl('C:\\a b\\x.CR3', 400)).toBe('/api/thumb?path=C%3A%5Ca+b%5Cx.CR3&w=400');
+  });
+});
+
+describe('FolderPicker', () => {
+  test('takes a typed path, for network shares that are not drives', () => {
+    const html = render(<FolderPicker open start={null} onPick={() => {}} onClose={() => {}} />);
+    expect(html).toContain('aria-label="Folder path"');
+    expect(html).toContain('NAS');
   });
 });

@@ -35,7 +35,9 @@ Training started in the app needs Lightroom once: the plug-in exports the
 folder's develop settings from the catalog (`getDevelopSettings()`, scalars and
 the tone curve, no masks) and posts them to the app. The run then goes on
 detached, and finishes even if Lightroom and the app close; reopening the app
-shows where it is.
+shows where it is. The folder must be spelled as Lightroom's Folders panel shows
+it — a network share as a UNC path (typed in the app's folder picker), not a
+drive letter mapped to it; otherwise the app says the catalog has no such folder.
 
 ## Requirements
 
