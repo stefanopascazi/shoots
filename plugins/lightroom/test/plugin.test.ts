@@ -125,6 +125,35 @@ describe('Outbox', () => {
   });
 });
 
+describe('Sync', () => {
+  test('reads the folder to follow off the heartbeat', () => {
+    expect(runLua(`return require('Sync').watch('{"ok":true,"watch":{"folder":"C:\\\\\\\\Shoot","recursive":true}}')`)).toEqual({ folder: 'C:\\Shoot', recursive: true });
+    expect(runLua(`return require('Sync').watch('{"ok":true,"watch":null}')`)).toBeNull();
+    expect(runLua(`return require('Sync').watch('nope')`)).toBeNull();
+  });
+
+  test('normalizes catalog values: no rating is 0, no label is none', () => {
+    expect(runLua(`return require('Sync').normalize({ rating = 3, pickStatus = -1, colorNameForLabel = 'red' })`)).toEqual({ rating: 3, pick: -1, label: 'red' });
+    expect(runLua(`return require('Sync').normalize({})`)).toEqual({ rating: 0, pick: 0, label: 'none' });
+    expect(runLua(`return require('Sync').normalize({ rating = 9, pickStatus = 5, colorNameForLabel = 'grey' })`)).toEqual({ rating: 5, pick: 0, label: 'none' });
+  });
+
+  test('a first read reports everything; later reads only what changed', () => {
+    const current = `{ ['/b'] = { rating = 1, pick = 0, label = 'none' }, ['/a'] = { rating = 3, pick = 1, label = 'red' } }`;
+    expect(runLua(`return require('Sync').diff(nil, ${current})`)).toEqual([
+      { path: '/a', rating: 3, pick: 1, label: 'red' },
+      { path: '/b', rating: 1, pick: 0, label: 'none' },
+    ]);
+    const previous = `{ ['/b'] = { rating = 1, pick = 0, label = 'none' }, ['/a'] = { rating = 2, pick = 1, label = 'red' } }`;
+    expect(runLua(`return require('Sync').diff(${previous}, ${current})`)).toEqual([{ path: '/a', rating: 3, pick: 1, label: 'red' }]);
+  });
+
+  test('the report is JSON, with paths escaped', () => {
+    const body = runLua<string>(`return require('Sync').report('C:\\\\Shoot "x"', { { path = 'C:\\\\Shoot\\\\a.CR3', rating = 3, pick = -1, label = 'red' } })`);
+    expect(JSON.parse(body)).toEqual({ folder: 'C:\\Shoot "x"', photos: [{ path: 'C:\\Shoot\\a.CR3', rating: 3, pick: -1, label: 'red' }] });
+  });
+});
+
 describe('Command env and installer', () => {
   test('env goes in front, sorted, quoted per platform', () => {
     const posix = runLua<string>(`return require('Command').build('posix', '/s', { '--version' }, '/o', '/e', { SHOOTS_PROGRESS_FILE = "/t/p q.jsonl", A = 'x' })`);

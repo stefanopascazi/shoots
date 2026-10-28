@@ -15,14 +15,17 @@ local LrTasks = import 'LrTasks'
 
 local AppOutbox = require 'AppOutbox'
 local AppSession = require 'AppSession'
+local AppSync = require 'AppSync'
 local Command = require 'Command'
 local Outbox = require 'Outbox'
 local Runner = require 'Runner'
+local Sync = require 'Sync'
 
 local AppLauncher = {}
 
--- Renews the lease and checks for changes sent from the app. Short, so a send
--- lands in Lightroom within seconds; the server's lease window is far longer.
+-- Renews the lease, applies changes sent from the app and reads back the folder
+-- the app has open. Short, so both directions land within seconds; the server's
+-- lease window is far longer.
 local HEARTBEAT_SECONDS = 5
 local START_TIMEOUT_SECONDS = 20
 
@@ -58,6 +61,9 @@ local function holdLease()
       if reply then
         misses = 0
         if Outbox.pendingCount(reply) > 0 then pcall(AppOutbox.apply, session) end
+        -- After applying, so what the app just sent reads back as already in place.
+        local watch = Sync.watch(reply)
+        if watch then pcall(AppSync.run, session, watch) end
       else
         misses = misses + 1
       end

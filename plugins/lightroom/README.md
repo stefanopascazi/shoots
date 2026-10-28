@@ -27,6 +27,10 @@ from the app with **Send to Lightroom** (stars, flags, colour labels)
 is written into the catalog as one undo step, "shoots: Apply from the app" —
 no sidecars. Photos the catalog does not have are reported back to the app.
 
+The other way round, the plug-in reads the folder open in the app back from
+the catalog and reports flags, stars and labels that changed in Lightroom; the
+latest change wins.
+
 ## Requirements
 
 - Lightroom Classic 6 or later.
