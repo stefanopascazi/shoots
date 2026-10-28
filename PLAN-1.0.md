@@ -14,6 +14,8 @@
 > asserted here, and 0.8.0 forces no retrain.
 >
 > Updated 2026-10-28: **strategy change — Lightroom Classic only until launch.**
+> Revised the same day: **XMP stays** as the standalone CLI's output; see
+> "Decided".
 > The section below supersedes Track B's scope, the editor sequencing and the
 > release plan. Tracks A, C, D and E stand as written; C is now run through the
 > plugin beta.
@@ -67,12 +69,12 @@ panel), and the installer launched by the plugin (needs a release carrying
 3. **L1 leftovers**: write `rate` keywords into the catalog; decide whether cull
    should also flag keepers; cancel support (kill the child process).
 4. **L2 catalog export** → training reads JSON, not sidecars.
-5. **Track W** — next: push library results back to Lightroom (needs L1/L3
-   apply), then training and calibrate in the app. Monetisation gate still to
+5. **Track W** — next: field-test Send to Lightroom, then training and
+   calibrate in the app. Monetisation gate still to
    decide: today only the hidden command and the lease keep the app plugin-only;
    a signed licence checked by the server is the real one.
 6. **L3** apply predictions via `applyDevelopSettings`.
-7. Remove the Ink shell, then XMP (only after 4 and 6).
+7. Remove the Ink shell and the deprecated `--xmp` alias (B1). XMP itself stays.
 8. Beta data program (Track C) — legal pack first.
 
 ## Decided
@@ -83,15 +85,22 @@ panel), and the installer launched by the plugin (needs a release carrying
 - **Pause every editor but Lightroom Classic.** `rapidraw` is frozen, not
   deleted: the adapter interface (`develop/adapters/types.ts`) stays, so other
   editors remain additive after launch.
-- **Remove XMP and the sidecar path** — but **last**, not first. XMP/exiftool
-  reach ~50 source files and training reads sidecars today. Order:
-  1. the plugin exports develop settings from the catalog
-     (`photo:getDevelopSettings()`) as JSON;
-  2. training reads that export;
-  3. predictions are applied through `photo:applyDevelopSettings()`, ratings,
-     picks and labels through `photo:setRawMetadata()`;
-  4. only then remove the sidecar writers, `--xmp` (was B1) and the `acr` XMP
-     adapter.
+- **Two output paths, by product.** *(Revised 2026-10-28; this replaces "remove
+  XMP and the sidecar path".)* For a tool outside Lightroom, an XMP sidecar is
+  the only way to hand ratings, labels and develop settings over without touching
+  the RAW, and the free CLI must stay usable on its own. So:
+  - **CLI, standalone, free:** writes XMP sidecars, trains from them. Lightroom
+    picks them up at import or with Metadata › Read Metadata from Files — on
+    photos already in the catalog that is a manual step with a conflict badge.
+  - **Plugin + app, paid:** never touches a sidecar. Ratings, picks and labels go
+    through `photo:setRawMetadata()`, predictions through
+    `photo:applyDevelopSettings()`, training reads the catalog export — one undo
+    step, no conflicts, nothing to re-read.
+  That friction is what the plugin sells. Removed: only `--xmp` (B1) and the
+  shell. exiftool stays.
+- **Send to Lightroom.** The app queues changes in `app.db`; the plugin's lease
+  loop sees the queue, applies it with `setRawMetadata` in one write, and
+  acknowledges what landed and what is not in the catalog.
 - **Storage format.** JSON for small payloads, **JSONL** for datasets (what
   `train_v2.jsonl` already is). "JSONB" is a Postgres internal, not a file
   format; if a dataset outgrows JSONL, use **SQLite** (public domain).
@@ -103,7 +112,7 @@ Lua, Lightroom Classic SDK. Lightroom (cloud) has no comparable SDK and is out.
 1. **Fast operations first** (*skeleton shipped*): `cull`, `rate`, picks and colour labels written
    into the catalog. Calls the binary via `LrTasks.execute`, passes the selection
    as a path list (`--files-from`), reports through `LrProgressScope`.
-2. **Catalog export** for training (step 1 of the XMP removal above).
+2. **Catalog export** for training, so the plugin path never reads a sidecar.
 3. **Apply predictions** to the selection, as a named history step / snapshot so
    the user can return to the prior state.
 4. **Open app / close app** menu items driving Track W.
@@ -150,7 +159,7 @@ Must exist **before** the first byte is collected:
 The contract worth freezing is now **plugin ↔ engine** (the JSON the plugin
 sends and reads back), not CLI flags. B2 (profile migration) and B4 (pipeline
 versioning) stand. B3 becomes "freeze the plugin ↔ engine JSON". B1 is absorbed
-into the XMP removal. B5 is done by this update.
+into removing the `--xmp` alias. B5 is done by this update.
 
 ## Open decisions
 
@@ -162,8 +171,6 @@ into the XMP removal. B5 is done by this update.
 - **Code signing.** Not required for the plugin-download path above. Still worth
   pricing (Apple Developer ID + notarization; a Windows certificate) for
   antivirus heuristics and the credibility of a paid product.
-- **exiftool after XMP.** `import`/`rename`/`exif` read metadata outside
-  Lightroom; check whether exiftool is still needed there before removing it.
 - **Competition inside Lightroom**: Adobe's own assisted culling, Excire,
   Aftershoot, Imagen. The differentiator to defend is a personal profile that
   never leaves the machine.
@@ -743,7 +750,7 @@ and Linux personally. `ci.yml` stays ubuntu-only by decision, not omission.
 # Release sequencing
 
 > **Superseded 2026-10-28.** New order: L1 (plugin, fast operations) → L2 + W
-> (catalog export, local app) → L3 (apply predictions) → shell and XMP removal →
+> (catalog export, local app) → L3 (apply predictions) → shell removal →
 > beta data program (C) → 1.0 freezes the plugin ↔ engine contract. Editor
 > adapters after Lightroom are post-launch. The original sequencing below is
 > kept for the record.
