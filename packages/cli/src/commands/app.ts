@@ -7,7 +7,7 @@
  * browser itself and keeps a lease alive; without that lease the server stops.
  */
 import type { Command } from 'commander';
-import { shootsHome } from '@shoots/core';
+import { appDbPath, shootsHome } from '@shoots/core';
 import { allProfileNames, PROFILE_NAMES } from '@shoots/inference';
 import { logError, makeIo, parsePositiveInt } from '../io.js';
 import { ensureExiftoolReady } from '../tools.js';
@@ -16,7 +16,8 @@ import { JobRunner } from '../app/jobs.js';
 import { Library } from '../app/library.js';
 import { clearSession, writeSession } from '../app/lifecycle.js';
 import { createToken } from '../app/security.js';
-import { createAppServer } from '../app/server.js';
+import { createAppServer, type AppServer } from '../app/server.js';
+import { AppStore } from '../app/store.js';
 
 interface AppOptions {
   port: string;
@@ -41,17 +42,28 @@ async function runApp(options: AppOptions): Promise<void> {
 
   let rawReady: Promise<boolean> | undefined;
   const library = new Library(() => (rawReady ??= ensureExiftoolReady(makeIo({}))));
-  const jobs = new JobRunner();
+  let store: AppStore;
+  try {
+    store = await AppStore.open(appDbPath());
+  } catch (err) {
+    logError(`could not open the app database: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+  // Finished jobs are stored by the server, which is created just below.
+  let app: AppServer | undefined;
+  const jobs = new JobRunner(undefined, (status) => app?.jobFinished(status));
 
   let resolveDone!: () => void;
   const done = new Promise<void>((r) => (resolveDone = r));
 
-  const app = createAppServer({
+  app = createAppServer({
     html: APP_HTML,
     token,
     info: { version: VERSION, platform: process.platform, home: shootsHome() },
     library,
     jobs,
+    store,
     profiles: async () => {
       const builtin = new Set(PROFILE_NAMES);
       return (await allProfileNames()).map((name) => ({ name, learned: !builtin.has(name) }));
@@ -60,6 +72,7 @@ async function runApp(options: AppOptions): Promise<void> {
     pageIdleMs: parsePositiveInt(options.idleMinutes, 30) * 60_000,
     onStop: (reason) => {
       clearSession(process.pid);
+      store.close();
       process.stderr.write(`shoots app stopped (${reason})\n`);
       resolveDone();
     },
@@ -78,6 +91,6 @@ async function runApp(options: AppOptions): Promise<void> {
   writeSession({ pid: process.pid, port, token, url, startedAt: new Date().toISOString() });
   process.stderr.write(`shoots app listening on http://127.0.0.1:${port}\n`);
 
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => app.stop('shutdown'));
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => app!.stop('shutdown'));
   await done;
 }

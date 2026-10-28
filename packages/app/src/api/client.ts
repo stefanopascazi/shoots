@@ -1,6 +1,8 @@
 /** Typed calls to the local server. The session cookie rides along on every same-origin request. */
 import type {
   AppInfo,
+  AppSettings,
+  Decision,
   BrowseResult,
   JobRequest,
   JobStatus,
@@ -41,7 +43,18 @@ const q = (params: Record<string, string | undefined>): string => {
   return text ? `?${text}` : '';
 };
 
+export interface StartState {
+  settings: AppSettings;
+  /** The folder to open now: one named by the plug-in, else the last one when reopening is on. */
+  startFolder: string | null;
+  recent: string[];
+}
+
 export const api = {
+  start: () => call<StartState>('GET', '/api/start'),
+  saveSettings: (patch: Partial<AppSettings>) => call<AppSettings>('PUT', '/api/settings', patch),
+  recentFolders: () => call<string[]>('GET', '/api/folders/recent'),
+  saveDecisions: (decisions: Record<string, Decision | null>) => call<{ saved: number }>('PUT', '/api/decisions', { decisions }),
   info: () => call<AppInfo>('GET', '/api/info'),
   profiles: () => call<RatingProfile[]>('GET', '/api/profiles'),
   heartbeat: () => call<{ ok: boolean; busy: boolean }>('POST', '/api/heartbeat'),

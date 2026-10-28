@@ -3,12 +3,14 @@ import { useEffect, useState } from 'preact/hooks';
 import { Alert, Badge, Button, Card, PageHeader, Spinner, type Tone } from '@shoots/ui';
 import type { AppInfo, CheckStatus, DoctorReport } from '../contract.js';
 import { useJob } from '../hooks/useJob.js';
+import type { SettingsHandle } from '../hooks/useSettings.js';
+import { PreferencesCard } from './PreferencesCard.js';
 
 const TONE: Record<CheckStatus, Tone> = { ok: 'success', warn: 'warning', fail: 'danger' };
 const LABEL: Record<CheckStatus, string> = { ok: 'OK', warn: 'Warning', fail: 'Failed' };
 
-/** What `shoots doctor` finds, plus where shoots keeps its data. */
-export function HealthScreen({ info }: { info: AppInfo | undefined }) {
+/** Preferences, what `shoots doctor` finds, and where shoots keeps its data. */
+export function HealthScreen({ info, prefs }: { info: AppInfo | undefined; prefs: SettingsHandle }) {
   const job = useJob();
   const [report, setReport] = useState<DoctorReport>();
 
@@ -25,7 +27,7 @@ export function HealthScreen({ info }: { info: AppInfo | undefined }) {
     <>
       <PageHeader
         title="Setup"
-        description="The tools shoots relies on, checked on this computer."
+        description="Your preferences, and the tools shoots relies on, checked on this computer."
         actions={
           <Button icon="refresh" onClick={check} loading={job.running}>
             Check again
@@ -60,6 +62,8 @@ export function HealthScreen({ info }: { info: AppInfo | undefined }) {
             </div>
           )}
         </Card>
+        <div class="app-side">
+        <PreferencesCard prefs={prefs} />
         <Card title="This installation">
           <dl class="app-facts">
             <dt>Version</dt>
@@ -72,6 +76,7 @@ export function HealthScreen({ info }: { info: AppInfo | undefined }) {
             </dd>
           </dl>
         </Card>
+        </div>
       </div>
     </>
   );

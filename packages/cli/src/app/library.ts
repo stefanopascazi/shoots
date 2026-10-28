@@ -8,7 +8,10 @@
 import { existsSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { BrowseResult, LibraryListing } from '@shoots/app';
+import type { BrowseResult, LibraryListing, LibraryPhoto } from '@shoots/app';
+
+/** A folder's photographs, before anything known about them is added. */
+export type FolderListing = Pick<LibraryListing, 'folder' | 'recursive' | 'photos'>;
 import { classifyExtension, scanFiles } from '@shoots/core';
 import { generateThumbnail, isRawFile } from '@shoots/imaging';
 
@@ -54,7 +57,7 @@ export class Library {
     private readonly concurrency = 4,
   ) {}
 
-  async list(folder: string, recursive: boolean): Promise<LibraryListing> {
+  async list(folder: string, recursive: boolean): Promise<FolderListing> {
     const resolved = path.resolve(folder);
     const info = await stat(resolved);
     if (!info.isDirectory()) throw new Error(`${resolved} is not a folder.`);
@@ -70,8 +73,8 @@ export class Library {
   }
 
   /** The listed photos of `folder`, for handing to a job. */
-  async photosOf(folder: string, recursive: boolean): Promise<string[]> {
-    return (await this.list(folder, recursive)).photos.map((p) => p.path);
+  async photosOf(folder: string, recursive: boolean): Promise<LibraryPhoto[]> {
+    return (await this.list(folder, recursive)).photos;
   }
 
   isServable(file: string): boolean {

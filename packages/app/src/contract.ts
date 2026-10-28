@@ -33,10 +33,29 @@ export interface LibraryPhoto {
   mtime: number;
 }
 
+export type Decision = 'keep' | 'reject';
+
 export interface LibraryListing {
   folder: string;
   recursive: boolean;
   photos: LibraryPhoto[];
+  /** What earlier runs found, for photographs unchanged since. */
+  cull: CullResultItem[];
+  rate: StoredRate[];
+  /** The photographer's own keep/reject calls, by path. */
+  decisions: Record<string, Decision>;
+}
+
+export interface AppSettings {
+  /** Open the last folder again when the app starts. */
+  reopenLastFolder: boolean;
+  lastFolder: string | null;
+  recursive: boolean;
+  /** Rating profile last used; null picks the default. */
+  profile: string | null;
+  theme: 'system' | 'dark' | 'light';
+  filter: 'all' | 'keepers' | 'rejected' | 'review';
+  sort: 'name' | 'rating';
 }
 
 export interface RatingProfile {
@@ -104,6 +123,11 @@ export interface RateResultItem {
   focus: number;
   aesthetic: number;
   keywords: string[];
+}
+
+/** A stored rating, with the profile that produced it. */
+export interface StoredRate extends RateResultItem {
+  profile: string;
 }
 
 export interface RateReport {

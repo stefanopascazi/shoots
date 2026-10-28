@@ -1,10 +1,11 @@
 /**
- * The photographer's keep/reject decisions, per folder, remembered in this
- * browser so a reload or a re-run of the cull never loses them.
+ * Keep/reject decisions on the client side: the pure update, and the one-time
+ * hand-over of decisions an earlier version kept in this browser. The server's
+ * database is where they live now.
  */
 import type { Decision, Decisions } from './model.js';
 
-const PREFIX = 'shoots-decisions:';
+const LEGACY_PREFIX = 'shoots-decisions:';
 
 /** A new record with `decision` set for `path`, or removed when undefined. */
 export function withDecision(record: Decisions, path: string, decision: Decision | undefined): Decisions {
@@ -26,19 +27,18 @@ export function parseDecisions(raw: string | null): Decisions {
   }
 }
 
-export function loadDecisions(folder: string): Decisions {
+export function loadLegacyDecisions(folder: string): Decisions {
   try {
-    return parseDecisions(localStorage.getItem(PREFIX + folder));
+    return parseDecisions(localStorage.getItem(LEGACY_PREFIX + folder));
   } catch {
     return {};
   }
 }
 
-export function saveDecisions(folder: string, record: Decisions): void {
+export function clearLegacyDecisions(folder: string): void {
   try {
-    if (Object.keys(record).length === 0) localStorage.removeItem(PREFIX + folder);
-    else localStorage.setItem(PREFIX + folder, JSON.stringify(record));
+    localStorage.removeItem(LEGACY_PREFIX + folder);
   } catch {
-    // Storage unavailable: decisions last for this page only.
+    // Nothing to clear.
   }
 }

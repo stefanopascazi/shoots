@@ -66,7 +66,11 @@ export class JobRunner {
   private current: Running | undefined;
   private readonly finished = new Map<string, JobStatus>();
 
-  constructor(private readonly spawner: Spawner = defaultSpawn) {}
+  constructor(
+    private readonly spawner: Spawner = defaultSpawn,
+    /** Called once per job when it ends, whatever the outcome. */
+    private readonly onFinish?: (status: JobStatus) => void,
+  ) {}
 
   get busy(): boolean {
     return this.current !== undefined;
@@ -142,6 +146,7 @@ export class JobRunner {
     this.finished.set(final.id, final);
     if (this.current === running) this.current = undefined;
     rmSync(running.dir, { recursive: true, force: true });
+    this.onFinish?.(final);
   }
 }
 

@@ -7,10 +7,10 @@
  * the uncertain frames (shallow depth of field rescued by the focus peak) wait
  * for one before they count as settled.
  */
-import type { CullReport, CullResultItem, LibraryPhoto, RateReport } from '../contract.js';
+import type { CullResultItem, Decision, LibraryPhoto, RateResultItem } from '../contract.js';
 import type { PhotoFlag } from '@shoots/ui';
 
-export type Decision = 'keep' | 'reject';
+export type { Decision };
 export type Decisions = Readonly<Record<string, Decision>>;
 
 export interface PhotoView extends LibraryPhoto {
@@ -31,13 +31,13 @@ export const pathKey = (p: string, caseInsensitive: boolean): string => (caseIns
 
 export function mergeResults(
   photos: readonly LibraryPhoto[],
-  cull: CullReport | undefined,
-  rate: RateReport | undefined,
+  cull: readonly CullResultItem[] | undefined,
+  rate: readonly RateResultItem[] | undefined,
   caseInsensitive = false,
   decisions: Decisions = {},
 ): PhotoView[] {
-  const blur = new Map(cull?.results.map((r) => [pathKey(r.file, caseInsensitive), r]));
-  const rated = new Map(rate?.results.map((r) => [pathKey(r.file, caseInsensitive), r]));
+  const blur = new Map(cull?.map((r) => [pathKey(r.file, caseInsensitive), r]));
+  const rated = new Map(rate?.map((r) => [pathKey(r.file, caseInsensitive), r]));
   return photos.map((p) => {
     const k = pathKey(p.path, caseInsensitive);
     const b = blur.get(k);

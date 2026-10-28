@@ -7,10 +7,11 @@
  * and nothing is running, it stops too.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { JobRequest, RatingProfile } from '@shoots/app';
+import type { CullReport, JobRequest, JobStatus, LibraryPhoto, RateReport, RatingProfile } from '@shoots/app';
 import { JobError, type JobRunner } from './jobs.js';
 import { browse, type Library } from './library.js';
 import { startIdleWatch, type IdleWatch } from './lifecycle.js';
+import type { AppStore, PhotoLookup } from './store.js';
 import {
   isAllowedHost,
   isAllowedOrigin,
@@ -29,6 +30,7 @@ export interface AppServerOptions {
   info: { version: string; platform: string; home: string };
   library: Library;
   jobs: JobRunner;
+  store: AppStore;
   profiles: () => Promise<RatingProfile[]>;
   /** Stop when the plug-in has not renewed its lease for this long. */
   hostLeaseMs: number;
@@ -41,9 +43,19 @@ export interface AppServer {
   server: Server;
   listen: (port: number) => Promise<number>;
   stop: (reason: StopReason) => void;
+  /** Hand every finished job here: cull and rate results are stored for next time. */
+  jobFinished: (status: JobStatus) => void;
 }
 
-const MAX_BODY = 16 * 1024;
+// Room for a batch of decisions; anything larger is not something the page sends.
+const MAX_BODY = 512 * 1024;
+
+/** Maps a file path the CLI reported back to the photo that was listed, tolerating case on Windows. */
+export function photoLookup(photos: readonly LibraryPhoto[], caseInsensitive: boolean): PhotoLookup {
+  const exact = new Map(photos.map((p) => [p.path, p]));
+  const folded = caseInsensitive ? new Map(photos.map((p) => [p.path.toLowerCase(), p])) : undefined;
+  return (file) => exact.get(file) ?? folded?.get(file.toLowerCase());
+}
 
 const CSP = [
   "default-src 'none'",
@@ -61,6 +73,11 @@ export function createAppServer(opts: AppServerOptions): AppServer {
   let stopped = false;
   let hostLease: IdleWatch | undefined;
   let pageIdle: IdleWatch | undefined;
+  /** The photos each running job was given, to store its results against. */
+  const jobPhotos = new Map<string, LibraryPhoto[]>();
+  /** A folder named on the launch URL; opened once, ahead of the remembered one. */
+  let launchFolder: string | null = null;
+  const caseInsensitive = process.platform === 'win32';
 
   const stop = (reason: StopReason): void => {
     if (stopped) return;
@@ -92,6 +109,7 @@ export function createAppServer(opts: AppServerOptions): AppServer {
       const launch = url.searchParams.get('t');
       if (launch !== null) {
         if (!tokenMatches(launch, opts.token)) return sendText(res, 401, 'This link has expired. Open the app again from Lightroom.');
+        launchFolder = url.searchParams.get('folder') || null;
         res.writeHead(303, { location: '/', 'set-cookie': sessionCookie(opts.token), 'cache-control': 'no-store' });
         return void res.end();
       }
@@ -126,12 +144,31 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         return sendJson(res, 200, opts.info);
       case 'GET /api/profiles':
         return sendJson(res, 200, await opts.profiles());
+      case 'GET /api/start': {
+        // Everything the page needs to come back where it was left.
+        const settings = opts.store.settings();
+        const startFolder = launchFolder ?? (settings.reopenLastFolder ? settings.lastFolder : null);
+        launchFolder = null;
+        return sendJson(res, 200, { settings, startFolder, recent: opts.store.recentFolders() });
+      }
+      case 'GET /api/settings':
+        return sendJson(res, 200, opts.store.settings());
+      case 'PUT /api/settings':
+        return withUserError(res, async () => opts.store.updateSettings(JSON.parse(await readBody(req))));
+      case 'GET /api/folders/recent':
+        return sendJson(res, 200, opts.store.recentFolders());
+      case 'PUT /api/decisions':
+        return putDecisions(req, res);
       case 'GET /api/browse':
         return withUserError(res, () => browse(url.searchParams.get('path')));
       case 'GET /api/library': {
         const folder = url.searchParams.get('folder');
         if (!folder) return sendJson(res, 400, { error: 'Choose a folder.' });
-        return withUserError(res, () => opts.library.list(folder, url.searchParams.get('recursive') === '1'));
+        return withUserError(res, async () => {
+          const listing = await opts.library.list(folder, url.searchParams.get('recursive') === '1');
+          opts.store.openedFolder(listing.folder, listing.recursive);
+          return { ...listing, ...opts.store.resultsFor(listing.photos) };
+        });
       }
       case 'GET /api/thumb':
         return thumb(res, url);
@@ -176,15 +213,49 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     try {
       const photos = request.folder ? await opts.library.photosOf(request.folder, request.recursive === true) : [];
       pageIdle?.touch();
-      sendJson(res, 202, opts.jobs.start(request, photos));
+      const status = opts.jobs.start(request, photos.map((p) => p.path));
+      jobPhotos.set(status.id, photos);
+      sendJson(res, 202, status);
     } catch (err) {
       sendJson(res, err instanceof JobError ? err.status : 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  /** Body: `{ decisions: { [path]: 'keep' | 'reject' | null } }`. Only photographs in an opened folder. */
+  async function putDecisions(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: { decisions?: Record<string, unknown> };
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Not a list of decisions.' });
+    }
+    const entries = Object.entries(body.decisions ?? {});
+    let saved = 0;
+    for (const [path, d] of entries) {
+      if (!opts.library.isServable(path)) continue;
+      if (d !== 'keep' && d !== 'reject' && d !== null) continue;
+      opts.store.setDecision(path, d);
+      saved++;
+    }
+    sendJson(res, 200, { saved });
+  }
+
+  function jobFinished(status: JobStatus): void {
+    const photos = jobPhotos.get(status.id);
+    jobPhotos.delete(status.id);
+    if (!photos || status.state !== 'done') return;
+    const lookup = photoLookup(photos, caseInsensitive);
+    if (status.kind === 'cull') opts.store.saveResults('cull', (status.result as CullReport).results ?? [], lookup);
+    if (status.kind === 'rate') {
+      const report = status.result as RateReport;
+      opts.store.saveResults('rate', report.results ?? [], lookup, report.profile);
     }
   }
 
   return {
     server,
     stop,
+    jobFinished,
     listen: (requested) =>
       new Promise((resolve, reject) => {
         server.once('error', reject);

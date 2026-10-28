@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { CullReport, LibraryPhoto, RateReport } from '../src/contract.js';
+import type { CullResultItem, LibraryPhoto, RateResultItem } from '../src/contract.js';
 import { parseDecisions, withDecision } from '../src/library/decisions.js';
 import { heatColor } from '../src/library/FocusHeatmap.js';
 import {
@@ -14,7 +14,6 @@ import {
   verdictSource,
   visible,
 } from '../src/library/model.js';
-import { pushRecent } from '../src/library/recentFolders.js';
 import { parseRoute } from '../src/hooks/useHashRoute.js';
 
 const photo = (name: string): LibraryPhoto => ({ path: `C:\\shoot\\${name}`, name, kind: 'raw', size: 1, mtime: 0 });
@@ -30,25 +29,16 @@ const item = (file: string, verdict: 'sharp' | 'blurry', rescued = false) => ({
   focusMap: { cols: 2, rows: 1, tiles: [10, 40] },
 });
 
-const cull: CullReport = {
-  command: 'cull',
-  results: [
-    item('C:\\shoot\\a.cr3', 'sharp'),
-    item('c:\\SHOOT\\b.cr3', 'blurry'),
-    item('C:\\shoot\\d.cr3', 'sharp', true),
-  ],
-  summary: { total: 3, sharp: 2, blurry: 1, rescued: 1, failed: 0 },
-};
+const cull: CullResultItem[] = [
+  item('C:\\shoot\\a.cr3', 'sharp'),
+  item('c:\\SHOOT\\b.cr3', 'blurry'),
+  item('C:\\shoot\\d.cr3', 'sharp', true),
+];
 
-const rate: RateReport = {
-  command: 'rate',
-  profile: 'street',
-  results: [
-    { file: 'C:\\shoot\\a.cr3', stars: 2, focus: 0.9, aesthetic: 0.5, keywords: [] },
-    { file: 'C:\\shoot\\c.cr3', stars: 4, focus: 0.9, aesthetic: 0.7, keywords: ['portrait'] },
-  ],
-  summary: { total: 2, rated: 2, failed: 0 },
-};
+const rate: RateResultItem[] = [
+  { file: 'C:\\shoot\\a.cr3', stars: 2, focus: 0.9, aesthetic: 0.5, keywords: [] },
+  { file: 'C:\\shoot\\c.cr3', stars: 4, focus: 0.9, aesthetic: 0.7, keywords: ['portrait'] },
+];
 
 describe('mergeResults', () => {
   test('attaches blur, focus data and stars by path', () => {
@@ -172,12 +162,7 @@ describe('formatting', () => {
   });
 });
 
-describe('recent folders and routes', () => {
-  test('pushRecent moves to front, dedupes and caps', () => {
-    expect(pushRecent(['a', 'b', 'c'], 'b', 3)).toEqual(['b', 'a', 'c']);
-    expect(pushRecent(['a', 'b', 'c'], 'd', 3)).toEqual(['d', 'a', 'b']);
-  });
-
+describe('routes', () => {
   test('parseRoute falls back to the first route', () => {
     const routes = ['library', 'setup'] as const;
     expect(parseRoute('#setup', routes)).toBe('setup');

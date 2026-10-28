@@ -4,25 +4,47 @@
  * ways it stops on its own.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import type { ChildProcess } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { JobRunner } from '../../src/app/jobs.js';
 import { Library } from '../../src/app/library.js';
 import { clearSession, readSession, startIdleWatch, writeSession } from '../../src/app/lifecycle.js';
 import { createAppServer, parseJobRequest, type AppServer, type StopReason } from '../../src/app/server.js';
+import { AppStore } from '../../src/app/store.js';
+
+class FakeChild extends EventEmitter {
+  stdout = new EventEmitter();
+  stderr = new EventEmitter();
+  kill() {
+    return true;
+  }
+}
 
 const TOKEN = 'test-token-0123456789';
 let running: AppServer | undefined;
 
 async function start(overrides: { hostLeaseMs?: number; pageIdleMs?: number } = {}) {
   const stops: StopReason[] = [];
-  const app = createAppServer({
+  const children: FakeChild[] = [];
+  let app: AppServer | undefined;
+  const jobs = new JobRunner(
+    () => {
+      const child = new FakeChild();
+      children.push(child);
+      return child as unknown as ChildProcess;
+    },
+    (status) => app?.jobFinished(status),
+  );
+  app = createAppServer({
     html: '<!doctype html><p>app</p>',
     token: TOKEN,
     info: { version: '9.9.9', platform: 'test', home: '/h' },
     library: new Library(),
-    jobs: new JobRunner(),
+    jobs,
+    store: await AppStore.open(':memory:'),
     profiles: async () => [{ name: 'street', learned: false }],
     hostLeaseMs: overrides.hostLeaseMs ?? 60_000,
     pageIdleMs: overrides.pageIdleMs ?? 60_000,
@@ -30,7 +52,7 @@ async function start(overrides: { hostLeaseMs?: number; pageIdleMs?: number } = 
   });
   const port = await app.listen(0);
   running = app;
-  return { port, stops, base: `http://127.0.0.1:${port}` };
+  return { port, stops, children, base: `http://127.0.0.1:${port}` };
 }
 
 afterEach(() => {
@@ -112,6 +134,51 @@ describe('app server lifetime', () => {
     expect((await fetch(`${base}/api/shutdown`, { method: 'POST', headers: auth })).status).toBe(200);
     await wait(30);
     expect(stops).toEqual(['shutdown']);
+  });
+});
+
+describe('app server memory', () => {
+  test('a folder named on the launch URL opens first, once', async () => {
+    const { base } = await start();
+    await fetch(`${base}/?t=${TOKEN}&folder=${encodeURIComponent('/shoot')}`, { redirect: 'manual' });
+    const first = await (await fetch(`${base}/api/start`, { headers: auth })).json();
+    expect(first.startFolder).toBe('/shoot');
+    expect(first.settings.reopenLastFolder).toBe(true);
+    const second = await (await fetch(`${base}/api/start`, { headers: auth })).json();
+    expect(second.startFolder).toBeNull();
+  });
+
+  test('settings round-trip and bad values are ignored', async () => {
+    const { base } = await start();
+    const put = await fetch(`${base}/api/settings`, { method: 'PUT', headers: auth, body: JSON.stringify({ sort: 'rating', theme: 'sepia' }) });
+    expect(await put.json()).toMatchObject({ sort: 'rating', theme: 'system' });
+  });
+
+  test('cull results and decisions come back with the folder', async () => {
+    const { base, children } = await start();
+    const dir = mkdtempSync(path.join(tmpdir(), 'shoots-app-'));
+    const photo = path.join(dir, 'a.jpg');
+    writeFileSync(photo, 'x');
+    const list = () => fetch(`${base}/api/library?folder=${encodeURIComponent(dir)}`, { headers: auth }).then((r) => r.json());
+
+    const first = await list();
+    expect(first.cull).toEqual([]);
+    expect((await (await fetch(`${base}/api/start`, { headers: auth })).json()).startFolder).toBe(first.folder);
+
+    const job = await (await fetch(`${base}/api/jobs`, { method: 'POST', headers: auth, body: JSON.stringify({ kind: 'cull', folder: dir }) })).json();
+    children[0].stdout.emit('data', Buffer.from(JSON.stringify({ command: 'cull', results: [{ file: photo, score: 9, focusPeak: 9, verdict: 'blurry', rescued: false, aperture: null }] })));
+    children[0].emit('close', 0);
+    expect((await (await fetch(`${base}/api/jobs/${job.id}`, { headers: auth })).json()).state).toBe('done');
+
+    const outside = await fetch(`${base}/api/decisions`, { method: 'PUT', headers: auth, body: JSON.stringify({ decisions: { '/etc/x.jpg': 'keep' } }) });
+    expect(await outside.json()).toEqual({ saved: 0 });
+    const inside = await fetch(`${base}/api/decisions`, { method: 'PUT', headers: auth, body: JSON.stringify({ decisions: { [photo]: 'keep' } }) });
+    expect(await inside.json()).toEqual({ saved: 1 });
+
+    const again = await list();
+    expect(again.cull.map((c: { verdict: string }) => c.verdict)).toEqual(['blurry']);
+    expect(again.decisions).toEqual({ [photo]: 'keep' });
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 

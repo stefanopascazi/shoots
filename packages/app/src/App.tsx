@@ -12,25 +12,53 @@ import {
   useTheme,
   type ThemePreference,
 } from '@shoots/ui';
-import { api } from './api/client.js';
+import { api, type StartState } from './api/client.js';
 import type { AppInfo } from './contract.js';
 import { HealthScreen } from './health/HealthScreen.js';
 import { useHashRoute } from './hooks/useHashRoute.js';
 import { useHeartbeat } from './hooks/useHeartbeat.js';
+import { useSettings } from './hooks/useSettings.js';
 import { LibraryScreen } from './library/LibraryScreen.js';
 
 const ROUTES = ['library', 'setup'] as const;
 const TITLES: Record<(typeof ROUTES)[number], string> = { library: 'Library', setup: 'Setup' };
 
+/** Loads what the server remembers, then shows the app as it was left. */
 export function App() {
+  const [start, setStart] = useState<StartState>();
+  const [failed, setFailed] = useState<string>();
+  useEffect(() => {
+    api.start().then(setStart, (e: Error) => setFailed(e.message));
+  }, []);
+  if (failed) {
+    return (
+      <div class="app-boot">
+        <Alert tone="danger" title="shoots could not start">
+          {failed}
+        </Alert>
+      </div>
+    );
+  }
+  return start ? <Shell start={start} /> : <div class="app-boot" />;
+}
+
+function Shell({ start }: { start: StartState }) {
   const route = useHashRoute(ROUTES);
   const connected = useHeartbeat();
+  const prefs = useSettings(start.settings);
   const [theme, setTheme] = useTheme();
   const [info, setInfo] = useState<AppInfo>();
 
   useEffect(() => {
     api.info().then(setInfo, () => {});
+    // The saved theme wins over whatever this browser last showed.
+    setTheme(start.settings.theme);
   }, []);
+
+  const chooseTheme = (t: ThemePreference) => {
+    setTheme(t);
+    prefs.update({ theme: t });
+  };
 
   return (
     <AppShell
@@ -41,7 +69,7 @@ export function App() {
             <Segmented<ThemePreference>
               label="Theme"
               value={theme}
-              onChange={setTheme}
+              onChange={chooseTheme}
               class="app-theme"
               options={[
                 { value: 'system', label: 'Auto' },
@@ -79,7 +107,15 @@ export function App() {
               It stops when Lightroom closes or the app is closed from the plug-in. Open it again from Library › Plug-in Extras › Open shoots.
             </Alert>
           )}
-          {route === 'library' ? <LibraryScreen windows={info?.platform === 'win32'} /> : <HealthScreen info={info} />}
+          {route === 'library' ? (
+            <LibraryScreen
+              windows={navigator.platform.startsWith('Win')}
+              start={{ folder: start.startFolder, recursive: start.settings.recursive, recent: start.recent }}
+              prefs={prefs}
+            />
+          ) : (
+            <HealthScreen info={info} prefs={prefs} />
+          )}
         </div>
       </Content>
     </AppShell>

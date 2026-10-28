@@ -17,35 +17,48 @@ import {
 import { api, thumbUrl } from '../api/client.js';
 import type { CullReport, RateReport, RatingProfile } from '../contract.js';
 import { useJob } from '../hooks/useJob.js';
+import type { SettingsHandle } from '../hooks/useSettings.js';
 import { FolderPicker } from './FolderPicker.js';
 import { JobPanel } from './JobPanel.js';
 import { awaitsReview, flagFor, folderName, totals, visible, type Filter, type Sort } from './model.js';
 import { PhotoViewer } from './PhotoViewer.js';
-import { useLibrary } from './useLibrary.js';
+import { useLibrary, type LibraryStart } from './useLibrary.js';
 
-export function LibraryScreen({ windows }: { windows: boolean }) {
-  const lib = useLibrary(windows);
+export interface LibraryScreenProps {
+  windows: boolean;
+  start: LibraryStart;
+  prefs: SettingsHandle;
+}
+
+export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
+  const lib = useLibrary(windows, start);
   const job = useJob();
   const [picking, setPicking] = useState(false);
-  const [filter, setFilter] = useState<Filter>('all');
-  const [sort, setSort] = useState<Sort>('name');
+  const { filter, sort } = prefs.settings;
+  const setFilter = (v: Filter) => prefs.update({ filter: v });
+  const setSort = (v: Sort) => prefs.update({ sort: v });
   // The viewer walks a fixed list of paths, so deciding a frame never reshuffles what comes next.
   const [viewer, setViewer] = useState<{ paths: string[]; index: number; review: boolean }>();
   const [profiles, setProfiles] = useState<RatingProfile[]>([]);
-  const [profile, setProfile] = useState<string>();
+  const [defaultProfile, setDefaultProfile] = useState<string>();
+  // A remembered profile that no longer exists falls back to the default.
+  const profile = profiles.some((p) => p.name === prefs.settings.profile) ? prefs.settings.profile! : defaultProfile;
+  const setProfile = (name: string) => prefs.update({ profile: name });
 
   useEffect(() => {
     api.profiles().then(
       (list) => {
         setProfiles(list);
-        setProfile((p) => p ?? list.find((x) => x.learned)?.name ?? list[0]?.name);
+        setDefaultProfile(list.find((x) => x.learned)?.name ?? list[0]?.name);
       },
       () => {},
     );
   }, []);
 
-  const shown = useMemo(() => visible(lib.photos, filter, sort), [lib.photos, filter, sort]);
   const sum = useMemo(() => totals(lib.photos), [lib.photos]);
+  // A remembered "To review" with nothing left to review shows everything instead.
+  const activeFilter: Filter = filter === 'review' && sum.toReview === 0 ? 'all' : filter;
+  const shown = useMemo(() => visible(lib.photos, activeFilter, sort), [lib.photos, activeFilter, sort]);
   const byPath = useMemo(() => new Map(lib.photos.map((p) => [p.path, p])), [lib.photos]);
   const viewerPhotos = useMemo(() => viewer?.paths.map((p) => byPath.get(p)!).filter(Boolean) ?? [], [viewer, byPath]);
   const startReview = () => {
@@ -58,11 +71,12 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
     const done = await job.start({ kind, folder: lib.listing.folder, recursive: lib.recursive, profile });
     if (done?.state !== 'done') return;
     if (kind === 'cull') {
-      lib.setCull(done.result as CullReport);
+      lib.setCull((done.result as CullReport).results);
       setFilter('all');
     }
     else {
-      lib.setRate(done.result as RateReport);
+      const report = done.result as RateReport;
+      lib.setRate(report.results, report.profile);
       setSort('rating');
     }
   };
@@ -122,7 +136,14 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
       />
 
       <div class="app-toolbar">
-        <Switch checked={lib.recursive} onChange={lib.setRecursive} disabled={busy}>
+        <Switch
+          checked={lib.recursive}
+          onChange={(v) => {
+            lib.setRecursive(v);
+            prefs.update({ recursive: v });
+          }}
+          disabled={busy}
+        >
           Include subfolders
         </Switch>
         {profiles.length > 0 && (
@@ -186,7 +207,7 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
                 hint={!sum.checked ? 'not checked yet' : sum.toReview ? `${sum.toReview} to review` : sum.decided ? `${sum.decided} decided by you` : `of ${sum.checked} checked`}
                 hintTone={sum.toReview ? 'danger' : 'neutral'}
               />
-              <Stat label="Rated" value={sum.rated || '—'} hint={sum.rated ? `profile ${profile ?? ''}` : 'not rated yet'} />
+              <Stat label="Rated" value={sum.rated || '—'} hint={sum.rated ? `profile ${lib.ratedWith ?? profile ?? ''}` : 'not rated yet'} />
               <Stat label="Average" value={sum.meanStars === undefined ? '—' : sum.meanStars.toFixed(1)} unit={sum.meanStars === undefined ? undefined : '★'} hint="stars" />
             </Card>
 
@@ -207,7 +228,7 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
             <div class="app-toolbar">
               <Segmented
                 label="Show"
-                value={filter}
+                value={activeFilter}
                 onChange={setFilter}
                 options={[
                   { value: 'all', label: `All ${sum.total}` },
