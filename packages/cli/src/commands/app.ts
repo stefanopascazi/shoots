@@ -10,11 +10,14 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import type { Command } from 'commander';
 import type { DevelopStatus } from '@shoots/app';
+import type { CleanedEntry } from '../app/cleanup.js';
+import type { CleanPart } from '../develop/commands/clean.js';
 import { appDbPath, shootsHome } from '@shoots/core';
 import { allProfileNames, PROFILE_NAMES } from '@shoots/inference';
 import { logError, makeIo, parsePositiveInt } from '../io.js';
 import { ensureExiftoolReady } from '../tools.js';
 import { selfInvocation } from '../selfInvoke.js';
+import { lastErrorLine } from '../app/jobs.js';
 import { VERSION } from '../version.js';
 import type { AppServer } from '../app/server.js';
 import type { AppStore } from '../app/store.js';
@@ -37,11 +40,12 @@ export function registerAppCommand(program: Command): void {
 
 async function runApp(options: AppOptions): Promise<void> {
   // Loaded here so commands that never serve the page neither load nor need it built.
-  const [{ APP_HTML }, { JobRunner }, { DurableJobs }, { Library }, { clearSession, writeSession }, { createToken }, { createAppServer }, { AppStore }] =
+  const [{ APP_HTML }, { JobRunner }, { DurableJobs }, { createCleanup }, { Library }, { clearSession, writeSession }, { createToken }, { createAppServer }, { AppStore }] =
     await Promise.all([
       import('@shoots/app'),
       import('../app/jobs.js'),
       import('../app/durableJobs.js'),
+      import('../app/cleanup.js'),
       import('../app/library.js'),
       import('../app/lifecycle.js'),
       import('../app/security.js'),
@@ -60,6 +64,8 @@ async function runApp(options: AppOptions): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  // Next to the database: a training started by an earlier server is picked up here.
+  const durable = new DurableJobs(path.join(path.dirname(appDbPath()), 'jobs'));
   // Finished jobs are stored by the server, which is created just below.
   let app: AppServer | undefined;
   const jobs = new JobRunner(undefined, (status) => app?.jobFinished(status));
@@ -73,10 +79,10 @@ async function runApp(options: AppOptions): Promise<void> {
     info: { version: VERSION, platform: process.platform, home: shootsHome() },
     library,
     jobs,
-    // Next to the database: a training started by an earlier server is picked up here.
-    durable: new DurableJobs(path.join(path.dirname(appDbPath()), 'jobs')),
+    durable,
     store,
-    developStatus,
+    developStatus: () => runSelfJson<DevelopStatus>(['develop', 'status', '--json']),
+    cleanup: createCleanup(durable, developClean),
     profiles: async () => {
       const builtin = new Set(PROFILE_NAMES);
       return (await allProfileNames()).map((name) => ({ name, learned: !builtin.has(name) }));
@@ -108,16 +114,24 @@ async function runApp(options: AppOptions): Promise<void> {
   await done;
 }
 
-/** `develop status --json`, run as a child like every other engine call. */
-function developStatus(): Promise<DevelopStatus> {
-  const { command, args } = selfInvocation(['develop', 'status', '--json']);
+/** A quick engine command's --json report, run as a child like every other engine call. */
+function runSelfJson<T>(cliArgs: string[]): Promise<T> {
+  const { command, args } = selfInvocation(cliArgs);
   return new Promise((resolve, reject) => {
-    execFile(command, args, { windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+    execFile(command, args, { windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
       try {
-        resolve(JSON.parse(stdout) as DevelopStatus);
+        resolve(JSON.parse(stdout) as T);
       } catch {
-        reject(new Error(err ? err.message : 'Could not read the develop profile.'));
+        reject(new Error(lastErrorLine(stderr) ?? (err ? err.message : `shoots ${cliArgs.slice(0, 2).join(' ')} gave no report.`)));
       }
     });
   });
+}
+
+/** `develop clean --only … --json`: the same removal the CLI does. */
+async function developClean(parts: CleanPart[], dryRun: boolean): Promise<CleanedEntry[]> {
+  const report = await runSelfJson<{ removed: CleanedEntry[] }>([
+    'develop', 'clean', '--only', parts.join(','), '--json', ...(dryRun ? ['--dry-run'] : []),
+  ]);
+  return report.removed;
 }

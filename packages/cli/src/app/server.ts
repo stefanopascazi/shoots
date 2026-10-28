@@ -29,6 +29,7 @@ import {
 } from '@shoots/app';
 import { JobError, type JobRunner } from './jobs.js';
 import { DURABLE_KINDS, type DurableJobs } from './durableJobs.js';
+import { parseCleanupParts, type Cleanup } from './cleanup.js';
 import { parseCatalogExport } from '../develop/adapters/lightroom/catalog.js';
 import { browse, type Library } from './library.js';
 import { startIdleWatch, type IdleWatch } from './lifecycle.js';
@@ -55,6 +56,8 @@ export interface AppServerOptions {
   durable: DurableJobs;
   store: AppStore;
   developStatus: () => Promise<DevelopStatus>;
+  /** Training output and the app's job history, removable from Setup. */
+  cleanup: Cleanup;
   profiles: () => Promise<RatingProfile[]>;
   /** Stop when the plug-in has not renewed its lease for this long. */
   hostLeaseMs: number;
@@ -245,6 +248,10 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         return sendJson(res, 200, { job: opts.durable.latest() ?? null });
       case 'GET /api/develop/status':
         return withUserError(res, () => opts.developStatus());
+      case 'GET /api/cleanup':
+        return withUserError(res, async () => ({ items: await opts.cleanup.preview() }));
+      case 'POST /api/cleanup':
+        return cleanUp(req, res);
     }
 
     const job = /^\/api\/jobs\/([\w-]+)$/.exec(url.pathname);
@@ -406,6 +413,19 @@ export function createAppServer(opts: AppServerOptions): AppServer {
       if (changed) revision++;
       return { changed };
     });
+  }
+
+  /** Body: `{ parts }`. Refused while a job runs: it may be writing what would be removed. */
+  async function cleanUp(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let parts;
+    try {
+      parts = parseCleanupParts((JSON.parse(await readBody(req)) as { parts?: unknown }).parts);
+    } catch {
+      return sendJson(res, 400, { error: 'Choose what to remove.' });
+    }
+    if (parts.length === 0) return sendJson(res, 400, { error: 'Choose what to remove.' });
+    if (busy()) return sendJson(res, 409, { error: 'A job is running. Wait for it to end, or stop it.' });
+    await withUserError(res, async () => ({ removed: await opts.cleanup.run(parts) }));
   }
 
   /** Either runner at work: one job at a time across both. */

@@ -60,6 +60,10 @@ async function start(overrides: { hostLeaseMs?: number; pageIdleMs?: number } = 
       processes: { alive: () => true, kill: () => {} },
     }),
     store: await AppStore.open(':memory:'),
+    cleanup: {
+      preview: async () => [{ part: 'jobs', count: 2, bytes: 10 }],
+      run: async (parts) => parts.map((part) => ({ part, count: 1, bytes: 1 })),
+    },
     developStatus: async () => ({
       command: 'develop-status',
       dataset: { path: 'd', exists: false, bytes: 0 },
@@ -316,6 +320,18 @@ describe('training', () => {
     const { base } = await start();
     const status = await (await fetch(`${base}/api/develop/status`, { headers: auth })).json();
     expect(status.profile.exists).toBe(false);
+  });
+});
+
+describe('clean-up', () => {
+  test('previews, removes the chosen parts, refuses nothing chosen and a running job', async () => {
+    const { base } = await start();
+    expect((await (await fetch(`${base}/api/cleanup`, { headers: auth })).json()).items).toEqual([{ part: 'jobs', count: 2, bytes: 10 }]);
+    const post = (body: unknown) => fetch(`${base}/api/cleanup`, { method: 'POST', headers: auth, body: JSON.stringify(body) });
+    expect((await (await post({ parts: ['journal', 'nope'] })).json()).removed).toEqual([{ part: 'journal', count: 1, bytes: 1 }]);
+    expect((await post({ parts: [] })).status).toBe(400);
+    await fetch(`${base}/api/jobs`, { method: 'POST', headers: auth, body: JSON.stringify({ kind: 'calibrate' }) });
+    expect((await post({ parts: ['jobs'] })).status).toBe(409);
   });
 });
 

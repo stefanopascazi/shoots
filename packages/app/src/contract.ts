@@ -116,6 +116,19 @@ export interface AppSettings {
   sort: 'name' | 'rating';
 }
 
+/**
+ * What the clean-up can remove. The develop parts are `develop clean`'s; jobs
+ * and exports are the app's own history of training runs and catalog exports.
+ */
+export type CleanupPart = 'shoots' | 'dataset' | 'profile' | 'calibration' | 'journal' | 'jobs' | 'exports';
+
+export interface CleanupItem {
+  part: CleanupPart;
+  /** Files or folders found (or removed) for this part. */
+  count: number;
+  bytes: number;
+}
+
 export interface RatingProfile {
   name: string;
   learned: boolean;

@@ -69,6 +69,9 @@ launch.
       from the app). Both run **detached** with their state in
       `~/.shoots/app/jobs/<id>`; the CLI ends its progress file with an `exit`
       line, so a later server re-adopts a run that outlived Lightroom.
+- [x] Setup › Training data: remove dataset, profile, calibration, shoot files,
+      journal (never preselected), job history and catalog exports — through
+      `develop clean --only`, refused while a job runs.
 
 **Not verified yet:** anything inside a real Lightroom (SDK calls, Plug-in Manager
 panel; for L2, that `getDevelopSettings()` keys match the crs names and how it

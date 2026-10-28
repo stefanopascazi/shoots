@@ -256,6 +256,22 @@ export class DurableJobs {
     }
   }
 
+  /** Folders of the jobs that ended: the history a clean-up may drop. */
+  finishedFolders(): string[] {
+    return [...this.finished.keys()].map((id) => this.dir(id));
+  }
+
+  /** Forgets every job that ended, folder and all. Running ones are untouched. */
+  forgetFinished(): void {
+    for (const id of this.finished.keys()) rmSync(this.dir(id), { recursive: true, force: true });
+    this.finished.clear();
+  }
+
+  /** Where export-only runs keep the catalog exports. */
+  get exportsFolder(): string {
+    return this.exportsDir;
+  }
+
   private launch(record: JobRecord, catalogFile: string | undefined): void {
     const dir = this.dir(record.id);
     const { command, args } = selfInvocation(durableArgs(record.request, catalogFile));

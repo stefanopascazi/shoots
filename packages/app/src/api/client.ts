@@ -6,6 +6,8 @@ import type {
   MarksPatch,
   ResetRequest,
   BrowseResult,
+  CleanupItem,
+  CleanupPart,
   DevelopStatus,
   JobRequest,
   JobStatus,
@@ -80,6 +82,9 @@ export const api = {
   /** The training or calibration running now, else the one that ended last; they outlive the server. */
   trainingJob: () => call<{ job: JobStatus | null }>('GET', '/api/jobs/training'),
   developStatus: () => call<DevelopStatus>('GET', '/api/develop/status'),
+  cleanupPreview: () => call<{ items: CleanupItem[] }>('GET', '/api/cleanup'),
+  /** Removes training output and job history; photos and Lightroom are untouched. */
+  cleanup: (parts: CleanupPart[]) => call<{ removed: CleanupItem[] }>('POST', '/api/cleanup', { parts }),
 };
 
 export const thumbUrl = (path: string, width: number): string => `/api/thumb${q({ path, w: String(width) })}`;
