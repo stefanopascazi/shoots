@@ -12,6 +12,112 @@
 > Updated 2026-08-24: Track A is closed. A1, A2 and A3 measured and not shipped;
 > A4 shipped. Two of the three 1.0 promises are now enforced in code rather than
 > asserted here, and 0.8.0 forces no retrain.
+>
+> Updated 2026-10-28: **strategy change — Lightroom Classic only until launch.**
+> The section below supersedes Track B's scope, the editor sequencing and the
+> release plan. Tracks A, C, D and E stand as written; C is now run through the
+> plugin beta.
+
+# Strategy change — 2026-10-28
+
+The product is a **Lightroom Classic plugin** and a **local web app** it opens.
+The CLI stays as the free engine behind both. Everything else is paused until
+launch.
+
+## Decided
+
+- **Remove the interactive shell (Ink).** Four files today (`shell/`,
+  `shell/triage/`, `components/`, `pipeline/init`). The plugin replaces it as the
+  front for non-technical users; every command it fronted stays on the CLI.
+- **Pause every editor but Lightroom Classic.** `rapidraw` is frozen, not
+  deleted: the adapter interface (`develop/adapters/types.ts`) stays, so other
+  editors remain additive after launch.
+- **Remove XMP and the sidecar path** — but **last**, not first. XMP/exiftool
+  reach ~50 source files and training reads sidecars today. Order:
+  1. the plugin exports develop settings from the catalog
+     (`photo:getDevelopSettings()`) as JSON;
+  2. training reads that export;
+  3. predictions are applied through `photo:applyDevelopSettings()`, ratings,
+     picks and labels through `photo:setRawMetadata()`;
+  4. only then remove the sidecar writers, `--xmp` (was B1) and the `acr` XMP
+     adapter.
+- **Storage format.** JSON for small payloads, **JSONL** for datasets (what
+  `train_v2.jsonl` already is). "JSONB" is a Postgres internal, not a file
+  format; if a dataset outgrows JSONL, use **SQLite** (public domain).
+
+## Track L — the Lightroom Classic plugin
+
+Lua, Lightroom Classic SDK. Lightroom (cloud) has no comparable SDK and is out.
+
+1. **Fast operations first**: `cull`, `rate`, picks and colour labels written
+   into the catalog. Calls the binary via `LrTasks.execute`, passes the selection
+   as a JSON file, reports through `LrProgressScope`.
+2. **Catalog export** for training (step 1 of the XMP removal above).
+3. **Apply predictions** to the selection, as a named history step / snapshot so
+   the user can return to the prior state.
+4. **Open app / close app** menu items driving Track W.
+
+The binary is provisioned the way exiftool is: downloaded by the plugin to
+`~/.shoots`, SHA-256 verified. A download made by `LrHttp` carries no
+Mark-of-the-Web / quarantine attribute, so — like today's `install.ps1` /
+`install.sh` — it raises no SmartScreen or Gatekeeper prompt. **Do not bundle
+the binary inside a zipped `.lrplugin`**: a browser-downloaded zip propagates
+the quarantine to its contents. Code signing becomes a trust and antivirus
+question, not a blocker (see Open decisions).
+
+## Track W — the local web app
+
+Training, `calibrate --review` and review in the browser, on a local server.
+The review server already exists and is the starting point.
+
+- **The app cannot touch the catalog** — only the plugin can, inside Lightroom.
+  Flow: plugin exports JSON → server trains/reviews → plugin reads the result
+  and applies it.
+- **Lifecycle**: "open app" starts the server and opens the browser
+  (`LrHttp.openUrlInBrowser`); "close app" stops it. Add a heartbeat and an idle
+  timeout so a Lightroom crash never leaves an orphan server.
+- **Security**: bind `127.0.0.1` only, a per-session token, reject foreign
+  `Host`/`Origin` headers (DNS rebinding).
+
+## Track C, reframed — the beta data program
+
+Accounts exist for analytics and for **beta testers only** to share derived
+vectors (never images) with the project. After launch: back to fully local, with
+an explicit, default-off "share data with shoots" opt-in in the plugin.
+
+Must exist **before** the first byte is collected:
+
+- privacy notice, explicit consent, named data controller, revocation and
+  deletion (GDPR — treat CLIP embeddings and feature vectors as personal data);
+- a data licence from each tester granting **commercial** use for training —
+  otherwise the project's own licensing rule is broken by its own dataset;
+- the bundle produced by one readable function (`export --contribute`), so the
+  privacy claim is verifiable.
+
+## What this does to 1.0
+
+The contract worth freezing is now **plugin ↔ engine** (the JSON the plugin
+sends and reads back), not CLI flags. B2 (profile migration) and B4 (pipeline
+versioning) stand. B3 becomes "freeze the plugin ↔ engine JSON". B1 is absorbed
+into the XMP removal. B5 is done by this update.
+
+## Open decisions
+
+- **Licence vs professional use.** PolyForm Noncommercial forbids commercial
+  use, and a photographer editing for clients is commercial use — so the free
+  CLI is, as licensed, unusable by the paying audience. Candidate model: CLI free
+  for noncommercial use, plugin paid and carrying the commercial licence. Public
+  copy ("free, no subscription") must follow whatever is chosen.
+- **Code signing.** Not required for the plugin-download path above. Still worth
+  pricing (Apple Developer ID + notarization; a Windows certificate) for
+  antivirus heuristics and the credibility of a paid product.
+- **exiftool after XMP.** `import`/`rename`/`exif` read metadata outside
+  Lightroom; check whether exiftool is still needed there before removing it.
+- **Competition inside Lightroom**: Adobe's own assisted culling, Excire,
+  Aftershoot, Imagen. The differentiator to defend is a personal profile that
+  never leaves the machine.
+
+---
 
 ## What 1.0 promises
 
@@ -584,6 +690,12 @@ and Linux personally. `ci.yml` stays ubuntu-only by decision, not omission.
 ---
 
 # Release sequencing
+
+> **Superseded 2026-10-28.** New order: L1 (plugin, fast operations) → L2 + W
+> (catalog export, local app) → L3 (apply predictions) → shell and XMP removal →
+> beta data program (C) → 1.0 freezes the plugin ↔ engine contract. Editor
+> adapters after Lightroom are post-launch. The original sequencing below is
+> kept for the record.
 
 **0.8.0 — the contract, part one.** B1 and whatever of Track B is ready. A4 is
 already in. **No migration and no forced retrain** — Track A closed without
