@@ -1,29 +1,36 @@
 import { describe, expect, test } from 'bun:test';
-import { changeFor, sameChange, sendStatus, type SentChange } from '../src/outbox.js';
+import { applyMarksPatch, changeFor, sameChange, sanitizeMarksPatch, sendStatus, type SentChange } from '../src/outbox.js';
 import { mergeResults, sendSummary, totals } from '../src/library/model.js';
 
 describe('changeFor', () => {
   test('a cull reject sends pick -1, with the rating when there is one', () => {
-    expect(changeFor('p', { verdict: 'blurry' }, 3, undefined)).toEqual({ path: 'p', rating: 3, pick: -1 });
+    expect(changeFor('p', { verdict: 'blurry' }, 3, undefined)).toEqual({ path: 'p', rating: 3, pick: -1, label: null });
   });
 
-  test('a sharp verdict leaves the pick alone', () => {
-    expect(changeFor('p', { verdict: 'sharp' }, 4, undefined)).toEqual({ path: 'p', rating: 4, pick: null });
+  test('a sharp verdict leaves the pick in Lightroom alone', () => {
+    expect(changeFor('p', { verdict: 'sharp' }, 4, undefined)).toEqual({ path: 'p', rating: 4, pick: null, label: null });
     expect(changeFor('p', { verdict: 'sharp' }, undefined, undefined)).toBeNull();
   });
 
-  test('your Keep clears the flag, your Reject sets it', () => {
-    expect(changeFor('p', { verdict: 'blurry' }, undefined, 'keep')).toEqual({ path: 'p', rating: null, pick: 0 });
-    expect(changeFor('p', { verdict: 'sharp' }, undefined, 'reject')).toEqual({ path: 'p', rating: null, pick: -1 });
+  test('your flag wins over the verdict, both ways', () => {
+    expect(changeFor('p', { verdict: 'blurry' }, undefined, { flag: 'pick' })?.pick).toBe(1);
+    expect(changeFor('p', { verdict: 'blurry' }, undefined, { flag: 'unflagged' })?.pick).toBe(0);
+    expect(changeFor('p', { verdict: 'sharp' }, undefined, { flag: 'reject' })?.pick).toBe(-1);
   });
 
-  test('nothing known, nothing to send', () => {
+  test('your stars win over the rating run; your label travels as is', () => {
+    expect(changeFor('p', undefined, 2, { stars: 5, label: 'green' })).toEqual({ path: 'p', rating: 5, pick: null, label: 'green' });
+    expect(changeFor('p', undefined, undefined, { label: 'none' })?.label).toBe('none');
+  });
+
+  test('nothing known, nothing to send — even without a cull', () => {
     expect(changeFor('p', undefined, undefined, undefined)).toBeNull();
+    expect(changeFor('p', undefined, undefined, { flag: 'pick' })?.pick).toBe(1);
   });
 });
 
 describe('sendStatus', () => {
-  const change = { path: 'p', rating: 3, pick: -1 as const };
+  const change = { path: 'p', rating: 3, pick: -1 as const, label: null };
   const sent = (state: SentChange['state'], rating = 3): SentChange => ({ ...change, rating, state });
 
   test('not sent, on its way, landed, not in the catalog', () => {
@@ -35,6 +42,7 @@ describe('sendStatus', () => {
 
   test('a different change than the one sent is "changed"', () => {
     expect(sendStatus(change, sent('applied', 5))).toBe('changed');
+    expect(sendStatus({ ...change, label: 'red' }, sent('applied'))).toBe('changed');
     expect(sameChange(change, { ...change })).toBe(true);
   });
 
@@ -43,12 +51,29 @@ describe('sendStatus', () => {
   });
 });
 
+describe('marks patches', () => {
+  test('only valid fields survive; null means hand it back', () => {
+    expect(sanitizeMarksPatch({ flag: 'pick', stars: 6, label: 'pink', extra: 1 })).toEqual({ flag: 'pick' });
+    expect(sanitizeMarksPatch({ flag: null, stars: 0, label: 'none' })).toEqual({ flag: null, stars: 0, label: 'none' });
+    expect(sanitizeMarksPatch({ stars: 2.5 })).toEqual({});
+    expect(sanitizeMarksPatch('nope')).toEqual({});
+  });
+
+  test('applying sets, clears, and empties to undefined', () => {
+    const a = applyMarksPatch(undefined, { flag: 'pick', stars: 4 });
+    expect(a).toEqual({ flag: 'pick', stars: 4 });
+    expect(applyMarksPatch(a, { stars: null })).toEqual({ flag: 'pick' });
+    expect(applyMarksPatch({ flag: 'pick' }, { flag: null })).toBeUndefined();
+    expect(applyMarksPatch(a, {})).toEqual(a);
+  });
+});
+
 describe('send totals', () => {
   const photo = (name: string) => ({ path: name, name, kind: 'raw' as const, size: 1, mtime: 0 });
   const blurry = (file: string) => ({ file, score: 1, focusPeak: 1, verdict: 'blurry' as const, rescued: false, aperture: null });
   const sent = {
-    a: { path: 'a', rating: null, pick: -1 as const, state: 'applied' as const },
-    b: { path: 'b', rating: null, pick: -1 as const, state: 'pending' as const },
+    a: { path: 'a', rating: null, pick: -1 as const, label: null, state: 'applied' as const },
+    b: { path: 'b', rating: null, pick: -1 as const, label: null, state: 'pending' as const },
   };
   const photos = mergeResults([photo('a'), photo('b'), photo('c'), photo('d')], [blurry('a'), blurry('b'), blurry('c')], undefined, false, {}, sent);
 

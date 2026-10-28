@@ -1,32 +1,38 @@
 /**
  * Pure view logic for the library: merging job reports and the photographer's
- * own decisions onto photos, filtering, sorting, totals.
+ * own marks onto photos, filtering, sorting, totals.
  *
- * The cull verdict is a proposal. A frame can be soft on purpose, so the person
- * has the last word: a decision overrides the verdict in either direction, and
- * the uncertain frames (shallow depth of field rescued by the focus peak) wait
- * for one before they count as settled.
+ * What shoots finds is a proposal. The photographer has the last word: a flag,
+ * stars or a colour label set by hand overrides the proposal for that field,
+ * and the uncertain frames (shallow depth of field rescued by the focus peak)
+ * wait for a flag before they count as settled.
  */
-import type { CullResultItem, Decision, LibraryPhoto, RateResultItem } from '../contract.js';
+import type { ColorLabel, CullResultItem, Flag, LibraryPhoto, Marks, RateResultItem } from '../contract.js';
 import type { PhotoFlag } from '@shoots/ui';
 import { changeFor, sendStatus, type SendStatus, type SentChange } from '../outbox.js';
 
-export type { Decision };
-export type Decisions = Readonly<Record<string, Decision>>;
+export type MarksByPath = Readonly<Record<string, Marks>>;
 
 export interface PhotoView extends LibraryPhoto {
+  /** The last rating run's stars. */
+  aiStars?: number;
+  /** Stars as they stand: yours when set, else shoots'. */
   stars?: number;
   focus?: number;
   aesthetic?: number;
   keywords?: string[];
   blur?: Omit<CullResultItem, 'file'>;
-  /** The photographer's call, when they made one. */
-  decision?: Decision;
+  /** What the photographer set by hand. */
+  marks?: Marks;
+  /** The flag as it stands: yours when set, else reject for a blurry frame, else unflagged. */
+  flag: Flag;
+  label?: Exclude<ColorLabel, 'none'>;
   /** Where this photo stands with Lightroom. */
   send: SendStatus;
 }
 
-export type Filter = 'all' | 'keepers' | 'rejected' | 'review';
+export type Filter = 'all' | 'picks' | 'keepers' | 'rejected' | 'review';
+export type LabelFilter = ColorLabel | 'any';
 export type Sort = 'name' | 'rating';
 
 /** Paths compare case-insensitively on Windows, where the CLI may echo a different case. */
@@ -37,7 +43,7 @@ export function mergeResults(
   cull: readonly CullResultItem[] | undefined,
   rate: readonly RateResultItem[] | undefined,
   caseInsensitive = false,
-  decisions: Decisions = {},
+  marks: MarksByPath = {},
   sent: Readonly<Record<string, SentChange>> = {},
 ): PhotoView[] {
   const blur = new Map(cull?.map((r) => [pathKey(r.file, caseInsensitive), r]));
@@ -46,33 +52,36 @@ export function mergeResults(
     const k = pathKey(p.path, caseInsensitive);
     const b = blur.get(k);
     const r = rated.get(k);
-    const decision = decisions[p.path];
-    const change = changeFor(p.path, b, r?.stars, decision);
+    const m = marks[p.path];
+    const stars = m?.stars ?? r?.stars;
     return {
       ...p,
-      send: sendStatus(change, sent[p.path]),
       ...(b && { blur: { score: b.score, focusPeak: b.focusPeak, verdict: b.verdict, rescued: b.rescued, aperture: b.aperture, focusMap: b.focusMap } }),
-      ...(r && { stars: r.stars, focus: r.focus, aesthetic: r.aesthetic, keywords: r.keywords }),
-      ...(decision && { decision }),
+      ...(r && { aiStars: r.stars, focus: r.focus, aesthetic: r.aesthetic, keywords: r.keywords }),
+      ...(stars !== undefined && { stars }),
+      ...(m && { marks: m }),
+      ...(m?.label && m.label !== 'none' && { label: m.label }),
+      flag: m?.flag ?? (b?.verdict === 'blurry' ? 'reject' : 'unflagged'),
+      send: sendStatus(changeFor(p.path, b, r?.stars, m), sent[p.path]),
     };
   });
 }
 
-/** Rejected, by the person's decision when there is one, else by the verdict. */
-export const isRejected = (p: PhotoView): boolean => (p.decision ? p.decision === 'reject' : p.blur?.verdict === 'blurry');
+export const isRejected = (p: PhotoView): boolean => p.flag === 'reject';
 
-/** Uncertain and not yet decided: the frames the review queue holds. */
-export const awaitsReview = (p: PhotoView): boolean => p.blur?.rescued === true && !p.decision;
+/** Uncertain and not yet flagged by hand: the frames the review queue holds. */
+export const awaitsReview = (p: PhotoView): boolean => p.blur?.rescued === true && !p.marks?.flag;
 
 /** The badge a tile carries. */
 export function flagFor(p: PhotoView): PhotoFlag | undefined {
   if (awaitsReview(p)) return 'review';
-  return isRejected(p) ? 'rejected' : undefined;
+  if (p.flag === 'reject') return 'rejected';
+  return p.flag === 'pick' ? 'pick' : undefined;
 }
 
-/** Who settled this frame, in words for the viewer. */
+/** Who set the flag, in words for the viewer. */
 export function verdictSource(p: PhotoView): string | undefined {
-  if (p.decision) return p.decision === 'keep' ? 'Kept by you' : 'Rejected by you';
+  if (p.marks?.flag) return 'Set by you';
   if (!p.blur) return undefined;
   if (p.blur.rescued) return 'Uncertain: soft overall, sharp in one area';
   return p.blur.verdict === 'blurry' ? 'Rejected as blurry' : 'Sharp';
@@ -80,13 +89,17 @@ export function verdictSource(p: PhotoView): string | undefined {
 
 const MATCH: Record<Filter, (p: PhotoView) => boolean> = {
   all: () => true,
+  picks: (p) => p.flag === 'pick',
   keepers: (p) => !isRejected(p),
   rejected: isRejected,
   review: awaitsReview,
 };
 
-export function visible(photos: readonly PhotoView[], filter: Filter, sort: Sort): PhotoView[] {
-  const kept = photos.filter(MATCH[filter]);
+const matchesLabel = (p: PhotoView, label: LabelFilter): boolean =>
+  label === 'any' ? true : label === 'none' ? p.label === undefined : p.label === label;
+
+export function visible(photos: readonly PhotoView[], filter: Filter, sort: Sort, label: LabelFilter = 'any'): PhotoView[] {
+  const kept = photos.filter((p) => MATCH[filter](p) && matchesLabel(p, label));
   if (sort === 'name') return kept;
   // Stable: equal ratings keep their name order.
   return kept
@@ -97,11 +110,12 @@ export function visible(photos: readonly PhotoView[], filter: Filter, sort: Sort
 
 export interface Totals {
   total: number;
+  picks: number;
   rejected: number;
   checked: number;
   toReview: number;
-  /** Frames where the person overrode or confirmed the verdict. */
-  decided: number;
+  /** Photos with anything set by hand. */
+  marked: number;
   /** Lightroom: not sent yet or changed since, waiting for the plug-in, in the catalog, not in the catalog. */
   toSend: number;
   waiting: number;
@@ -115,10 +129,11 @@ export interface Totals {
 export function totals(photos: readonly PhotoView[]): Totals {
   const t: Totals = {
     total: photos.length,
+    picks: 0,
     rejected: 0,
     checked: 0,
     toReview: 0,
-    decided: 0,
+    marked: 0,
     toSend: 0,
     waiting: 0,
     inLightroom: 0,
@@ -129,16 +144,18 @@ export function totals(photos: readonly PhotoView[]): Totals {
   let stars = 0;
   for (const p of photos) {
     if (p.blur) t.checked++;
+    if (p.flag === 'pick') t.picks++;
     if (isRejected(p)) t.rejected++;
     if (awaitsReview(p)) t.toReview++;
-    if (p.decision) t.decided++;
+    if (p.marks) t.marked++;
     if (p.send === 'unsent' || p.send === 'changed') t.toSend++;
     else if (p.send === 'pending') t.waiting++;
     else if (p.send === 'applied') t.inLightroom++;
     else if (p.send === 'missing') t.notInCatalog++;
-    if (p.stars !== undefined) {
+    // Rated: by a rating run, or by hand with at least one star. Taking the stars off by hand is not a rating.
+    if (p.aiStars !== undefined || (p.stars ?? 0) > 0) {
       t.rated++;
-      stars += p.stars;
+      stars += p.stars ?? 0;
     }
   }
   t.meanStars = t.rated ? stars / t.rated : undefined;

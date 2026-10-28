@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { api } from '../api/client.js';
-import type { CullResultItem, LibraryListing, RateResultItem, StoredRate } from '../contract.js';
+import type { CullResultItem, LibraryListing, MarksPatch, RateResultItem, ResetPart, StoredRate } from '../contract.js';
 import type { SentChange } from '../outbox.js';
-import { clearLegacyDecisions, loadLegacyDecisions, withDecision } from './decisions.js';
-import { mergeResults, type Decision, type Decisions, type PhotoView } from './model.js';
+import { clearLegacyDecisions, loadLegacyDecisions, withMarks } from './marks.js';
+import { mergeResults, type MarksByPath, type PhotoView } from './model.js';
 
 export interface LibraryState {
   folder: string | undefined;
@@ -19,20 +19,22 @@ export interface LibraryState {
   setRecursive: (recursive: boolean) => void;
   setCull: (results: CullResultItem[]) => void;
   setRate: (results: RateResultItem[], profile: string) => void;
-  /** Keep or reject a photo against the verdict; undefined hands it back to the verdict. */
-  decide: (path: string, decision: Decision | undefined) => void;
+  /** Sets a photo's flag, stars or label by hand; a null field hands it back to shoots. */
+  mark: (path: string, patch: MarksPatch) => void;
+  /** Forgets the chosen parts, for these photos or the whole folder, in the app only. */
+  reset: (parts: ResetPart[], paths?: string[]) => Promise<void>;
   /** Queues what is not in Lightroom yet; resolves with how many photos were queued. */
   send: (paths?: string[]) => Promise<number>;
 }
-
-/** How often to look again while the plug-in has not collected a send. */
-const SEND_POLL_MS = 2000;
 
 export interface LibraryStart {
   folder: string | null;
   recursive: boolean;
   recent: string[];
 }
+
+/** How often to look again while the plug-in has not collected a send. */
+const SEND_POLL_MS = 2000;
 
 /** The open folder, its photos, and everything known about them — stored by the server. */
 export function useLibrary(caseInsensitive: boolean, start: LibraryStart): LibraryState {
@@ -42,10 +44,12 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
   const [listing, setListing] = useState<LibraryListing>();
   const [cull, setCull] = useState<CullResultItem[]>([]);
   const [rate, setRateItems] = useState<StoredRate[]>([]);
-  const [decisions, setDecisions] = useState<Decisions>({});
+  const [marks, setMarks] = useState<MarksByPath>({});
   const [sent, setSent] = useState<Record<string, SentChange>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
+  // Bumped to list the folder again, after a reset.
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     if (!folder) return;
@@ -56,14 +60,21 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
       async (l) => {
         if (!alive) return;
         // Decisions made before the database existed lived in this browser: hand them over once.
-        const legacy = loadLegacyDecisions(l.folder);
-        if (Object.keys(legacy).length) {
-          await api.saveDecisions(legacy).then(() => clearLegacyDecisions(l.folder), () => {});
+        let legacy = {};
+        const old = loadLegacyDecisions(l.folder);
+        if (Object.keys(old).length) {
+          legacy = await api.saveMarks(old).then(
+            (r) => {
+              clearLegacyDecisions(l.folder);
+              return Object.fromEntries(Object.entries(r.marks).filter(([, m]) => m));
+            },
+            () => ({}),
+          );
         }
         setListing(l);
         setCull(l.cull);
         setRateItems(l.rate);
-        setDecisions({ ...legacy, ...l.decisions });
+        setMarks({ ...l.marks, ...legacy });
         setSent(l.sent);
         setLoading(false);
         api.recentFolders().then((r) => alive && setRecent(r), () => {});
@@ -78,7 +89,7 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
     return () => {
       alive = false;
     };
-  }, [folder, recursive]);
+  }, [folder, recursive, generation]);
 
   const open = useCallback((next: string) => {
     setCull([]);
@@ -90,10 +101,19 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
     setRateItems(results.map((r) => ({ ...r, profile })));
   }, []);
 
-  const decide = useCallback((path: string, decision: Decision | undefined) => {
-    setDecisions((d) => withDecision(d, path, decision));
-    void api.saveDecisions({ [path]: decision ?? null }).catch(() => {});
+  const mark = useCallback((path: string, patch: MarksPatch) => {
+    setMarks((m) => withMarks(m, path, patch));
+    void api.saveMarks({ [path]: patch }).catch(() => {});
   }, []);
+
+  const reset = useCallback(
+    async (parts: ResetPart[], paths?: string[]) => {
+      if (!listing) return;
+      await api.reset({ folder: listing.folder, recursive: listing.recursive, paths, parts });
+      setGeneration((g) => g + 1);
+    },
+    [listing],
+  );
 
   const send = useCallback(
     async (paths?: string[]) => {
@@ -121,8 +141,8 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
   }, [listing, waiting]);
 
   const photos = useMemo(
-    () => (listing ? mergeResults(listing.photos, cull, rate, caseInsensitive, decisions, sent) : []),
-    [listing, cull, rate, caseInsensitive, decisions, sent],
+    () => (listing ? mergeResults(listing.photos, cull, rate, caseInsensitive, marks, sent) : []),
+    [listing, cull, rate, caseInsensitive, marks, sent],
   );
 
   return {
@@ -138,7 +158,8 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
     setRecursive,
     setCull,
     setRate,
-    decide,
+    mark,
+    reset,
     send,
   };
 }

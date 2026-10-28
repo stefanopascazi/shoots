@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { CullResultItem, LibraryPhoto, RateResultItem } from '../src/contract.js';
-import { parseDecisions, withDecision } from '../src/library/decisions.js';
 import { heatColor } from '../src/library/FocusHeatmap.js';
+import { parseLegacyDecisions, withMarks } from '../src/library/marks.js';
 import {
   awaitsReview,
   flagFor,
@@ -14,6 +14,7 @@ import {
   verdictSource,
   visible,
 } from '../src/library/model.js';
+import { toggleLabel, viewerKey } from '../src/library/viewerKeys.js';
 import { parseRoute } from '../src/hooks/useHashRoute.js';
 
 const photo = (name: string): LibraryPhoto => ({ path: `C:\\shoot\\${name}`, name, kind: 'raw', size: 1, mtime: 0 });
@@ -46,6 +47,7 @@ describe('mergeResults', () => {
     expect(a.blur).toMatchObject({ verdict: 'sharp', focusPeak: 100, aperture: 1.4 });
     expect(a.blur?.focusMap?.tiles).toEqual([10, 40]);
     expect(a.stars).toBe(2);
+    expect(a.aiStars).toBe(2);
     expect(b.blur).toBeUndefined(); // case differs and matching is exact
     expect(c.stars).toBe(4);
   });
@@ -54,56 +56,68 @@ describe('mergeResults', () => {
     expect(mergeResults(PHOTOS, cull, undefined, true)[1].blur?.verdict).toBe('blurry');
   });
 
-  test('without reports the photos come back unchanged', () => {
-    expect(mergeResults(PHOTOS, undefined, undefined)).toEqual(PHOTOS.map((p) => ({ ...p, send: 'none' })));
+  test('without anything known every photo is unflagged with nothing to send', () => {
+    expect(mergeResults(PHOTOS, undefined, undefined)).toEqual(PHOTOS.map((p) => ({ ...p, flag: 'unflagged', send: 'none' })));
   });
 
-  test('carries the decisions made for each path', () => {
-    const merged = mergeResults(PHOTOS, cull, undefined, true, { 'C:\\shoot\\b.cr3': 'keep' });
-    expect(merged[1].decision).toBe('keep');
-    expect(merged[0].decision).toBeUndefined();
+  test('your marks override shoots field by field', () => {
+    const [a, b] = mergeResults(PHOTOS, cull, rate, true, {
+      'C:\\shoot\\a.cr3': { stars: 5, label: 'red' },
+      'C:\\shoot\\b.cr3': { flag: 'pick' },
+    });
+    expect(a).toMatchObject({ stars: 5, aiStars: 2, label: 'red', flag: 'unflagged' });
+    expect(b.flag).toBe('pick');
+  });
+
+  test('a label of none shows no label', () => {
+    expect(mergeResults(PHOTOS, undefined, undefined, false, { 'C:\\shoot\\a.cr3': { label: 'none' } })[0].label).toBeUndefined();
   });
 });
 
-describe('verdicts are proposals', () => {
+describe('flags', () => {
   const merged = mergeResults(PHOTOS, cull, rate, true);
   const [sharp, blurry, unchecked, uncertain] = merged;
 
-  test('the verdict decides until the person does', () => {
+  test('the verdict sets the flag until you do', () => {
     expect(isRejected(blurry)).toBe(true);
-    expect(isRejected(sharp)).toBe(false);
-    expect(isRejected(unchecked)).toBe(false);
+    expect(sharp.flag).toBe('unflagged');
+    expect(unchecked.flag).toBe('unflagged');
   });
 
-  test('a decision overrides the verdict both ways', () => {
-    expect(isRejected({ ...blurry, decision: 'keep' })).toBe(false);
-    expect(isRejected({ ...sharp, decision: 'reject' })).toBe(true);
-  });
-
-  test('only undecided rescued frames await review', () => {
+  test('only uncertain frames without a flag of yours await review', () => {
     expect(awaitsReview(uncertain)).toBe(true);
-    expect(awaitsReview({ ...uncertain, decision: 'keep' })).toBe(false);
+    expect(awaitsReview({ ...uncertain, marks: { flag: 'pick' } })).toBe(false);
+    expect(awaitsReview({ ...uncertain, marks: { stars: 3 } })).toBe(true);
     expect(awaitsReview(blurry)).toBe(false);
   });
 
-  test('flags and the words for each state', () => {
+  test('badges and words', () => {
     expect(flagFor(uncertain)).toBe('review');
     expect(flagFor(blurry)).toBe('rejected');
+    expect(flagFor({ ...sharp, flag: 'pick' })).toBe('pick');
     expect(flagFor(sharp)).toBeUndefined();
-    expect(flagFor({ ...blurry, decision: 'keep' })).toBeUndefined();
     expect(verdictSource(blurry)).toBe('Rejected as blurry');
-    expect(verdictSource({ ...blurry, decision: 'keep' })).toBe('Kept by you');
+    expect(verdictSource({ ...blurry, marks: { flag: 'pick' } })).toBe('Set by you');
     expect(verdictSource(unchecked)).toBeUndefined();
   });
 });
 
 describe('visible', () => {
-  const merged = mergeResults(PHOTOS, cull, rate, true, { 'C:\\shoot\\a.cr3': 'reject' });
+  const merged = mergeResults(PHOTOS, cull, rate, true, {
+    'C:\\shoot\\a.cr3': { flag: 'reject' },
+    'C:\\shoot\\c.cr3': { flag: 'pick', label: 'green' },
+  });
 
-  test('filters by the effective verdict', () => {
+  test('filters by the flag as it stands', () => {
     expect(visible(merged, 'rejected', 'name').map((p) => p.name)).toEqual(['a.cr3', 'b.cr3']);
+    expect(visible(merged, 'picks', 'name').map((p) => p.name)).toEqual(['c.cr3']);
     expect(visible(merged, 'keepers', 'name').map((p) => p.name)).toEqual(['c.cr3', 'd.cr3']);
     expect(visible(merged, 'review', 'name').map((p) => p.name)).toEqual(['d.cr3']);
+  });
+
+  test('filters by colour label, and by its absence', () => {
+    expect(visible(merged, 'all', 'name', 'green').map((p) => p.name)).toEqual(['c.cr3']);
+    expect(visible(merged, 'all', 'name', 'none').map((p) => p.name)).toEqual(['a.cr3', 'b.cr3', 'd.cr3']);
   });
 
   test('rating sort puts unrated last and keeps name order on ties', () => {
@@ -112,27 +126,50 @@ describe('visible', () => {
 });
 
 describe('totals', () => {
-  test('counts rejected, review queue, decisions and the mean', () => {
-    const merged = mergeResults(PHOTOS, cull, rate, true, { 'C:\\shoot\\b.cr3': 'keep' });
-    expect(totals(merged)).toMatchObject({ total: 4, rejected: 0, checked: 3, toReview: 1, decided: 1, rated: 2, meanStars: 3 });
+  test('counts picks, rejects, review queue, marks and the mean', () => {
+    const merged = mergeResults(PHOTOS, cull, rate, true, { 'C:\\shoot\\b.cr3': { flag: 'pick' } });
+    expect(totals(merged)).toMatchObject({ total: 4, picks: 1, rejected: 0, checked: 3, toReview: 1, marked: 1, rated: 2, meanStars: 3 });
     expect(totals([]).meanStars).toBeUndefined();
   });
 });
 
-describe('decisions', () => {
-  test('set, replace and clear', () => {
-    const a = withDecision({}, 'x', 'keep');
-    expect(a).toEqual({ x: 'keep' });
-    expect(withDecision(a, 'x', 'reject')).toEqual({ x: 'reject' });
-    expect(withDecision(a, 'x', undefined)).toEqual({});
-    expect(a).toEqual({ x: 'keep' }); // never mutated
+describe('marks on the client', () => {
+  test('withMarks sets, clears, and drops a photo left with nothing', () => {
+    const a = withMarks({}, 'x', { flag: 'pick' });
+    expect(a).toEqual({ x: { flag: 'pick' } });
+    expect(withMarks(a, 'x', { stars: 3 })).toEqual({ x: { flag: 'pick', stars: 3 } });
+    expect(withMarks(a, 'x', { flag: null })).toEqual({});
+    expect(a).toEqual({ x: { flag: 'pick' } }); // never mutated
   });
 
-  test('parsing drops anything that is not a decision', () => {
-    expect(parseDecisions('{"a":"keep","b":"reject","c":"maybe","d":1}')).toEqual({ a: 'keep', b: 'reject' });
-    expect(parseDecisions('[1]')).toEqual({});
-    expect(parseDecisions('nope')).toEqual({});
-    expect(parseDecisions(null)).toEqual({});
+  test('old browser decisions become flags: keeping a frame was picking it', () => {
+    expect(parseLegacyDecisions('{"a":"keep","b":"reject","c":"maybe"}')).toEqual({ a: { flag: 'pick' }, b: { flag: 'reject' } });
+    expect(parseLegacyDecisions('[1]')).toEqual({});
+    expect(parseLegacyDecisions('nope')).toEqual({});
+    expect(parseLegacyDecisions(null)).toEqual({});
+  });
+});
+
+describe('viewer keys, as in Lightroom', () => {
+  test('flags', () => {
+    expect(viewerKey('p')).toEqual({ type: 'mark', patch: { flag: 'pick' } });
+    expect(viewerKey('K')).toEqual({ type: 'mark', patch: { flag: 'pick' } });
+    expect(viewerKey('x')).toEqual({ type: 'mark', patch: { flag: 'reject' } });
+    expect(viewerKey('u')).toEqual({ type: 'mark', patch: { flag: 'unflagged' } });
+  });
+
+  test('stars 1–5, 0 for none, labels 6–9 as in Lightroom', () => {
+    expect(viewerKey('0')).toEqual({ type: 'mark', patch: { stars: 0 } });
+    expect(viewerKey('5')).toEqual({ type: 'mark', patch: { stars: 5 } });
+    expect(viewerKey('6')).toEqual({ type: 'mark', patch: { label: 'red' } });
+    expect(viewerKey('9')).toEqual({ type: 'mark', patch: { label: 'blue' } });
+  });
+
+  test('navigation, and keys it does not know', () => {
+    expect(viewerKey('ArrowRight')).toEqual({ type: 'next' });
+    expect(viewerKey('Escape')).toEqual({ type: 'close' });
+    expect(viewerKey('s')).toEqual({ type: 'skip' });
+    expect(viewerKey('q')).toBeNull();
   });
 });
 
@@ -168,5 +205,26 @@ describe('routes', () => {
     expect(parseRoute('#setup', routes)).toBe('setup');
     expect(parseRoute('#nope', routes)).toBe('library');
     expect(parseRoute('', routes)).toBe('library');
+  });
+});
+
+describe('label toggle', () => {
+  test('the same label again clears it', () => {
+    expect(toggleLabel({ label: 'red' }, 'red')).toEqual({ label: 'none' });
+  });
+
+  test('another label replaces it; other marks pass through', () => {
+    expect(toggleLabel({ label: 'green' }, 'red')).toEqual({ label: 'green' });
+    expect(toggleLabel({ label: 'purple' }, undefined)).toEqual({ label: 'purple' });
+    expect(toggleLabel({ stars: 3 }, 'red')).toEqual({ stars: 3 });
+  });
+});
+
+describe('rated', () => {
+  test('stars taken off by hand do not count as a rating; a rating run of 0 does', () => {
+    const manual = mergeResults(PHOTOS.slice(0, 1), undefined, undefined, false, { [PHOTOS[0].path]: { stars: 0 } });
+    expect(totals(manual).rated).toBe(0);
+    const run = mergeResults(PHOTOS.slice(0, 1), undefined, [{ file: PHOTOS[0].path, stars: 0, focus: 0, aesthetic: 0, keywords: [] }]);
+    expect(totals(run).rated).toBe(1);
   });
 });

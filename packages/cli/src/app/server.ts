@@ -7,7 +7,20 @@
  * and nothing is running, it stops too.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { changeFor, sendStatus, type CullReport, type JobRequest, type JobStatus, type LibraryPhoto, type LightroomChange, type RateReport, type RatingProfile } from '@shoots/app';
+import {
+  changeFor,
+  RESET_PARTS,
+  sanitizeMarksPatch,
+  sendStatus,
+  type CullReport,
+  type JobRequest,
+  type JobStatus,
+  type LibraryPhoto,
+  type LightroomChange,
+  type RateReport,
+  type RatingProfile,
+  type ResetPart,
+} from '@shoots/app';
 import { JobError, type JobRunner } from './jobs.js';
 import { browse, type Library } from './library.js';
 import { startIdleWatch, type IdleWatch } from './lifecycle.js';
@@ -47,7 +60,7 @@ export interface AppServer {
   jobFinished: (status: JobStatus) => void;
 }
 
-// Room for a batch of decisions; anything larger is not something the page sends.
+// Room for a batch of marks; anything larger is not something the page sends.
 const MAX_BODY = 512 * 1024;
 
 /** Maps a file path the CLI reported back to the photo that was listed, tolerating case on Windows. */
@@ -168,8 +181,15 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         return withUserError(res, async () => opts.store.updateSettings(JSON.parse(await readBody(req))));
       case 'GET /api/folders/recent':
         return sendJson(res, 200, opts.store.recentFolders());
-      case 'PUT /api/decisions':
-        return putDecisions(req, res);
+      case 'PUT /api/marks':
+        return putMarks(req, res);
+      case 'POST /api/reset':
+        return resetPhotos(req, res);
+      case 'DELETE /api/memory':
+        // Forgets what the app knows. Lightroom keeps whatever was already sent to it.
+        opts.store.clearAll();
+        launchFolder = null;
+        return sendJson(res, 200, { ok: true });
       case 'GET /api/browse':
         return withUserError(res, () => browse(url.searchParams.get('path')));
       case 'GET /api/library': {
@@ -232,23 +252,47 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     }
   }
 
-  /** Body: `{ decisions: { [path]: 'keep' | 'reject' | null } }`. Only photographs in an opened folder. */
-  async function putDecisions(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    let body: { decisions?: Record<string, unknown> };
+  /**
+   * Body: `{ marks: { [path]: { flag?, stars?, label? } } }`, a null field handing it back to shoots.
+   * Only photographs in an opened folder. Replies with each photo's marks as they now stand.
+   */
+  async function putMarks(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: { marks?: Record<string, unknown> };
     try {
       body = JSON.parse(await readBody(req));
     } catch {
-      return sendJson(res, 400, { error: 'Not a list of decisions.' });
+      return sendJson(res, 400, { error: 'Not a set of marks.' });
     }
-    const entries = Object.entries(body.decisions ?? {});
-    let saved = 0;
-    for (const [path, d] of entries) {
+    const marks: Record<string, unknown> = {};
+    for (const [path, patch] of Object.entries(body.marks ?? {})) {
       if (!opts.library.isServable(path)) continue;
-      if (d !== 'keep' && d !== 'reject' && d !== null) continue;
-      opts.store.setDecision(path, d);
-      saved++;
+      marks[path] = opts.store.setMarks(path, sanitizeMarksPatch(patch)) ?? null;
     }
-    sendJson(res, 200, { saved });
+    sendJson(res, 200, { marks });
+  }
+
+  /** The photos a request names: a folder as listed, narrowed to `paths` when given. */
+  async function photosIn(body: { folder?: unknown; recursive?: unknown; paths?: unknown }): Promise<LibraryPhoto[]> {
+    if (typeof body.folder !== 'string') throw new Error('Choose a folder.');
+    const only = Array.isArray(body.paths) ? new Set(body.paths.filter((p): p is string => typeof p === 'string')) : undefined;
+    const listing = await opts.library.list(body.folder, body.recursive === true);
+    return only ? listing.photos.filter((p) => only.has(p.path)) : listing.photos;
+  }
+
+  /** Body: `{ folder, recursive?, paths?, parts }`. Forgets those parts in the app; Lightroom is not touched. */
+  async function resetPhotos(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: { folder?: unknown; recursive?: unknown; paths?: unknown; parts?: unknown };
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Nothing to reset.' });
+    }
+    const parts = Array.isArray(body.parts) ? body.parts.filter((p): p is ResetPart => RESET_PARTS.includes(p as ResetPart)) : [];
+    if (parts.length === 0) return sendJson(res, 400, { error: 'Choose what to reset.' });
+    await withUserError(res, async () => {
+      const photos = await photosIn(body);
+      return { reset: opts.store.reset(photos.map((p) => p.path), parts) };
+    });
   }
 
   /** Body: `{ folder, recursive?, paths? }`. Queues what the folder (or those photos) should carry into Lightroom. */
@@ -259,18 +303,15 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     } catch {
       return sendJson(res, 400, { error: 'Nothing to send.' });
     }
-    if (typeof body.folder !== 'string') return sendJson(res, 400, { error: 'Choose a folder.' });
-    const only = Array.isArray(body.paths) ? new Set(body.paths.filter((p): p is string => typeof p === 'string')) : undefined;
     await withUserError(res, async () => {
-      const listing = await opts.library.list(body.folder as string, body.recursive === true);
-      const photos = only ? listing.photos.filter((p) => only.has(p.path)) : listing.photos;
+      const photos = await photosIn(body);
       const known = opts.store.resultsFor(photos);
       const lookup = photoLookup(photos, caseInsensitive);
       const cullOf = new Map(known.cull.map((c) => [lookup(c.file)?.path ?? c.file, c]));
       const starsOf = new Map(known.rate.map((r) => [lookup(r.file)?.path ?? r.file, r.stars]));
       const changes: LightroomChange[] = [];
       for (const p of photos) {
-        const change = changeFor(p.path, cullOf.get(p.path), starsOf.get(p.path), known.decisions[p.path]);
+        const change = changeFor(p.path, cullOf.get(p.path), starsOf.get(p.path), known.marks[p.path]);
         const status = sendStatus(change, known.sent[p.path]);
         // Already on its way or already in the catalog as it stands: nothing new to send.
         if (change && status !== 'pending' && status !== 'applied') changes.push(change);

@@ -2,7 +2,9 @@
 import type {
   AppInfo,
   AppSettings,
-  Decision,
+  Marks,
+  MarksPatch,
+  ResetRequest,
   BrowseResult,
   JobRequest,
   JobStatus,
@@ -58,7 +60,11 @@ export const api = {
   sendToLightroom: (folder: string, recursive: boolean, paths?: string[]) =>
     call<{ queued: number }>('POST', '/api/outbox', { folder, recursive, paths }),
   sentState: (folder: string) => call<Record<string, SentChange>>('GET', `/api/outbox/state${q({ folder })}`),
-  saveDecisions: (decisions: Record<string, Decision | null>) => call<{ saved: number }>('PUT', '/api/decisions', { decisions }),
+  /** Replies with each photo's marks as they now stand; null when nothing is left set. */
+  saveMarks: (marks: Record<string, MarksPatch>) => call<{ marks: Record<string, Marks | null> }>('PUT', '/api/marks', { marks }),
+  /** Forgets the chosen parts in the app only; Lightroom keeps what was already sent to it. */
+  reset: (request: ResetRequest) => call<{ reset: number }>('POST', '/api/reset', request),
+  clearMemory: () => call<{ ok: boolean }>('DELETE', '/api/memory'),
   info: () => call<AppInfo>('GET', '/api/info'),
   profiles: () => call<RatingProfile[]>('GET', '/api/profiles'),
   heartbeat: () => call<{ ok: boolean; busy: boolean }>('POST', '/api/heartbeat'),

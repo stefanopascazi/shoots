@@ -1,27 +1,16 @@
 /** @jsxImportSource preact */
 import { useEffect, useMemo, useState } from 'preact/hooks';
-import {
-  Alert,
-  Button,
-  Card,
-  EmptyState,
-  PageHeader,
-  PhotoGrid,
-  PhotoTile,
-  Segmented,
-  Select,
-  Spinner,
-  Stat,
-  Switch,
-} from '@shoots/ui';
+import { Alert, Button, Card, EmptyState, PageHeader, PhotoGrid, PhotoTile, Select, Spinner, Stat, Switch } from '@shoots/ui';
 import { api, thumbUrl } from '../api/client.js';
 import type { CullReport, RateReport, RatingProfile } from '../contract.js';
 import { useJob } from '../hooks/useJob.js';
 import type { SettingsHandle } from '../hooks/useSettings.js';
 import { FolderPicker } from './FolderPicker.js';
 import { JobPanel } from './JobPanel.js';
-import { awaitsReview, flagFor, folderName, sendSummary, totals, visible, type Filter, type Sort } from './model.js';
+import { LibraryFilters } from './LibraryFilters.js';
+import { awaitsReview, flagFor, folderName, sendSummary, totals, visible, type Filter, type LabelFilter, type Sort } from './model.js';
 import { PhotoViewer } from './PhotoViewer.js';
+import { ResetDialog } from './ResetDialog.js';
 import { useLibrary, type LibraryStart } from './useLibrary.js';
 
 export interface LibraryScreenProps {
@@ -34,10 +23,12 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
   const lib = useLibrary(windows, start);
   const job = useJob();
   const [picking, setPicking] = useState(false);
-  const { filter, sort } = prefs.settings;
+  const [resetting, setResetting] = useState(false);
+  const { filter, sort, labelFilter } = prefs.settings;
   const setFilter = (v: Filter) => prefs.update({ filter: v });
   const setSort = (v: Sort) => prefs.update({ sort: v });
-  // The viewer walks a fixed list of paths, so deciding a frame never reshuffles what comes next.
+  const setLabelFilter = (v: LabelFilter) => prefs.update({ labelFilter: v });
+  // The viewer walks a fixed list of paths, so marking a frame never reshuffles what comes next.
   const [viewer, setViewer] = useState<{ paths: string[]; index: number; review: boolean }>();
   const [profiles, setProfiles] = useState<RatingProfile[]>([]);
   const [defaultProfile, setDefaultProfile] = useState<string>();
@@ -58,7 +49,7 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
   const sum = useMemo(() => totals(lib.photos), [lib.photos]);
   // A remembered "To review" with nothing left to review shows everything instead.
   const activeFilter: Filter = filter === 'review' && sum.toReview === 0 ? 'all' : filter;
-  const shown = useMemo(() => visible(lib.photos, activeFilter, sort), [lib.photos, activeFilter, sort]);
+  const shown = useMemo(() => visible(lib.photos, activeFilter, sort, labelFilter), [lib.photos, activeFilter, sort, labelFilter]);
   const byPath = useMemo(() => new Map(lib.photos.map((p) => [p.path, p])), [lib.photos]);
   const viewerPhotos = useMemo(() => viewer?.paths.map((p) => byPath.get(p)!).filter(Boolean) ?? [], [viewer, byPath]);
   const [sending, setSending] = useState(false);
@@ -88,8 +79,7 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
     if (kind === 'cull') {
       lib.setCull((done.result as CullReport).results);
       setFilter('all');
-    }
-    else {
+    } else {
       const report = done.result as RateReport;
       lib.setRate(report.results, report.profile);
       setSort('rating');
@@ -116,7 +106,7 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
           <EmptyState
             icon="folder"
             title="Open a folder of photographs"
-            description="shoots looks for blurry frames and rates the rest. Nothing is written to your photos; results go back to Lightroom through the plug-in."
+            description="Flag, rate and label by hand, or let shoots find the blurry frames and rate the rest first. Nothing is written to your photos; results go to Lightroom through the plug-in."
             actions={
               <Button variant="primary" icon="folder" onClick={() => setPicking(true)}>
                 Choose a folder
@@ -130,11 +120,12 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
   }
 
   const busy = job.running || lib.loading;
+  const folder = lib.listing?.folder ?? lib.folder;
   return (
     <>
       <PageHeader
-        eyebrow={lib.listing ? `${lib.listing.folder}` : lib.folder}
-        title={folderName(lib.listing?.folder ?? lib.folder)}
+        eyebrow={folder}
+        title={folderName(folder)}
         actions={
           <>
             <Button icon="folder" onClick={() => setPicking(true)} disabled={job.running}>
@@ -147,13 +138,7 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
               Rate
             </Button>
             {/* Once there is something to hand over, sending it is the next step. */}
-            <Button
-              variant={sum.toSend ? 'primary' : 'secondary'}
-              icon="upload"
-              onClick={sendAll}
-              loading={sending}
-              disabled={busy || sum.toSend === 0}
-            >
+            <Button variant={sum.toSend ? 'primary' : 'secondary'} icon="upload" onClick={sendAll} loading={sending} disabled={busy || sum.toSend === 0}>
               {sum.toSend ? `Send ${sum.toSend} to Lightroom` : 'Send to Lightroom'}
             </Button>
           </>
@@ -203,6 +188,10 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
             </Select>
           </label>
         )}
+        <span class="sh-spacer" />
+        <Button size="sm" variant="ghost" icon="trash" onClick={() => setResetting(true)} disabled={busy || !sum.total}>
+          Reset folder…
+        </Button>
       </div>
 
       {lib.error && <Alert tone="danger" title="Could not open this folder">{lib.error}</Alert>}
@@ -227,9 +216,9 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
             <Card flush class="app-summary">
               <Stat label="Photos" value={sum.total} hint={lib.recursive ? 'with subfolders' : 'in this folder'} />
               <Stat
-                label="Rejected"
-                value={sum.checked ? sum.rejected : '—'}
-                hint={!sum.checked ? 'not checked yet' : sum.toReview ? `${sum.toReview} to review` : sum.decided ? `${sum.decided} decided by you` : `of ${sum.checked} checked`}
+                label="Picks · rejected"
+                value={`${sum.picks} · ${sum.rejected}`}
+                hint={sum.toReview ? `${sum.toReview} to review` : sum.checked ? `${sum.checked} checked for blur` : 'not checked for blur yet'}
                 hintTone={sum.toReview ? 'danger' : 'neutral'}
               />
               <Stat label="Rated" value={sum.rated || '—'} hint={sum.rated ? `profile ${lib.ratedWith ?? profile ?? ''}` : 'not rated yet'} />
@@ -246,38 +235,24 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
                   </Button>
                 }
               >
-                Soft overall but sharp in one area, as with a wide aperture. shoots kept them; you decide. Any other verdict can be changed from the photo too.
+                Soft overall but sharp in one area, as with a wide aperture. shoots kept them; you decide. Any photo can be flagged, rated and labelled by hand.
               </Alert>
             )}
 
-            <div class="app-toolbar">
-              <Segmented
-                label="Show"
-                value={activeFilter}
-                onChange={setFilter}
-                options={[
-                  { value: 'all', label: `All ${sum.total}` },
-                  { value: 'keepers', label: `Keepers ${sum.total - sum.rejected}` },
-                  { value: 'rejected', label: `Rejected ${sum.rejected}` },
-                  ...(sum.toReview ? [{ value: 'review' as const, label: `To review ${sum.toReview}` }] : []),
-                ]}
-              />
-              <span class="sh-spacer" />
-              <Segmented
-                label="Sort"
-                value={sort}
-                onChange={setSort}
-                options={[
-                  { value: 'name', label: 'Name' },
-                  { value: 'rating', label: 'Rating' },
-                ]}
-              />
-            </div>
+            <LibraryFilters
+              sum={sum}
+              filter={activeFilter}
+              label={labelFilter}
+              sort={sort}
+              onFilter={setFilter}
+              onLabel={setLabelFilter}
+              onSort={setSort}
+            />
 
             {sendError && <Alert tone="danger" title="Could not send to Lightroom">{sendError}</Alert>}
-            {(summary || sum.decided > 0) && (
+            {(summary || sum.marked > 0) && (
               <p class="app-note sh-muted">
-                {[sum.decided ? `${sum.decided} decision${sum.decided === 1 ? '' : 's'} by you` : undefined, summary].filter(Boolean).join(' · ')}
+                {[sum.marked ? `${sum.marked} photo${sum.marked === 1 ? '' : 's'} marked by you` : undefined, summary].filter(Boolean).join(' · ')}
                 {sum.waiting > 0 && '. Keep Lightroom open with the shoots plug-in: it collects them within a few seconds.'}
                 {sum.notInCatalog > 0 && sum.waiting === 0 && '. Import the missing photos into Lightroom, then send again.'}
               </p>
@@ -294,6 +269,7 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
                     name={p.name}
                     rating={p.stars}
                     flag={flagFor(p)}
+                    label={p.label}
                     onClick={() => setViewer({ paths: shown.map((x) => x.path), index: i, review: false })}
                   />
                 ))}
@@ -310,9 +286,16 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
           review={viewer.review}
           onIndex={(index) => setViewer((v) => v && { ...v, index })}
           onClose={() => setViewer(undefined)}
-          onDecide={lib.decide}
+          onMark={lib.mark}
+          onReset={(path, parts) => lib.reset(parts, [path])}
         />
       )}
+      <ResetDialog
+        open={resetting}
+        scope={`${folderName(folder)} (${sum.total} photo${sum.total === 1 ? '' : 's'})`}
+        onClose={() => setResetting(false)}
+        onReset={(parts) => lib.reset(parts)}
+      />
       {picker}
     </>
   );

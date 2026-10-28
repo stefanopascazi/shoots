@@ -35,7 +35,24 @@ export interface LibraryPhoto {
   mtime: number;
 }
 
-export type Decision = 'keep' | 'reject';
+/** Lightroom's flags: pick (P), reject (X), unflagged (U). */
+export type Flag = 'pick' | 'reject' | 'unflagged';
+
+/** Lightroom's colour labels, by the names its SDK uses; `none` clears the label. */
+export type ColorLabel = 'red' | 'yellow' | 'green' | 'blue' | 'purple' | 'none';
+
+/**
+ * What the photographer set by hand. Each field overrides what shoots proposed
+ * (the cull verdict, the rating); an absent field leaves the proposal in force.
+ */
+export interface Marks {
+  flag?: Flag;
+  stars?: number;
+  label?: ColorLabel;
+}
+
+/** A change to marks: a value sets the field, null hands it back to shoots. */
+export type MarksPatch = { [K in keyof Marks]?: Marks[K] | null };
 
 export interface LibraryListing {
   folder: string;
@@ -44,8 +61,8 @@ export interface LibraryListing {
   /** What earlier runs found, for photographs unchanged since. */
   cull: CullResultItem[];
   rate: StoredRate[];
-  /** The photographer's own keep/reject calls, by path. */
-  decisions: Record<string, Decision>;
+  /** The photographer's own marks, by path. */
+  marks: Record<string, Marks>;
   /** What was last sent to Lightroom for each photo, and what became of it. */
   sent: Record<string, SentChange>;
 }
@@ -53,6 +70,21 @@ export interface LibraryListing {
 /** A change waiting for the plug-in, as it collects it. */
 export interface OutboxItem extends LightroomChange {
   id: number;
+}
+
+/**
+ * What a reset forgets, each on its own: the blur check, shoots' ratings, the
+ * photographer's marks, the history of what was sent to Lightroom.
+ */
+export type ResetPart = 'cull' | 'rate' | 'marks' | 'sent';
+
+/** A reset only forgets, in the app's own database: Lightroom keeps whatever was already sent to it. */
+export interface ResetRequest {
+  folder: string;
+  recursive?: boolean;
+  /** Only these photos; the whole folder when absent. */
+  paths?: string[];
+  parts: ResetPart[];
 }
 
 export interface AppSettings {
@@ -63,7 +95,9 @@ export interface AppSettings {
   /** Rating profile last used; null picks the default. */
   profile: string | null;
   theme: 'system' | 'dark' | 'light';
-  filter: 'all' | 'keepers' | 'rejected' | 'review';
+  filter: 'all' | 'picks' | 'keepers' | 'rejected' | 'review';
+  /** Show only photos with this colour label; `any` shows all. */
+  labelFilter: ColorLabel | 'any';
   sort: 'name' | 'rating';
 }
 

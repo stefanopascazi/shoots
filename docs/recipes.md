@@ -160,7 +160,7 @@ Nothing is written. The uncertain shallow-DoF rescues are marked **Review**;
 **Review** walks you through only those, with a focus map showing where focus
 landed. Any other verdict can be reversed from the photograph too: a soft frame
 may be soft on purpose.
-`K` keep · `X` reject · `U` undo · `S` skip · `H` focus map · `Esc` finish.
+Lightroom's keys: `P` pick · `X` reject · `U` unflag · `1`–`5` stars, `0` none · `6`–`9` labels · `S` skip · `H` focus map · `Esc` finish.
 
 See [Reviewing the verdicts](./commands/cull.md#reviewing-the-verdicts).
 

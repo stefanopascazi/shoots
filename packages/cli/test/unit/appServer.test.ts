@@ -154,7 +154,7 @@ describe('app server memory', () => {
     expect(await put.json()).toMatchObject({ sort: 'rating', theme: 'system' });
   });
 
-  test('cull results and decisions come back with the folder', async () => {
+  test('cull results and marks come back with the folder, and reset forgets them', async () => {
     const { base, children } = await start();
     const dir = mkdtempSync(path.join(tmpdir(), 'shoots-app-'));
     const photo = path.join(dir, 'a.jpg');
@@ -170,14 +170,22 @@ describe('app server memory', () => {
     children[0].emit('close', 0);
     expect((await (await fetch(`${base}/api/jobs/${job.id}`, { headers: auth })).json()).state).toBe('done');
 
-    const outside = await fetch(`${base}/api/decisions`, { method: 'PUT', headers: auth, body: JSON.stringify({ decisions: { '/etc/x.jpg': 'keep' } }) });
-    expect(await outside.json()).toEqual({ saved: 0 });
-    const inside = await fetch(`${base}/api/decisions`, { method: 'PUT', headers: auth, body: JSON.stringify({ decisions: { [photo]: 'keep' } }) });
-    expect(await inside.json()).toEqual({ saved: 1 });
+    const mark = (marks: unknown) => fetch(`${base}/api/marks`, { method: 'PUT', headers: auth, body: JSON.stringify({ marks }) }).then((r) => r.json());
+    expect(await mark({ '/etc/x.jpg': { flag: 'pick' } })).toEqual({ marks: {} });
+    expect(await mark({ [photo]: { flag: 'pick', stars: 9, label: 'red' } })).toEqual({ marks: { [photo]: { flag: 'pick', label: 'red' } } });
 
     const again = await list();
     expect(again.cull.map((c: { verdict: string }) => c.verdict)).toEqual(['blurry']);
-    expect(again.decisions).toEqual({ [photo]: 'keep' });
+    expect(again.marks).toEqual({ [photo]: { flag: 'pick', label: 'red' } });
+
+    const reset = (parts: string[]) => fetch(`${base}/api/reset`, { method: 'POST', headers: auth, body: JSON.stringify({ folder: dir, parts }) }).then((r) => r.json());
+    expect(await reset([])).toEqual({ error: 'Choose what to reset.' });
+    expect(await reset(['cull'])).toEqual({ reset: 1 });
+    const afterCull = await list();
+    expect([afterCull.cull.length, Object.keys(afterCull.marks).length]).toEqual([0, 1]);
+
+    expect((await fetch(`${base}/api/memory`, { method: 'DELETE', headers: auth })).status).toBe(200);
+    expect((await (await fetch(`${base}/api/start`, { headers: auth })).json()).recent).toEqual([]);
     rmSync(dir, { recursive: true, force: true });
   });
 });
@@ -197,22 +205,22 @@ describe('send to Lightroom', () => {
     children[0].emit('close', 0);
 
     const send = () => fetch(`${base}/api/outbox`, { method: 'POST', headers: auth, body: JSON.stringify({ folder: dir }) }).then((r) => r.json());
-    // Only the reject travels: a sharp verdict with no decision leaves the pick in Lightroom alone.
+    // Only the reject travels: a sharp verdict with no flag of yours leaves the pick in Lightroom alone.
     expect(await send()).toEqual({ queued: 1 });
     expect(await send()).toEqual({ queued: 0 });
 
     const beat = await (await fetch(`${base}/api/host/heartbeat`, { method: 'POST', headers: auth })).json();
     expect(beat.pending).toBe(1);
     const { items } = await (await fetch(`${base}/api/outbox`, { headers: auth })).json();
-    expect(items).toEqual([{ id: items[0].id, path: blurry, rating: null, pick: -1 }]);
+    expect(items).toEqual([{ id: items[0].id, path: blurry, rating: null, pick: -1, label: null }]);
 
     const ack = await fetch(`${base}/api/outbox/ack`, { method: 'POST', headers: auth, body: JSON.stringify({ applied: [items[0].id], missing: [] }) });
     expect(await ack.json()).toEqual({ settled: 1 });
     const state = await (await fetch(`${base}/api/outbox/state?folder=${encodeURIComponent(dir)}`, { headers: auth })).json();
     expect(state[blurry].state).toBe('applied');
 
-    // Your Keep changes what Lightroom should hold, so it travels again.
-    await fetch(`${base}/api/decisions`, { method: 'PUT', headers: auth, body: JSON.stringify({ decisions: { [blurry]: 'keep' } }) });
+    // Your pick changes what Lightroom should hold, so it travels again.
+    await fetch(`${base}/api/marks`, { method: 'PUT', headers: auth, body: JSON.stringify({ marks: { [blurry]: { flag: 'pick' } } }) });
     expect(await send()).toEqual({ queued: 1 });
     rmSync(dir, { recursive: true, force: true });
   });

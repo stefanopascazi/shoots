@@ -123,3 +123,19 @@
 .app-health__name { font-weight: 500; white-space: nowrap; }
 .app-health__detail { overflow-wrap: anywhere; }
 @media (max-width: 980px) { .app-health { grid-template-columns: 1fr; } }
+
+/* Marks set by hand */
+.app-marks {
+  display: grid;
+  gap: var(--sh-space-3);
+  padding: var(--sh-space-4);
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-lg);
+  background: var(--sh-surface-2);
+}
+.app-marks__row { display: flex; align-items: center; gap: var(--sh-space-3); flex-wrap: wrap; }
+.app-marks__label { width: 44px; color: var(--sh-fg-muted); font-size: var(--sh-text-sm); }
+.app-marks__note { display: flex; align-items: center; gap: var(--sh-space-2); flex-wrap: wrap; margin: -4px 0 0 56px; font-size: var(--sh-text-sm); }
+
+.app-reset { display: grid; gap: var(--sh-space-3); }
+.app-label-filter { width: auto; height: var(--sh-control-sm); }

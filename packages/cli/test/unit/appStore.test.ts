@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { openSqlite } from '@shoots/core';
 import type { LibraryPhoto } from '@shoots/app';
 import { AppStore, DEFAULT_SETTINGS, sanitizeSettings } from '../../src/app/store.js';
 import { photoLookup } from '../../src/app/server.js';
@@ -76,26 +80,102 @@ describe('results', () => {
   });
 });
 
-describe('decisions', () => {
-  test('set, replace and clear', () => {
+describe('marks', () => {
+  test('set field by field, hand back, and drop the row when empty', () => {
     const a = photo('a.cr3');
-    store.setDecision(a.path, 'keep');
-    expect(store.resultsFor([a]).decisions).toEqual({ [a.path]: 'keep' });
-    store.setDecision(a.path, 'reject');
-    expect(store.resultsFor([a]).decisions).toEqual({ [a.path]: 'reject' });
-    store.setDecision(a.path, null);
-    expect(store.resultsFor([a]).decisions).toEqual({});
+    expect(store.setMarks(a.path, { flag: 'pick', stars: 4 })).toEqual({ flag: 'pick', stars: 4 });
+    expect(store.setMarks(a.path, { label: 'green' })).toEqual({ flag: 'pick', stars: 4, label: 'green' });
+    expect(store.setMarks(a.path, { stars: null })).toEqual({ flag: 'pick', label: 'green' });
+    expect(store.resultsFor([a]).marks).toEqual({ [a.path]: { flag: 'pick', label: 'green' } });
+    store.setMarks(a.path, { flag: null, label: null });
+    expect(store.resultsFor([a]).marks).toEqual({});
   });
 
-  test('a decision outlives a change to the file', () => {
+  test('zero stars is a mark of its own', () => {
     const a = photo('a.cr3');
-    store.setDecision(a.path, 'keep');
-    expect(store.resultsFor([{ ...a, mtime: 99 }]).decisions).toEqual({ [a.path]: 'keep' });
+    expect(store.setMarks(a.path, { stars: 0 })).toEqual({ stars: 0 });
+  });
+
+  test('marks outlive a change to the file', () => {
+    const a = photo('a.cr3');
+    store.setMarks(a.path, { flag: 'reject' });
+    expect(store.resultsFor([{ ...a, mtime: 99 }]).marks).toEqual({ [a.path]: { flag: 'reject' } });
+  });
+});
+
+describe('reset, in the app only', () => {
+  const seed = () => {
+    const a = photo('a.cr3');
+    store.saveResults('cull', [cullItem(a.path, 'blurry')], photoLookup([a], false));
+    store.saveResults('rate', [{ file: a.path, stars: 3, focus: 1, aesthetic: 1, keywords: [] }], photoLookup([a], false), 'p');
+    store.setMarks(a.path, { flag: 'pick', label: 'red' });
+    store.enqueue([{ path: a.path, rating: 3, pick: 1, label: 'red' }]);
+    return a;
+  };
+
+  test('each part goes on its own', () => {
+    const a = seed();
+    store.reset([a.path], ['cull']);
+    let r = store.resultsFor([a]);
+    expect([r.cull.length, r.rate.length, Object.keys(r.marks).length, Object.keys(r.sent).length]).toEqual([0, 1, 1, 1]);
+    store.reset([a.path], ['rate']);
+    r = store.resultsFor([a]);
+    expect([r.rate.length, Object.keys(r.marks).length]).toEqual([0, 1]);
+    store.reset([a.path], ['marks']);
+    r = store.resultsFor([a]);
+    expect([Object.keys(r.marks).length, Object.keys(r.sent).length]).toEqual([0, 1]);
+    store.reset([a.path], ['sent']);
+    expect(store.resultsFor([a]).sent).toEqual({});
+    expect(store.pendingCount()).toBe(0);
+  });
+
+  test('only the photos named', () => {
+    const a = seed();
+    const b = photo('b.cr3');
+    store.setMarks(b.path, { stars: 2 });
+    store.reset([a.path], ['marks']);
+    expect(store.marksOf(b.path)).toEqual({ stars: 2 });
+  });
+
+  test('clearing the memory forgets everything', () => {
+    const a = seed();
+    store.updateSettings({ theme: 'light' });
+    store.openedFolder('/shoot', false);
+    store.clearAll();
+    const r = store.resultsFor([a]);
+    expect([r.cull, r.rate, r.marks, r.sent]).toEqual([[], [], {}, {}]);
+    expect(store.settings()).toEqual(DEFAULT_SETTINGS);
+    expect(store.recentFolders()).toEqual([]);
+  });
+});
+
+describe('migration from the first schema', () => {
+  test('keep/reject decisions become flags and the outbox gains labels', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'shoots-migrate-'));
+    const file = path.join(dir, 'app.db');
+    const v1 = await openSqlite(file);
+    v1.exec(`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      INSERT INTO meta VALUES ('schema_version', '1');
+      CREATE TABLE decisions (path TEXT PRIMARY KEY, decision TEXT NOT NULL, updated_at TEXT NOT NULL);
+      INSERT INTO decisions VALUES ('/shoot/a.cr3', 'keep', 't'), ('/shoot/b.cr3', 'reject', 't');
+      CREATE TABLE outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, path TEXT NOT NULL UNIQUE, rating INTEGER, pick INTEGER,
+        state TEXT NOT NULL, queued_at TEXT NOT NULL, settled_at TEXT);`);
+    v1.close();
+
+    const migrated = await AppStore.open(file);
+    expect(migrated.marksOf('/shoot/a.cr3')).toEqual({ flag: 'pick' });
+    expect(migrated.marksOf('/shoot/b.cr3')).toEqual({ flag: 'reject' });
+    migrated.enqueue([{ path: '/shoot/a.cr3', rating: null, pick: 1, label: 'red' }]);
+    expect(migrated.pending()[0].label).toBe('red');
+    migrated.close();
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    } catch {}
   });
 });
 
 describe('outbox', () => {
-  const change = (path: string, pick: -1 | 0 | null = -1, rating: number | null = null) => ({ path, rating, pick });
+  const change = (path: string, pick: -1 | 0 | null = -1, rating: number | null = null) => ({ path, rating, pick, label: null });
 
   test('queued changes wait until the plug-in settles them', () => {
     store.enqueue([change('/shoot/a.cr3'), change('/shoot/b.cr3', 0, 3)]);

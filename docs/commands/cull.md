@@ -259,51 +259,42 @@ Classic with **Library › Plug-in Extras › Open shoots**:
    analysis runs over the whole folder and nothing is written.
 2. Frames the focus rescue kept (soft overall, sharp in one area, as with a wide
    aperture) are marked **Review**, and **Review** walks you through only those.
-3. Every other verdict can be changed too. Open any photograph and **Keep** a
-   frame shoots rejected, or **Reject** one it kept.
+3. Every verdict can be changed. Open any photograph and flag it yourself:
+   **Pick** a frame shoots rejected, **Reject** one it kept, or leave it
+   **Unflagged**.
+
+The cull is optional: any photograph can be flagged, rated and given a colour
+label by hand, with or without it. What you set always wins over what shoots
+proposed, field by field, and **Use the cull's verdict** / **Use shoots' rating**
+hand a field back.
 
 The viewer shows the global score, the focus peak, the aperture and a **focus
 map** over the photograph (soft → sharp) marking where focus actually landed.
+The keys are Lightroom's:
 
 | Key | Action |
 | --- | --- |
-| `K` | Keep |
-| `X` or `D` | Reject |
-| `U` | Undo your decision; the verdict applies again |
+| `P` (or `K`) | Pick |
+| `X` (or `D`) | Reject |
+| `U` | Unflag |
+| `1`–`5` | Stars; `0` removes them |
+| `6` `7` `8` `9` | Red, yellow, green, blue label; the same key again removes it. Purple is on the panel. |
 | `S` | Skip — decide later |
 | `H` | Show or hide the focus map |
 | `←` `→` | Previous / next photograph |
 | `Esc` | Finish |
 
-Your decisions are kept per folder on this computer, survive a re-run of the
-analysis, and always win over the verdict. They are not written to the
-Lightroom catalog yet.
+Your marks are kept on this computer, survive a re-run of the analysis, and
+reach Lightroom with **Send to Lightroom**.
+
+**Reset folder…** (and **Reset this photo…** in the viewer) forgets any of: the
+blur check, shoots' ratings, your marks, the send history. A reset happens in the
+app only — photos and Lightroom are not touched, and anything already sent stays
+in the catalog. **Setup › Clear app memory** forgets everything at once.
 
 > **`--review` in the shell is deprecated.** It still works inside the
 > interactive shell (`/cull <path> --review --mark`), and is removed together
 > with the shell. In batch mode it exits `2` with a pointer to the shoots app.
-
---- | --- | --- | --- |
-| `K` | Keep | Records `--mark-keepers`, if you set one | The file stays where it is |
-| `D` | Discard | Records the reject label | Relocates it to `--dest` |
-| `P` | Preview — open the frame in your system image viewer | | |
-| `S` | Skip — decide later | | |
-| `Esc` | Finish the review | | |
-
-Marks made here carry `reviewed: true`, so a decision you actually looked at is
-distinguishable from one a threshold produced.
-
-Requirements and flags:
-
-- **`--mark` or `--dest` is required** — the review has to do *something* with
-  the discards. `--mark` records them and moves nothing; `--dest` relocates them.
-  `--mark-label` and `--mark-keepers` work here exactly as in batch.
-- `--copy` copies discards instead of moving them. Only meaningful with `--dest`.
-- `--dry-run` walks the entire flow without touching a single file — ideal for
-  learning the interface.
-
-Every other flag behaves identically in batch, so `shoots cull` stays fully
-scriptable. Only the review UI is interactive.
 
 ---
 

@@ -4,6 +4,7 @@ import { Alert, Badge, Button, Card, PageHeader, Spinner, type Tone } from '@sho
 import type { AppInfo, CheckStatus, DoctorReport } from '../contract.js';
 import { useJob } from '../hooks/useJob.js';
 import type { SettingsHandle } from '../hooks/useSettings.js';
+import { MemoryCard } from './MemoryCard.js';
 import { PreferencesCard } from './PreferencesCard.js';
 
 const TONE: Record<CheckStatus, Tone> = { ok: 'success', warn: 'warning', fail: 'danger' };
@@ -64,6 +65,7 @@ export function HealthScreen({ info, prefs }: { info: AppInfo | undefined; prefs
         </Card>
         <div class="app-side">
         <PreferencesCard prefs={prefs} />
+        <MemoryCard />
         <Card title="This installation">
           <dl class="app-facts">
             <dt>Version</dt>
