@@ -9,6 +9,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import {
   changeFor,
+  COLOR_LABELS,
   RESET_PARTS,
   sanitizeMarksPatch,
   sendStatus,
@@ -16,10 +17,13 @@ import {
   type JobRequest,
   type JobStatus,
   type LibraryPhoto,
+  type ColorLabel,
   type LightroomChange,
+  type LightroomState,
   type RateReport,
   type RatingProfile,
   type ResetPart,
+  type SyncWatch,
 } from '@shoots/app';
 import { JobError, type JobRunner } from './jobs.js';
 import { browse, type Library } from './library.js';
@@ -90,6 +94,11 @@ export function createAppServer(opts: AppServerOptions): AppServer {
   const jobPhotos = new Map<string, LibraryPhoto[]>();
   /** A folder named on the launch URL; opened once, ahead of the remembered one. */
   let launchFolder: string | null = null;
+  /** The folder open in the page, which the plug-in follows in the catalog. */
+  let watched: SyncWatch | null = null;
+  /** Bumped whenever Lightroom changes something the page shows, so the page knows to look again. */
+  let revision = 0;
+  let lightroomSeenAt: number | null = null;
   const caseInsensitive = process.platform === 'win32';
 
   const stop = (reason: StopReason): void => {
@@ -145,8 +154,13 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     switch (route) {
       case 'POST /api/host/heartbeat':
         hostLease?.touch();
-        // The plug-in collects the outbox when this says there is something in it.
-        return sendJson(res, 200, { ok: true, pending: opts.store.pendingCount() });
+        // The plug-in collects the outbox when this says there is something in it,
+        // and reads back from the catalog the folder the page has open.
+        return sendJson(res, 200, { ok: true, pending: opts.store.pendingCount(), watch: watched });
+      case 'POST /api/lightroom/state':
+        return takeLightroomState(req, res);
+      case 'GET /api/sync':
+        return sendJson(res, 200, { revision, following: watched !== null && lightroomSeenAt !== null });
       case 'GET /api/outbox':
         return sendJson(res, 200, { items: opts.store.pending() });
       case 'POST /api/outbox':
@@ -189,6 +203,7 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         // Forgets what the app knows. Lightroom keeps whatever was already sent to it.
         opts.store.clearAll();
         launchFolder = null;
+        watched = null;
         return sendJson(res, 200, { ok: true });
       case 'GET /api/browse':
         return withUserError(res, () => browse(url.searchParams.get('path')));
@@ -198,6 +213,8 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         return withUserError(res, async () => {
           const listing = await opts.library.list(folder, url.searchParams.get('recursive') === '1');
           opts.store.openedFolder(listing.folder, listing.recursive);
+          if (watched?.folder !== listing.folder || watched.recursive !== listing.recursive) lightroomSeenAt = null;
+          watched = { folder: listing.folder, recursive: listing.recursive };
           return { ...listing, ...opts.store.resultsFor(listing.photos) };
         });
       }
@@ -329,7 +346,38 @@ export function createAppServer(opts: AppServerOptions): AppServer {
       return sendJson(res, 400, { error: 'Not an acknowledgement.' });
     }
     const ids = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => Number.isInteger(x)) : []);
-    sendJson(res, 200, { settled: opts.store.settle(ids(body.applied), ids(body.missing)) });
+    const settled = opts.store.settle(ids(body.applied), ids(body.missing));
+    if (settled) revision++;
+    sendJson(res, 200, { settled });
+  }
+
+  /**
+   * Body: `{ folder, photos: [{ path, rating, pick, label }] }` — what the catalog
+   * holds for photos of the watched folder (all of them on a first report, then
+   * only those that changed). Paths are matched to the folder as listed.
+   */
+  async function takeLightroomState(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: { folder?: unknown; photos?: unknown };
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Not a Lightroom report.' });
+    }
+    if (!watched || body.folder !== watched.folder || !Array.isArray(body.photos)) return sendJson(res, 200, { changed: 0 });
+    await withUserError(res, async () => {
+      const listing = await opts.library.list(watched!.folder, watched!.recursive);
+      const lookup = photoLookup(listing.photos, caseInsensitive);
+      const states: LightroomState[] = [];
+      for (const raw of body.photos as unknown[]) {
+        const state = parseLightroomState(raw);
+        const photo = state && lookup(state.path);
+        if (state && photo) states.push({ ...state, path: photo.path });
+      }
+      const changed = opts.store.syncFromLightroom(states);
+      lightroomSeenAt = Date.now();
+      if (changed) revision++;
+      return { changed };
+    });
   }
 
   function jobFinished(status: JobStatus): void {
@@ -360,6 +408,16 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         });
       }),
   };
+}
+
+/** One photo of a Lightroom report, or undefined when it is not well formed. */
+export function parseLightroomState(raw: unknown): LightroomState | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.path !== 'string' || !Number.isInteger(r.rating) || (r.rating as number) < 0 || (r.rating as number) > 5) return undefined;
+  if (r.pick !== -1 && r.pick !== 0 && r.pick !== 1) return undefined;
+  if (!COLOR_LABELS.includes(r.label as ColorLabel)) return undefined;
+  return { path: r.path, rating: r.rating as number, pick: r.pick, label: r.label as ColorLabel };
 }
 
 export function parseJobRequest(body: string): JobRequest | undefined {

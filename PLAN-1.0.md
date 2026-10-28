@@ -56,6 +56,11 @@ launch.
       shoots field by field and travels with Send to Lightroom. Selective reset
       (blur check / ratings / marks / send history) per folder or photo, and
       Clear app memory — both in the app database only, never in Lightroom.
+- [x] Lightroom → app, last change wins: the heartbeat names the folder open in
+      the app; the plugin reads it back (`batchGetRawMetadata`) and reports what
+      changed. A first report imports non-default stars/flags/labels where the app
+      has no mark; a later change in Lightroom overwrites the app's mark; an echo
+      of a send is recognised. The page refreshes within ~3 s.
 
 **Not verified yet:** anything inside a real Lightroom (SDK calls, Plug-in Manager
 panel), and the installer launched by the plugin (needs a release carrying
@@ -65,7 +70,7 @@ panel), and the installer launched by the plugin (needs a release carrying
 
 1. **Field test on the Lightroom PC.** Copy `dist-bin/shoots.exe` (from
    `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
-   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`),
+   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`), read-back of the open folder (`getFolderByPath`, `batchGetRawMetadata`) and a change made in Lightroom showing in the app,
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
    breaks.
 2. **Release `0.7.4`** (features, no migration note → patch) once the field test
@@ -106,6 +111,10 @@ panel), and the installer launched by the plugin (needs a release carrying
 - **Send to Lightroom.** The app queues changes in `app.db`; the plugin's lease
   loop sees the queue, applies it with `setRawMetadata` in one write, and
   acknowledges what landed and what is not in the catalog.
+- **Lightroom → app, last change wins.** The plugin reads the folder open in the
+  app back from the catalog and reports changes; a change made in Lightroom
+  overwrites the app's mark, one made in the app waits for Send. Lightroom's
+  defaults never import, so they cannot hide what shoots proposed.
 - **Storage format.** JSON for small payloads, **JSONL** for datasets (what
   `train_v2.jsonl` already is). "JSONB" is a Postgres internal, not a file
   format; if a dataset outgrows JSONL, use **SQLite** (public domain).

@@ -1,7 +1,8 @@
 /**
  * The app's memory, in SQLite (~/.shoots/app/app.db): settings, recently opened
  * folders, the last cull and rate results per photograph, the photographer's
- * own marks (flag, stars, colour label) and the outbox to Lightroom.
+ * own marks (flag, stars, colour label), the outbox to Lightroom, and the last
+ * state the plug-in read back from the catalog.
  *
  * Forgetting (a reset, clearing the memory) happens here and only here: it never
  * reaches Lightroom, which keeps whatever was already sent to it.
@@ -12,11 +13,14 @@
  */
 import {
   applyMarksPatch,
+  changeFor,
+  sameChange,
   type AppSettings,
   type ColorLabel,
   type CullResultItem,
   type LibraryPhoto,
   type LightroomChange,
+  type LightroomState,
   type Marks,
   type MarksPatch,
   type OutboxItem,
@@ -26,6 +30,7 @@ import {
   type StoredRate,
 } from '@shoots/app';
 import { openSqlite, type Db } from '@shoots/core';
+import { reconcile, satisfies } from './sync.js';
 
 export const SCHEMA_VERSION = 2;
 
@@ -72,6 +77,13 @@ CREATE TABLE IF NOT EXISTS outbox (
   settled_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_outbox_state ON outbox(state);
+CREATE TABLE IF NOT EXISTS lightroom (
+  path    TEXT PRIMARY KEY,
+  rating  INTEGER NOT NULL,
+  pick    INTEGER NOT NULL,
+  label   TEXT NOT NULL,
+  seen_at TEXT NOT NULL
+);
 `;
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -344,6 +356,62 @@ export class AppStore {
   }
 
   /**
+   * Takes in what the plug-in read from the catalog. Changes the photographer
+   * made in Lightroom become marks (see sync.ts), and a photo whose current
+   * change Lightroom already holds counts as sent. Returns how many photos
+   * changed in the app, so the page knows to look again.
+   */
+  syncFromLightroom(states: readonly LightroomState[]): number {
+    const getSeen = this.db.prepare('SELECT rating, pick, label FROM lightroom WHERE path = ?');
+    const putSeen = this.db.prepare(
+      `INSERT INTO lightroom (path, rating, pick, label, seen_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(path) DO UPDATE SET rating = excluded.rating, pick = excluded.pick, label = excluded.label, seen_at = excluded.seen_at`,
+    );
+    const getSent = this.db.prepare(`SELECT ${OUTBOX_COLUMNS} FROM outbox WHERE path = ?`);
+    const getResult = this.db.prepare('SELECT data FROM results WHERE path = ? AND kind = ?');
+    const putSent = this.db.prepare(
+      `INSERT INTO outbox (path, rating, pick, label, state, queued_at, settled_at) VALUES (?, ?, ?, ?, 'applied', ?, ?)`,
+    );
+    const dropSent = this.db.prepare('DELETE FROM outbox WHERE path = ?');
+    const at = now();
+    return this.transaction(() => {
+      let changed = 0;
+      for (const state of states) {
+        const seen = getSeen.get(state.path) as { rating: number; pick: number; label: string } | undefined;
+        const previous = seen
+          ? { path: state.path, rating: Number(seen.rating), pick: Number(seen.pick) as LightroomState['pick'], label: seen.label as ColorLabel }
+          : undefined;
+        const sentRow = getSent.get(state.path) as OutboxRow | undefined;
+        const patch = reconcile(previous, state, this.marksOf(state.path), sentRow ? toChange(sentRow) : undefined);
+        let photoChanged = false;
+        if (Object.keys(patch).length) {
+          this.setMarks(state.path, patch);
+          photoChanged = true;
+        }
+        putSeen.run(state.path, state.rating, state.pick, state.label, at);
+
+        // Lightroom already holding what the app would send is the same as having sent it.
+        const cull = getResult.get(state.path, 'cull') as { data: string } | undefined;
+        const rate = getResult.get(state.path, 'rate') as { data: string } | undefined;
+        const change = changeFor(
+          state.path,
+          cull ? (JSON.parse(cull.data) as CullResultItem) : undefined,
+          rate ? (JSON.parse(rate.data) as RateResultItem).stars : undefined,
+          this.marksOf(state.path),
+        );
+        const alreadyRecorded = sentRow?.state === 'applied' && sameChange(toChange(sentRow), change ?? toChange(sentRow));
+        if (change && satisfies(state, change) && !alreadyRecorded) {
+          dropSent.run(state.path);
+          putSent.run(change.path, change.rating, change.pick, change.label, at, at);
+          photoChanged = true;
+        }
+        if (photoChanged) changed++;
+      }
+      return changed;
+    });
+  }
+
+  /**
    * Forgets the chosen parts for these photos, in the app only: the blur check,
    * shoots' ratings, the photographer's marks, the send history (which also
    * withdraws a send not collected yet). Lightroom is not touched.
@@ -353,19 +421,21 @@ export class AppStore {
       cull: "DELETE FROM results WHERE path = ? AND kind = 'cull'",
       rate: "DELETE FROM results WHERE path = ? AND kind = 'rate'",
       marks: 'DELETE FROM marks WHERE path = ?',
-      sent: 'DELETE FROM outbox WHERE path = ?',
+      // Forgetting what was sent also forgets what Lightroom was last seen holding,
+      // so the next report counts as a first one again.
+      sent: 'DELETE FROM outbox WHERE path = ?; DELETE FROM lightroom WHERE path = ?',
     };
-    const statements = [...new Set(parts)].map((p) => this.db.prepare(sql[p]));
+    const statements = [...new Set(parts)].flatMap((p) => sql[p].split('; ').map((q) => this.db.prepare(q)));
     return this.transaction(() => {
       for (const path of paths) for (const st of statements) st.run(path);
       return paths.length;
     });
   }
 
-  /** Forgets everything: settings, folders, results, marks and the outbox. Lightroom is not touched. */
+  /** Forgets everything the app knows. Lightroom is not touched. */
   clearAll(): void {
     this.transaction(() => {
-      for (const table of ['settings', 'folders', 'results', 'marks', 'outbox']) this.db.exec(`DELETE FROM ${table}`);
+      for (const table of ['settings', 'folders', 'results', 'marks', 'outbox', 'lightroom']) this.db.exec(`DELETE FROM ${table}`);
     });
   }
 }

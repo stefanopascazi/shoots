@@ -67,6 +67,21 @@ export interface LibraryListing {
   sent: Record<string, SentChange>;
 }
 
+/** A photo as the Lightroom catalog holds it, read back by the plug-in. */
+export interface LightroomState {
+  path: string;
+  /** 0 when unrated. */
+  rating: number;
+  pick: -1 | 0 | 1;
+  label: ColorLabel;
+}
+
+/** What the plug-in should follow: the folder open in the app. */
+export interface SyncWatch {
+  folder: string;
+  recursive: boolean;
+}
+
 /** A change waiting for the plug-in, as it collects it. */
 export interface OutboxItem extends LightroomChange {
   id: number;

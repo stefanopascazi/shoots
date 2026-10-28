@@ -257,6 +257,9 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
                 {sum.notInCatalog > 0 && sum.waiting === 0 && '. Import the missing photos into Lightroom, then send again.'}
               </p>
             )}
+            {lib.following && (
+              <p class="app-note sh-muted">Following Lightroom: flags, stars and labels changed there show up here within seconds.</p>
+            )}
 
             {shown.length === 0 ? (
               <p class="sh-muted app-center">Nothing matches this filter.</p>

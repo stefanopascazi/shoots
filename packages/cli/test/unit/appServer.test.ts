@@ -226,6 +226,38 @@ describe('send to Lightroom', () => {
   });
 });
 
+describe('following Lightroom', () => {
+  test('the heartbeat names the open folder; a report becomes marks and bumps the revision', async () => {
+    const { base } = await start();
+    const dir = mkdtempSync(path.join(tmpdir(), 'shoots-follow-'));
+    const photo = path.join(dir, 'a.jpg');
+    writeFileSync(photo, 'x');
+
+    const beat = () => fetch(`${base}/api/host/heartbeat`, { method: 'POST', headers: auth }).then((r) => r.json());
+    expect((await beat()).watch).toBeNull();
+    const listing = await (await fetch(`${base}/api/library?folder=${encodeURIComponent(dir)}`, { headers: auth })).json();
+    expect((await beat()).watch).toEqual({ folder: listing.folder, recursive: false });
+
+    const sync = () => fetch(`${base}/api/sync`, { headers: auth }).then((r) => r.json());
+    expect(await sync()).toEqual({ revision: 0, following: false });
+
+    const report = (photos: unknown[]) =>
+      fetch(`${base}/api/lightroom/state`, { method: 'POST', headers: auth, body: JSON.stringify({ folder: listing.folder, photos }) }).then((r) => r.json());
+    // A photo outside the folder and a malformed one are ignored.
+    expect(await report([{ path: photo, rating: 4, pick: 1, label: 'red' }, { path: '/etc/x.jpg', rating: 1, pick: 0, label: 'none' }, { path: photo }])).toEqual({ changed: 1 });
+    expect(await sync()).toEqual({ revision: 1, following: true });
+
+    const again = await (await fetch(`${base}/api/library?folder=${encodeURIComponent(dir)}`, { headers: auth })).json();
+    expect(again.marks[photo]).toEqual({ stars: 4, flag: 'pick', label: 'red' });
+    expect(again.sent[photo].state).toBe('applied');
+
+    // Nothing new, no new revision.
+    expect(await report([{ path: photo, rating: 4, pick: 1, label: 'red' }])).toEqual({ changed: 0 });
+    expect((await sync()).revision).toBe(1);
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe('parseJobRequest', () => {
   test('accepts known jobs and sanitises the profile', () => {
     expect(parseJobRequest('{"kind":"rate","folder":"/p","profile":"my-eye"}')).toEqual({

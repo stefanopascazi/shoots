@@ -25,6 +25,8 @@ export interface LibraryState {
   reset: (parts: ResetPart[], paths?: string[]) => Promise<void>;
   /** Queues what is not in Lightroom yet; resolves with how many photos were queued. */
   send: (paths?: string[]) => Promise<number>;
+  /** Whether the plug-in is reading this folder back from the catalog. */
+  following: boolean;
 }
 
 export interface LibraryStart {
@@ -35,6 +37,8 @@ export interface LibraryStart {
 
 /** How often to look again while the plug-in has not collected a send. */
 const SEND_POLL_MS = 2000;
+/** How often to ask whether Lightroom changed something. */
+const SYNC_POLL_MS = 3000;
 
 /** The open folder, its photos, and everything known about them — stored by the server. */
 export function useLibrary(caseInsensitive: boolean, start: LibraryStart): LibraryState {
@@ -48,8 +52,9 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
   const [sent, setSent] = useState<Record<string, SentChange>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
-  // Bumped to list the folder again, after a reset.
+  // Bumped to list the folder again, after a reset or a change made in Lightroom.
   const [generation, setGeneration] = useState(0);
+  const [following, setFollowing] = useState(false);
 
   useEffect(() => {
     if (!folder) return;
@@ -140,6 +145,29 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
     };
   }, [listing, waiting]);
 
+  // Changes made in Lightroom reach the page: when the server says something changed, list again.
+  useEffect(() => {
+    if (!listing) return;
+    let alive = true;
+    let seen: number | undefined;
+    const check = () =>
+      api.sync().then(
+        (s) => {
+          if (!alive) return;
+          setFollowing(s.following);
+          if (seen !== undefined && s.revision !== seen) setGeneration((g) => g + 1);
+          seen = s.revision;
+        },
+        () => {},
+      );
+    void check();
+    const timer = setInterval(check, SYNC_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [listing?.folder, listing?.recursive]);
+
   const photos = useMemo(
     () => (listing ? mergeResults(listing.photos, cull, rate, caseInsensitive, marks, sent) : []),
     [listing, cull, rate, caseInsensitive, marks, sent],
@@ -161,5 +189,6 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
     mark,
     reset,
     send,
+    following,
   };
 }

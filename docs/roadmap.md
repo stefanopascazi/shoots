@@ -56,9 +56,10 @@ In order:
   dark/light themes, Preact components) meant for every shoots web surface.
   Cull verdicts are reviewed there, and every one can be reversed: this
   replaces the shell's `cull --review`.
-- **Send to Lightroom.** Results and decisions made in the app go straight into
-  the catalog through the plugin, as one undo step: no sidecars, nothing to
-  re-read.
+- **Send to Lightroom, and back.** Results and decisions made in the app go
+  straight into the catalog through the plugin, as one undo step: no sidecars,
+  nothing to re-read. Flags, stars and labels changed in Lightroom show up in
+  the app within seconds; the latest change wins.
 - **Train from the catalog.** The plugin exports your develop settings as JSON,
   so training through the plugin does not depend on XMP sidecars being up to
   date. The standalone CLI keeps training from sidecars.

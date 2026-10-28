@@ -285,7 +285,9 @@ The keys are Lightroom's:
 | `Esc` | Finish |
 
 Your marks are kept on this computer, survive a re-run of the analysis, and
-reach Lightroom with **Send to Lightroom**.
+reach Lightroom with **Send to Lightroom**. It works the other way too: flags,
+stars and labels you change in Lightroom show up in the app within seconds, and
+the latest change wins.
 
 **Reset folder…** (and **Reset this photo…** in the viewer) forgets any of: the
 blur check, shoots' ratings, your marks, the send history. A reset happens in the

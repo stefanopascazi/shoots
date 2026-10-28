@@ -65,6 +65,8 @@ export const api = {
   /** Forgets the chosen parts in the app only; Lightroom keeps what was already sent to it. */
   reset: (request: ResetRequest) => call<{ reset: number }>('POST', '/api/reset', request),
   clearMemory: () => call<{ ok: boolean }>('DELETE', '/api/memory'),
+  /** Bumps whenever Lightroom changed something the page shows; `following` once the plug-in reports the open folder. */
+  sync: () => call<{ revision: number; following: boolean }>('GET', '/api/sync'),
   info: () => call<AppInfo>('GET', '/api/info'),
   profiles: () => call<RatingProfile[]>('GET', '/api/profiles'),
   heartbeat: () => call<{ ok: boolean; busy: boolean }>('POST', '/api/heartbeat'),
