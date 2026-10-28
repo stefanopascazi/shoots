@@ -182,6 +182,42 @@ describe('app server memory', () => {
   });
 });
 
+describe('send to Lightroom', () => {
+  test('queues what the folder carries, the plug-in collects and settles it', async () => {
+    const { base, children } = await start();
+    const dir = mkdtempSync(path.join(tmpdir(), 'shoots-send-'));
+    const blurry = path.join(dir, 'a.jpg');
+    const sharp = path.join(dir, 'b.jpg');
+    writeFileSync(blurry, 'x');
+    writeFileSync(sharp, 'x');
+    await fetch(`${base}/api/library?folder=${encodeURIComponent(dir)}`, { headers: auth });
+    await fetch(`${base}/api/jobs`, { method: 'POST', headers: auth, body: JSON.stringify({ kind: 'cull', folder: dir }) });
+    const item = (file: string, verdict: string) => ({ file, score: 1, focusPeak: 1, verdict, rescued: false, aperture: null });
+    children[0].stdout.emit('data', Buffer.from(JSON.stringify({ command: 'cull', results: [item(blurry, 'blurry'), item(sharp, 'sharp')] })));
+    children[0].emit('close', 0);
+
+    const send = () => fetch(`${base}/api/outbox`, { method: 'POST', headers: auth, body: JSON.stringify({ folder: dir }) }).then((r) => r.json());
+    // Only the reject travels: a sharp verdict with no decision leaves the pick in Lightroom alone.
+    expect(await send()).toEqual({ queued: 1 });
+    expect(await send()).toEqual({ queued: 0 });
+
+    const beat = await (await fetch(`${base}/api/host/heartbeat`, { method: 'POST', headers: auth })).json();
+    expect(beat.pending).toBe(1);
+    const { items } = await (await fetch(`${base}/api/outbox`, { headers: auth })).json();
+    expect(items).toEqual([{ id: items[0].id, path: blurry, rating: null, pick: -1 }]);
+
+    const ack = await fetch(`${base}/api/outbox/ack`, { method: 'POST', headers: auth, body: JSON.stringify({ applied: [items[0].id], missing: [] }) });
+    expect(await ack.json()).toEqual({ settled: 1 });
+    const state = await (await fetch(`${base}/api/outbox/state?folder=${encodeURIComponent(dir)}`, { headers: auth })).json();
+    expect(state[blurry].state).toBe('applied');
+
+    // Your Keep changes what Lightroom should hold, so it travels again.
+    await fetch(`${base}/api/decisions`, { method: 'PUT', headers: auth, body: JSON.stringify({ decisions: { [blurry]: 'keep' } }) });
+    expect(await send()).toEqual({ queued: 1 });
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe('parseJobRequest', () => {
   test('accepts known jobs and sanitises the profile', () => {
     expect(parseJobRequest('{"kind":"rate","folder":"/p","profile":"my-eye"}')).toEqual({

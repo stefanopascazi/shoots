@@ -12,7 +12,10 @@ import type {
   CullResultItem,
   Decision,
   LibraryPhoto,
+  LightroomChange,
+  OutboxItem,
   RateResultItem,
+  SentChange,
   StoredRate,
 } from '@shoots/app';
 import { openSqlite, type Db } from '@shoots/core';
@@ -48,6 +51,17 @@ CREATE TABLE IF NOT EXISTS decisions (
   decision   TEXT NOT NULL CHECK (decision IN ('keep', 'reject')),
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS outbox (
+  -- AUTOINCREMENT: a re-queued change must never reuse the id an earlier acknowledgement names.
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  path       TEXT NOT NULL UNIQUE,
+  rating     INTEGER,
+  pick       INTEGER,
+  state      TEXT NOT NULL CHECK (state IN ('pending', 'applied', 'missing')),
+  queued_at  TEXT NOT NULL,
+  settled_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_outbox_state ON outbox(state);
 `;
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -87,7 +101,22 @@ export interface StoredResults {
   cull: CullResultItem[];
   rate: StoredRate[];
   decisions: Record<string, Decision>;
+  sent: Record<string, SentChange>;
 }
+
+interface OutboxRow {
+  id: number;
+  path: string;
+  rating: number | null;
+  pick: number | null;
+  state: SentChange['state'];
+}
+
+const toChange = (r: OutboxRow): LightroomChange => ({
+  path: r.path,
+  rating: r.rating === null ? null : Number(r.rating),
+  pick: r.pick === null ? null : (Number(r.pick) as LightroomChange['pick']),
+});
 
 export class AppStore {
   private constructor(private readonly db: Db) {}
@@ -172,9 +201,10 @@ export class AppStore {
 
   /** What is known about these photographs, skipping results for files that changed since. */
   resultsFor(photos: readonly LibraryPhoto[]): StoredResults {
-    const out: StoredResults = { cull: [], rate: [], decisions: {} };
+    const out: StoredResults = { cull: [], rate: [], decisions: {}, sent: {} };
     const getResult = this.db.prepare('SELECT kind, size, mtime_ms, profile, data FROM results WHERE path = ?');
     const getDecision = this.db.prepare('SELECT decision FROM decisions WHERE path = ?');
+    const getSent = this.db.prepare('SELECT id, path, rating, pick, state FROM outbox WHERE path = ?');
     for (const p of photos) {
       for (const row of getResult.all(p.path) as { kind: string; size: number; mtime_ms: number; profile: string | null; data: string }[]) {
         if (Number(row.size) !== p.size || Number(row.mtime_ms) !== p.mtime) continue;
@@ -184,8 +214,60 @@ export class AppStore {
       }
       const d = getDecision.get(p.path) as { decision: Decision } | undefined;
       if (d) out.decisions[p.path] = d.decision;
+      const s = getSent.get(p.path) as OutboxRow | undefined;
+      if (s) out.sent[p.path] = { ...toChange(s), state: s.state };
     }
     return out;
+  }
+
+  /** What was sent for photos under `folder` — a cheap poll while a send is in flight. */
+  sentUnder(folder: string): Record<string, SentChange> {
+    const rows = this.db
+      .prepare('SELECT id, path, rating, pick, state FROM outbox WHERE substr(path, 1, ?) = ?')
+      .all(folder.length, folder) as OutboxRow[];
+    return Object.fromEntries(rows.map((r) => [r.path, { ...toChange(r), state: r.state }]));
+  }
+
+  /**
+   * Queues changes for the plug-in. A photo's earlier entry is replaced by a new
+   * row with a new id, so an acknowledgement for the old one cannot settle it.
+   */
+  enqueue(changes: readonly LightroomChange[]): number {
+    const drop = this.db.prepare('DELETE FROM outbox WHERE path = ?');
+    const put = this.db.prepare("INSERT INTO outbox (path, rating, pick, state, queued_at) VALUES (?, ?, ?, 'pending', ?)");
+    const at = now();
+    this.db.exec('BEGIN');
+    try {
+      for (const c of changes) {
+        drop.run(c.path);
+        put.run(c.path, c.rating, c.pick, at);
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    return changes.length;
+  }
+
+  pendingCount(): number {
+    return Number((this.db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE state = 'pending'").get() as { n: number }).n);
+  }
+
+  /** The oldest changes waiting, for the plug-in to apply. */
+  pending(limit = 500): OutboxItem[] {
+    const rows = this.db.prepare("SELECT id, path, rating, pick, state FROM outbox WHERE state = 'pending' ORDER BY id LIMIT ?").all(limit) as OutboxRow[];
+    return rows.map((r) => ({ id: Number(r.id), ...toChange(r) }));
+  }
+
+  /** Records what the plug-in did with the changes it collected. */
+  settle(applied: readonly number[], missing: readonly number[]): number {
+    const mark = this.db.prepare("UPDATE outbox SET state = ?, settled_at = ? WHERE id = ? AND state = 'pending'");
+    const at = now();
+    let n = 0;
+    for (const id of applied) n += Number((mark.run('applied', at, id) as { changes?: number }).changes ?? 0);
+    for (const id of missing) n += Number((mark.run('missing', at, id) as { changes?: number }).changes ?? 0);
+    return n;
   }
 
   setDecision(path: string, decision: Decision | null): void {

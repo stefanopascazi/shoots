@@ -3,7 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { Badge, Button, IconButton, Kbd, StarRating } from '@shoots/ui';
 import { thumbUrl } from '../api/client.js';
 import { FocusHeatmap, HeatLegend } from './FocusHeatmap.js';
-import { formatBytes, isRejected, verdictSource, type Decision, type PhotoView } from './model.js';
+import { formatBytes, isRejected, SEND_LABEL, verdictSource, type Decision, type PhotoView } from './model.js';
 
 export interface PhotoViewerProps {
   photos: readonly PhotoView[];
@@ -113,6 +113,12 @@ export function PhotoViewer({ photos, index, onIndex, onClose, onDecide, review 
         )}
 
         <dl class="app-facts">
+          {SEND_LABEL[photo.send] && (
+            <>
+              <dt>Lightroom</dt>
+              <dd>{SEND_LABEL[photo.send]}</dd>
+            </>
+          )}
           <dt>Rating</dt>
           <dd>{photo.stars === undefined ? <span class="sh-subtle">Not rated yet</span> : <StarRating value={photo.stars} size={16} />}</dd>
           {blur ? (

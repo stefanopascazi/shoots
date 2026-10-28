@@ -93,3 +93,32 @@ describe('decisions', () => {
     expect(store.resultsFor([{ ...a, mtime: 99 }]).decisions).toEqual({ [a.path]: 'keep' });
   });
 });
+
+describe('outbox', () => {
+  const change = (path: string, pick: -1 | 0 | null = -1, rating: number | null = null) => ({ path, rating, pick });
+
+  test('queued changes wait until the plug-in settles them', () => {
+    store.enqueue([change('/shoot/a.cr3'), change('/shoot/b.cr3', 0, 3)]);
+    expect(store.pendingCount()).toBe(2);
+    const [a, b] = store.pending();
+    expect(b).toMatchObject({ path: '/shoot/b.cr3', rating: 3, pick: 0 });
+    expect(store.settle([a.id], [b.id])).toBe(2);
+    expect(store.pendingCount()).toBe(0);
+    const sent = store.resultsFor([photo('a.cr3'), photo('b.cr3')]).sent;
+    expect(sent['/shoot/a.cr3'].state).toBe('applied');
+    expect(sent['/shoot/b.cr3'].state).toBe('missing');
+  });
+
+  test('a change queued again after collection is not settled by the old acknowledgement', () => {
+    store.enqueue([change('/shoot/a.cr3', -1)]);
+    const [collected] = store.pending();
+    store.enqueue([change('/shoot/a.cr3', 0)]);
+    expect(store.settle([collected.id], [])).toBe(0);
+    expect(store.pending()).toMatchObject([{ path: '/shoot/a.cr3', pick: 0 }]);
+  });
+
+  test('sentUnder reads only the folder asked for', () => {
+    store.enqueue([change('/shoot/a.cr3'), change('/other/x.cr3')]);
+    expect(Object.keys(store.sentUnder('/shoot/'))).toEqual(['/shoot/a.cr3']);
+  });
+});

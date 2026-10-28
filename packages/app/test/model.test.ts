@@ -55,7 +55,7 @@ describe('mergeResults', () => {
   });
 
   test('without reports the photos come back unchanged', () => {
-    expect(mergeResults(PHOTOS, undefined, undefined)).toEqual(PHOTOS);
+    expect(mergeResults(PHOTOS, undefined, undefined)).toEqual(PHOTOS.map((p) => ({ ...p, send: 'none' })));
   });
 
   test('carries the decisions made for each path', () => {
@@ -114,7 +114,7 @@ describe('visible', () => {
 describe('totals', () => {
   test('counts rejected, review queue, decisions and the mean', () => {
     const merged = mergeResults(PHOTOS, cull, rate, true, { 'C:\\shoot\\b.cr3': 'keep' });
-    expect(totals(merged)).toEqual({ total: 4, rejected: 0, checked: 3, toReview: 1, decided: 1, rated: 2, meanStars: 3 });
+    expect(totals(merged)).toMatchObject({ total: 4, rejected: 0, checked: 3, toReview: 1, decided: 1, rated: 2, meanStars: 3 });
     expect(totals([]).meanStars).toBeUndefined();
   });
 });

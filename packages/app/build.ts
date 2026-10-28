@@ -50,5 +50,17 @@ mkdirSync(path.dirname(out), { recursive: true });
 writeFileSync(out, html);
 console.log(`${path.relative(process.cwd(), out)}  ${(html.length / 1024).toFixed(1)} KB`);
 
-// The module the server imports: the page as one string.
-writeFileSync(path.join(here, 'dist', 'index.js'), `export const APP_HTML = ${JSON.stringify(html)};\n`);
+// The module the server imports: the rules it shares with the page, and the page as one string.
+const serverEntry = await build({
+  stdin: {
+    contents: `export * from './src/outbox.ts';\nexport const APP_HTML = ${JSON.stringify(html)};\n`,
+    resolveDir: here,
+    loader: 'ts',
+  },
+  bundle: true,
+  write: false,
+  format: 'esm',
+  platform: 'neutral',
+  target: 'es2022',
+});
+writeFileSync(path.join(here, 'dist', 'index.js'), serverEntry.outputFiles[0].text);

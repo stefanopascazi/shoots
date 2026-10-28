@@ -7,7 +7,7 @@
  * and nothing is running, it stops too.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import type { CullReport, JobRequest, JobStatus, LibraryPhoto, RateReport, RatingProfile } from '@shoots/app';
+import { changeFor, sendStatus, type CullReport, type JobRequest, type JobStatus, type LibraryPhoto, type LightroomChange, type RateReport, type RatingProfile } from '@shoots/app';
 import { JobError, type JobRunner } from './jobs.js';
 import { browse, type Library } from './library.js';
 import { startIdleWatch, type IdleWatch } from './lifecycle.js';
@@ -132,7 +132,18 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     switch (route) {
       case 'POST /api/host/heartbeat':
         hostLease?.touch();
-        return sendJson(res, 200, { ok: true });
+        // The plug-in collects the outbox when this says there is something in it.
+        return sendJson(res, 200, { ok: true, pending: opts.store.pendingCount() });
+      case 'GET /api/outbox':
+        return sendJson(res, 200, { items: opts.store.pending() });
+      case 'POST /api/outbox':
+        return sendToLightroom(req, res);
+      case 'POST /api/outbox/ack':
+        return ackOutbox(req, res);
+      case 'GET /api/outbox/state': {
+        const folder = url.searchParams.get('folder');
+        return folder ? sendJson(res, 200, opts.store.sentUnder(folder)) : sendJson(res, 400, { error: 'Choose a folder.' });
+      }
       case 'POST /api/heartbeat':
         pageIdle?.touch();
         return sendJson(res, 200, { ok: true, busy: opts.jobs.busy });
@@ -238,6 +249,46 @@ export function createAppServer(opts: AppServerOptions): AppServer {
       saved++;
     }
     sendJson(res, 200, { saved });
+  }
+
+  /** Body: `{ folder, recursive?, paths? }`. Queues what the folder (or those photos) should carry into Lightroom. */
+  async function sendToLightroom(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: { folder?: unknown; recursive?: unknown; paths?: unknown };
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Nothing to send.' });
+    }
+    if (typeof body.folder !== 'string') return sendJson(res, 400, { error: 'Choose a folder.' });
+    const only = Array.isArray(body.paths) ? new Set(body.paths.filter((p): p is string => typeof p === 'string')) : undefined;
+    await withUserError(res, async () => {
+      const listing = await opts.library.list(body.folder as string, body.recursive === true);
+      const photos = only ? listing.photos.filter((p) => only.has(p.path)) : listing.photos;
+      const known = opts.store.resultsFor(photos);
+      const lookup = photoLookup(photos, caseInsensitive);
+      const cullOf = new Map(known.cull.map((c) => [lookup(c.file)?.path ?? c.file, c]));
+      const starsOf = new Map(known.rate.map((r) => [lookup(r.file)?.path ?? r.file, r.stars]));
+      const changes: LightroomChange[] = [];
+      for (const p of photos) {
+        const change = changeFor(p.path, cullOf.get(p.path), starsOf.get(p.path), known.decisions[p.path]);
+        const status = sendStatus(change, known.sent[p.path]);
+        // Already on its way or already in the catalog as it stands: nothing new to send.
+        if (change && status !== 'pending' && status !== 'applied') changes.push(change);
+      }
+      return { queued: opts.store.enqueue(changes) };
+    });
+  }
+
+  /** Body: `{ applied: id[], missing: id[] }` from the plug-in. */
+  async function ackOutbox(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: { applied?: unknown; missing?: unknown };
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Not an acknowledgement.' });
+    }
+    const ids = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x): x is number => Number.isInteger(x)) : []);
+    sendJson(res, 200, { settled: opts.store.settle(ids(body.applied), ids(body.missing)) });
   }
 
   function jobFinished(status: JobStatus): void {

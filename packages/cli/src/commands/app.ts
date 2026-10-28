@@ -12,12 +12,8 @@ import { allProfileNames, PROFILE_NAMES } from '@shoots/inference';
 import { logError, makeIo, parsePositiveInt } from '../io.js';
 import { ensureExiftoolReady } from '../tools.js';
 import { VERSION } from '../version.js';
-import { JobRunner } from '../app/jobs.js';
-import { Library } from '../app/library.js';
-import { clearSession, writeSession } from '../app/lifecycle.js';
-import { createToken } from '../app/security.js';
-import { createAppServer, type AppServer } from '../app/server.js';
-import { AppStore } from '../app/store.js';
+import type { AppServer } from '../app/server.js';
+import type { AppStore } from '../app/store.js';
 
 interface AppOptions {
   port: string;
@@ -36,8 +32,17 @@ export function registerAppCommand(program: Command): void {
 }
 
 async function runApp(options: AppOptions): Promise<void> {
-  // Loaded here so commands that never serve the page do not need it built.
-  const { APP_HTML } = await import('@shoots/app');
+  // Loaded here so commands that never serve the page neither load nor need it built.
+  const [{ APP_HTML }, { JobRunner }, { Library }, { clearSession, writeSession }, { createToken }, { createAppServer }, { AppStore }] =
+    await Promise.all([
+      import('@shoots/app'),
+      import('../app/jobs.js'),
+      import('../app/library.js'),
+      import('../app/lifecycle.js'),
+      import('../app/security.js'),
+      import('../app/server.js'),
+      import('../app/store.js'),
+    ]);
   const token = createToken();
 
   let rawReady: Promise<boolean> | undefined;

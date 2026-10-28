@@ -9,6 +9,7 @@ import type {
   LibraryListing,
   RatingProfile,
 } from '../contract.js';
+import type { SentChange } from '../outbox.js';
 
 export class ApiError extends Error {
   constructor(
@@ -54,6 +55,9 @@ export const api = {
   start: () => call<StartState>('GET', '/api/start'),
   saveSettings: (patch: Partial<AppSettings>) => call<AppSettings>('PUT', '/api/settings', patch),
   recentFolders: () => call<string[]>('GET', '/api/folders/recent'),
+  sendToLightroom: (folder: string, recursive: boolean, paths?: string[]) =>
+    call<{ queued: number }>('POST', '/api/outbox', { folder, recursive, paths }),
+  sentState: (folder: string) => call<Record<string, SentChange>>('GET', `/api/outbox/state${q({ folder })}`),
   saveDecisions: (decisions: Record<string, Decision | null>) => call<{ saved: number }>('PUT', '/api/decisions', { decisions }),
   info: () => call<AppInfo>('GET', '/api/info'),
   profiles: () => call<RatingProfile[]>('GET', '/api/profiles'),

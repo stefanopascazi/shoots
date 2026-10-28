@@ -1,3 +1,5 @@
+import type { LightroomChange, SentChange } from './outbox.js';
+
 /**
  * The JSON contract between the local app server (in @shoots/cli) and the
  * browser client. Types only: imported by both sides, never bundled as code.
@@ -44,6 +46,13 @@ export interface LibraryListing {
   rate: StoredRate[];
   /** The photographer's own keep/reject calls, by path. */
   decisions: Record<string, Decision>;
+  /** What was last sent to Lightroom for each photo, and what became of it. */
+  sent: Record<string, SentChange>;
+}
+
+/** A change waiting for the plug-in, as it collects it. */
+export interface OutboxItem extends LightroomChange {
+  id: number;
 }
 
 export interface AppSettings {

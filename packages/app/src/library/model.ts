@@ -9,6 +9,7 @@
  */
 import type { CullResultItem, Decision, LibraryPhoto, RateResultItem } from '../contract.js';
 import type { PhotoFlag } from '@shoots/ui';
+import { changeFor, sendStatus, type SendStatus, type SentChange } from '../outbox.js';
 
 export type { Decision };
 export type Decisions = Readonly<Record<string, Decision>>;
@@ -21,6 +22,8 @@ export interface PhotoView extends LibraryPhoto {
   blur?: Omit<CullResultItem, 'file'>;
   /** The photographer's call, when they made one. */
   decision?: Decision;
+  /** Where this photo stands with Lightroom. */
+  send: SendStatus;
 }
 
 export type Filter = 'all' | 'keepers' | 'rejected' | 'review';
@@ -35,6 +38,7 @@ export function mergeResults(
   rate: readonly RateResultItem[] | undefined,
   caseInsensitive = false,
   decisions: Decisions = {},
+  sent: Readonly<Record<string, SentChange>> = {},
 ): PhotoView[] {
   const blur = new Map(cull?.map((r) => [pathKey(r.file, caseInsensitive), r]));
   const rated = new Map(rate?.map((r) => [pathKey(r.file, caseInsensitive), r]));
@@ -43,8 +47,10 @@ export function mergeResults(
     const b = blur.get(k);
     const r = rated.get(k);
     const decision = decisions[p.path];
+    const change = changeFor(p.path, b, r?.stars, decision);
     return {
       ...p,
+      send: sendStatus(change, sent[p.path]),
       ...(b && { blur: { score: b.score, focusPeak: b.focusPeak, verdict: b.verdict, rescued: b.rescued, aperture: b.aperture, focusMap: b.focusMap } }),
       ...(r && { stars: r.stars, focus: r.focus, aesthetic: r.aesthetic, keywords: r.keywords }),
       ...(decision && { decision }),
@@ -96,19 +102,40 @@ export interface Totals {
   toReview: number;
   /** Frames where the person overrode or confirmed the verdict. */
   decided: number;
+  /** Lightroom: not sent yet or changed since, waiting for the plug-in, in the catalog, not in the catalog. */
+  toSend: number;
+  waiting: number;
+  inLightroom: number;
+  notInCatalog: number;
   rated: number;
   /** Mean stars over rated photos, or undefined when none are rated. */
   meanStars: number | undefined;
 }
 
 export function totals(photos: readonly PhotoView[]): Totals {
-  const t: Totals = { total: photos.length, rejected: 0, checked: 0, toReview: 0, decided: 0, rated: 0, meanStars: undefined };
+  const t: Totals = {
+    total: photos.length,
+    rejected: 0,
+    checked: 0,
+    toReview: 0,
+    decided: 0,
+    toSend: 0,
+    waiting: 0,
+    inLightroom: 0,
+    notInCatalog: 0,
+    rated: 0,
+    meanStars: undefined,
+  };
   let stars = 0;
   for (const p of photos) {
     if (p.blur) t.checked++;
     if (isRejected(p)) t.rejected++;
     if (awaitsReview(p)) t.toReview++;
     if (p.decision) t.decided++;
+    if (p.send === 'unsent' || p.send === 'changed') t.toSend++;
+    else if (p.send === 'pending') t.waiting++;
+    else if (p.send === 'applied') t.inLightroom++;
+    else if (p.send === 'missing') t.notInCatalog++;
     if (p.stars !== undefined) {
       t.rated++;
       stars += p.stars;
@@ -117,6 +144,26 @@ export function totals(photos: readonly PhotoView[]): Totals {
   t.meanStars = t.rated ? stars / t.rated : undefined;
   return t;
 }
+
+/** One line on where the folder stands with Lightroom, or undefined when nothing has been sent or is to send. */
+export function sendSummary(t: Totals): string | undefined {
+  const parts: string[] = [];
+  if (t.inLightroom) parts.push(`${t.inLightroom} in Lightroom`);
+  if (t.waiting) parts.push(`${t.waiting} waiting for Lightroom`);
+  if (t.notInCatalog) parts.push(`${t.notInCatalog} not in the catalog`);
+  if (t.toSend) parts.push(`${t.toSend} not sent yet`);
+  return parts.length ? parts.join(' · ') : undefined;
+}
+
+/** The viewer's words for a photo's state with Lightroom. */
+export const SEND_LABEL: Record<SendStatus, string | undefined> = {
+  none: undefined,
+  unsent: 'Not sent yet',
+  changed: 'Changed since it was sent',
+  pending: 'Waiting for Lightroom',
+  applied: 'In Lightroom',
+  missing: 'Not in the Lightroom catalog',
+};
 
 /**
  * Focus map → intensities in [0, 1], row-major, against the frame's own

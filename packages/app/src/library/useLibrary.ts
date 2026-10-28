@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'preact/hooks';
 import { api } from '../api/client.js';
 import type { CullResultItem, LibraryListing, RateResultItem, StoredRate } from '../contract.js';
+import type { SentChange } from '../outbox.js';
 import { clearLegacyDecisions, loadLegacyDecisions, withDecision } from './decisions.js';
 import { mergeResults, type Decision, type Decisions, type PhotoView } from './model.js';
 
@@ -20,7 +21,12 @@ export interface LibraryState {
   setRate: (results: RateResultItem[], profile: string) => void;
   /** Keep or reject a photo against the verdict; undefined hands it back to the verdict. */
   decide: (path: string, decision: Decision | undefined) => void;
+  /** Queues what is not in Lightroom yet; resolves with how many photos were queued. */
+  send: (paths?: string[]) => Promise<number>;
 }
+
+/** How often to look again while the plug-in has not collected a send. */
+const SEND_POLL_MS = 2000;
 
 export interface LibraryStart {
   folder: string | null;
@@ -37,6 +43,7 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
   const [cull, setCull] = useState<CullResultItem[]>([]);
   const [rate, setRateItems] = useState<StoredRate[]>([]);
   const [decisions, setDecisions] = useState<Decisions>({});
+  const [sent, setSent] = useState<Record<string, SentChange>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -57,6 +64,7 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
         setCull(l.cull);
         setRateItems(l.rate);
         setDecisions({ ...legacy, ...l.decisions });
+        setSent(l.sent);
         setLoading(false);
         api.recentFolders().then((r) => alive && setRecent(r), () => {});
       },
@@ -87,9 +95,34 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
     void api.saveDecisions({ [path]: decision ?? null }).catch(() => {});
   }, []);
 
+  const send = useCallback(
+    async (paths?: string[]) => {
+      if (!listing) return 0;
+      const { queued } = await api.sendToLightroom(listing.folder, listing.recursive, paths);
+      setSent(await api.sentState(listing.folder));
+      return queued;
+    },
+    [listing],
+  );
+
+  const waiting = useMemo(() => Object.values(sent).some((s) => s.state === 'pending'), [sent]);
+
+  // While something waits for the plug-in, look again until it has been collected.
+  useEffect(() => {
+    if (!listing || !waiting) return;
+    let alive = true;
+    const timer = setInterval(() => {
+      api.sentState(listing.folder).then((s) => alive && setSent(s), () => {});
+    }, SEND_POLL_MS);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [listing, waiting]);
+
   const photos = useMemo(
-    () => (listing ? mergeResults(listing.photos, cull, rate, caseInsensitive, decisions) : []),
-    [listing, cull, rate, caseInsensitive, decisions],
+    () => (listing ? mergeResults(listing.photos, cull, rate, caseInsensitive, decisions, sent) : []),
+    [listing, cull, rate, caseInsensitive, decisions, sent],
   );
 
   return {
@@ -106,5 +139,6 @@ export function useLibrary(caseInsensitive: boolean, start: LibraryStart): Libra
     setCull,
     setRate,
     decide,
+    send,
   };
 }

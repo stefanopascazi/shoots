@@ -20,7 +20,7 @@ import { useJob } from '../hooks/useJob.js';
 import type { SettingsHandle } from '../hooks/useSettings.js';
 import { FolderPicker } from './FolderPicker.js';
 import { JobPanel } from './JobPanel.js';
-import { awaitsReview, flagFor, folderName, totals, visible, type Filter, type Sort } from './model.js';
+import { awaitsReview, flagFor, folderName, sendSummary, totals, visible, type Filter, type Sort } from './model.js';
 import { PhotoViewer } from './PhotoViewer.js';
 import { useLibrary, type LibraryStart } from './useLibrary.js';
 
@@ -61,6 +61,21 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
   const shown = useMemo(() => visible(lib.photos, activeFilter, sort), [lib.photos, activeFilter, sort]);
   const byPath = useMemo(() => new Map(lib.photos.map((p) => [p.path, p])), [lib.photos]);
   const viewerPhotos = useMemo(() => viewer?.paths.map((p) => byPath.get(p)!).filter(Boolean) ?? [], [viewer, byPath]);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string>();
+  const sendAll = async () => {
+    setSending(true);
+    setSendError(undefined);
+    try {
+      await lib.send();
+    } catch (err) {
+      setSendError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
+    }
+  };
+  const summary = sendSummary(sum);
+
   const startReview = () => {
     const paths = lib.photos.filter(awaitsReview).map((p) => p.path);
     if (paths.length) setViewer({ paths, index: 0, review: true });
@@ -128,8 +143,18 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
             <Button icon="eye" onClick={() => run('cull')} disabled={busy || !sum.total}>
               Find blurry
             </Button>
-            <Button variant="primary" icon="star" onClick={() => run('rate')} disabled={busy || !sum.total}>
+            <Button variant={sum.toSend ? 'secondary' : 'primary'} icon="star" onClick={() => run('rate')} disabled={busy || !sum.total}>
               Rate
+            </Button>
+            {/* Once there is something to hand over, sending it is the next step. */}
+            <Button
+              variant={sum.toSend ? 'primary' : 'secondary'}
+              icon="upload"
+              onClick={sendAll}
+              loading={sending}
+              disabled={busy || sum.toSend === 0}
+            >
+              {sum.toSend ? `Send ${sum.toSend} to Lightroom` : 'Send to Lightroom'}
             </Button>
           </>
         }
@@ -249,9 +274,12 @@ export function LibraryScreen({ windows, start, prefs }: LibraryScreenProps) {
               />
             </div>
 
-            {sum.decided > 0 && (
+            {sendError && <Alert tone="danger" title="Could not send to Lightroom">{sendError}</Alert>}
+            {(summary || sum.decided > 0) && (
               <p class="app-note sh-muted">
-                {sum.decided} decision{sum.decided === 1 ? '' : 's'} by you, saved on this computer. They are not in Lightroom yet.
+                {[sum.decided ? `${sum.decided} decision${sum.decided === 1 ? '' : 's'} by you` : undefined, summary].filter(Boolean).join(' · ')}
+                {sum.waiting > 0 && '. Keep Lightroom open with the shoots plug-in: it collects them within a few seconds.'}
+                {sum.notInCatalog > 0 && sum.waiting === 0 && '. Import the missing photos into Lightroom, then send again.'}
               </p>
             )}
 
