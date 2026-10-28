@@ -6,6 +6,7 @@ import type {
   MarksPatch,
   ResetRequest,
   BrowseResult,
+  DevelopStatus,
   JobRequest,
   JobStatus,
   LibraryListing,
@@ -76,6 +77,9 @@ export const api = {
   startJob: (request: JobRequest) => call<JobStatus>('POST', '/api/jobs', request),
   job: (id: string) => call<JobStatus>('GET', `/api/jobs/${id}`),
   cancelJob: (id: string) => call<JobStatus>('DELETE', `/api/jobs/${id}`),
+  /** The training or calibration running now, else the one that ended last; they outlive the server. */
+  trainingJob: () => call<{ job: JobStatus | null }>('GET', '/api/jobs/training'),
+  developStatus: () => call<DevelopStatus>('GET', '/api/develop/status'),
 };
 
 export const thumbUrl = (path: string, width: number): string => `/api/thumb${q({ path, w: String(width) })}`;

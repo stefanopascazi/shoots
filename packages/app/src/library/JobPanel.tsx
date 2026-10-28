@@ -6,6 +6,8 @@ const TITLE: Record<JobStatus['kind'], string> = {
   cull: 'Finding blurry photos',
   rate: 'Rating photos',
   doctor: 'Checking the setup',
+  train: 'Learning your style',
+  calibrate: 'Calibrating',
 };
 
 /** The running job: what it is doing now and a way to stop it. */

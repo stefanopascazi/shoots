@@ -40,6 +40,7 @@ import type { DevelopDataset, DevelopProfile } from '../types.js';
 import { resolveTreatment } from '../predict.js';
 import { buildSessionContext, contextFor } from '../develop/session.js';
 import { baseFeatures } from '../develop/assemble.js';
+import { emitProgress } from '../../progressChannel.js';
 
 /** The branches a profile can carry, and what to call them on screen. */
 const TREATMENTS = ['color', 'bw'] as const;
@@ -371,6 +372,8 @@ export async function review(
       const port = typeof addr === 'object' && addr ? addr.port : wanted;
       const deadline = timeoutMinutes > 0 ? ` or waiting ${timeoutMinutes} min` : '';
       status(`review at http://localhost:${port}`);
+      // For a host running this as a child (the app): the page to open.
+      emitProgress({ kind: 'phase', label: 'Waiting for your review', url: `http://127.0.0.1:${port}/` });
       status(`  save there to apply — pressing Ctrl-C${deadline} keeps the fitted values`);
     });
     server.listen(wanted ?? 7391, '127.0.0.1');

@@ -14,10 +14,12 @@ import {
   sanitizeMarksPatch,
   sendStatus,
   type CullReport,
+  type JobKind,
   type JobRequest,
   type JobStatus,
   type LibraryPhoto,
   type ColorLabel,
+  type DevelopStatus,
   type LightroomChange,
   type LightroomState,
   type RateReport,
@@ -26,6 +28,8 @@ import {
   type SyncWatch,
 } from '@shoots/app';
 import { JobError, type JobRunner } from './jobs.js';
+import { DURABLE_KINDS, type DurableJobs } from './durableJobs.js';
+import { parseCatalogExport } from '../develop/adapters/lightroom/catalog.js';
 import { browse, type Library } from './library.js';
 import { startIdleWatch, type IdleWatch } from './lifecycle.js';
 import type { AppStore, PhotoLookup } from './store.js';
@@ -47,7 +51,10 @@ export interface AppServerOptions {
   info: { version: string; platform: string; home: string };
   library: Library;
   jobs: JobRunner;
+  /** Training and calibration, which outlive the server. */
+  durable: DurableJobs;
   store: AppStore;
+  developStatus: () => Promise<DevelopStatus>;
   profiles: () => Promise<RatingProfile[]>;
   /** Stop when the plug-in has not renewed its lease for this long. */
   hostLeaseMs: number;
@@ -66,6 +73,8 @@ export interface AppServer {
 
 // Room for a batch of marks; anything larger is not something the page sends.
 const MAX_BODY = 512 * 1024;
+// A catalog export carries every photo's develop settings, a few kB each.
+const MAX_CATALOG_BODY = 256 * 1024 * 1024;
 
 /** Maps a file path the CLI reported back to the photo that was listed, tolerating case on Windows. */
 export function photoLookup(photos: readonly LibraryPhoto[], caseInsensitive: boolean): PhotoLookup {
@@ -107,6 +116,8 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     hostLease?.stop();
     pageIdle?.stop();
     opts.jobs.stopAll();
+    // Training already running goes on without us; one still waiting for Lightroom cannot.
+    opts.durable.release();
     server.close();
     server.closeAllConnections?.();
     opts.onStop(reason);
@@ -156,7 +167,15 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         hostLease?.touch();
         // The plug-in collects the outbox when this says there is something in it,
         // and reads back from the catalog the folder the page has open.
-        return sendJson(res, 200, { ok: true, pending: opts.store.pendingCount(), watch: watched });
+        // and exports the catalog for a training that waits on it.
+        return sendJson(res, 200, {
+          ok: true,
+          pending: opts.store.pendingCount(),
+          watch: watched,
+          export: opts.durable.awaitingCatalog() ?? null,
+        });
+      case 'POST /api/catalog/export':
+        return takeCatalogExport(req, res, url);
       case 'POST /api/lightroom/state':
         return takeLightroomState(req, res);
       case 'GET /api/sync':
@@ -173,7 +192,7 @@ export function createAppServer(opts: AppServerOptions): AppServer {
       }
       case 'POST /api/heartbeat':
         pageIdle?.touch();
-        return sendJson(res, 200, { ok: true, busy: opts.jobs.busy });
+        return sendJson(res, 200, { ok: true, busy: busy() });
       case 'POST /api/shutdown':
         sendJson(res, 200, { ok: true });
         setImmediate(() => stop('shutdown'));
@@ -222,15 +241,19 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         return thumb(res, url);
       case 'POST /api/jobs':
         return startJob(req, res);
+      case 'GET /api/jobs/training':
+        return sendJson(res, 200, { job: opts.durable.latest() ?? null });
+      case 'GET /api/develop/status':
+        return withUserError(res, () => opts.developStatus());
     }
 
     const job = /^\/api\/jobs\/([\w-]+)$/.exec(url.pathname);
     if (job && method === 'GET') {
-      const status = opts.jobs.get(job[1]);
+      const status = opts.jobs.get(job[1]) ?? opts.durable.get(job[1]);
       return status ? sendJson(res, 200, status) : sendJson(res, 404, { error: 'No such job.' });
     }
     if (job && method === 'DELETE') {
-      const status = opts.jobs.cancel(job[1]);
+      const status = opts.jobs.cancel(job[1]) ?? opts.durable.cancel(job[1]);
       return status ? sendJson(res, 200, status) : sendJson(res, 404, { error: 'No such job.' });
     }
     return sendJson(res, 404, { error: 'Not found.' });
@@ -258,7 +281,12 @@ export function createAppServer(opts: AppServerOptions): AppServer {
   async function startJob(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const request = parseJobRequest(await readBody(req));
     if (!request) return sendJson(res, 400, { error: 'Unknown job.' });
+    if (busy()) return sendJson(res, 409, { error: 'Another job is still running.' });
     try {
+      if (DURABLE_KINDS.has(request.kind)) {
+        pageIdle?.touch();
+        return sendJson(res, 202, opts.durable.start(request));
+      }
       const photos = request.folder ? await opts.library.photosOf(request.folder, request.recursive === true) : [];
       pageIdle?.touch();
       const status = opts.jobs.start(request, photos.map((p) => p.path));
@@ -380,6 +408,29 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     });
   }
 
+  /** Either runner at work: one job at a time across both. */
+  function busy(): boolean {
+    return opts.jobs.busy || opts.durable.busy;
+  }
+
+  /** Body: the plug-in's catalog export for the training named by `?job=`. Starts the run. */
+  async function takeCatalogExport(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const id = url.searchParams.get('job');
+    if (!id) return sendJson(res, 400, { error: 'Name the job.' });
+    let text: string;
+    try {
+      text = await readBody(req, MAX_CATALOG_BODY);
+      parseCatalogExport(text);
+    } catch (err) {
+      return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    try {
+      sendJson(res, 200, opts.durable.provideCatalog(id, text));
+    } catch (err) {
+      sendJson(res, err instanceof JobError ? err.status : 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   function jobFinished(status: JobStatus): void {
     const photos = jobPhotos.get(status.id);
     jobPhotos.delete(status.id);
@@ -403,7 +454,7 @@ export function createAppServer(opts: AppServerOptions): AppServer {
           const addr = server.address();
           port = typeof addr === 'object' && addr ? addr.port : requested;
           hostLease = startIdleWatch(opts.hostLeaseMs, () => false, () => stop('host-lease'));
-          pageIdle = startIdleWatch(opts.pageIdleMs, () => opts.jobs.busy, () => stop('idle'));
+          pageIdle = startIdleWatch(opts.pageIdleMs, busy, () => stop('idle'));
           resolve(port);
         });
       }),
@@ -420,6 +471,9 @@ export function parseLightroomState(raw: unknown): LightroomState | undefined {
   return { path: r.path, rating: r.rating as number, pick: r.pick, label: r.label as ColorLabel };
 }
 
+const JOB_KINDS: readonly JobKind[] = ['cull', 'rate', 'doctor', 'train', 'calibrate'];
+const NEEDS_FOLDER: ReadonlySet<JobKind> = new Set<JobKind>(['cull', 'rate', 'train']);
+
 export function parseJobRequest(body: string): JobRequest | undefined {
   let raw: Partial<JobRequest>;
   try {
@@ -427,10 +481,10 @@ export function parseJobRequest(body: string): JobRequest | undefined {
   } catch {
     return undefined;
   }
-  if (raw.kind !== 'cull' && raw.kind !== 'rate' && raw.kind !== 'doctor') return undefined;
-  if (raw.kind !== 'doctor' && typeof raw.folder !== 'string') return undefined;
+  if (!JOB_KINDS.includes(raw.kind as JobKind)) return undefined;
+  if (NEEDS_FOLDER.has(raw.kind as JobKind) && typeof raw.folder !== 'string') return undefined;
   return {
-    kind: raw.kind,
+    kind: raw.kind as JobKind,
     folder: typeof raw.folder === 'string' ? raw.folder : undefined,
     recursive: raw.recursive === true,
     profile: typeof raw.profile === 'string' && /^[\w.-]+$/.test(raw.profile) ? raw.profile : undefined,
@@ -448,13 +502,13 @@ async function withUserError(res: ServerResponse, work: () => Promise<unknown>):
   }
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, limit: number = MAX_BODY): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (c: Buffer) => {
       size += c.length;
-      if (size > MAX_BODY) {
+      if (size > limit) {
         reject(new Error('Request too large.'));
         req.destroy();
       } else chunks.push(c);

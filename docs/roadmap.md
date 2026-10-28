@@ -62,7 +62,8 @@ In order:
   the app within seconds; the latest change wins.
 - **Train from the catalog.** The plugin exports your develop settings as JSON,
   so training through the plugin does not depend on XMP sidecars being up to
-  date. The standalone CLI keeps training from sidecars.
+  date. Training and calibration start from the app and run on their own: they
+  finish even if Lightroom closes. The standalone CLI keeps training from sidecars.
 - **A closed beta that shares data.** Testers who opt in share derived
   measurements, never images, so the develop predictor can learn from many
   photographers instead of one. After the beta, sharing becomes an explicit

@@ -5,8 +5,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { createProgressChannel } from '../../src/progressChannel.js';
+import { createProgressChannel, markExitOnProgressFile } from '../../src/progressChannel.js';
 
 let dir: string;
 let file: string;
@@ -60,5 +61,15 @@ describe('createProgressChannel', () => {
   test('an unwritable file never throws', () => {
     const ch = createProgressChannel(path.join(dir, 'missing', 'deeper', 'p.jsonl'));
     expect(() => ch.emit({ kind: 'phase', label: 'x' })).not.toThrow();
+  });
+});
+
+describe('markExitOnProgressFile', () => {
+  test('the file ends with the exit code', async () => {
+    const module = path.resolve(import.meta.dir, '../../src/progressChannel.ts');
+    const script = `const { markExitOnProgressFile } = await import(${JSON.stringify(module)}); markExitOnProgressFile(${JSON.stringify(file)}); process.exitCode = 3;`;
+    const run = spawnSync(process.execPath, ['-e', script]);
+    expect(run.status).toBe(3);
+    expect(await lines()).toEqual([{ kind: 'exit', code: 3 }]);
   });
 });

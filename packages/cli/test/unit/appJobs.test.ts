@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import { JobError, JobRunner, jobArgs, lastErrorLine } from '../../src/app/jobs.js';
-import { lastProgress } from '../../src/app/progress.js';
+import { exitCode, lastProgress } from '../../src/app/progress.js';
 
 class FakeChild extends EventEmitter {
   stdout = new EventEmitter();
@@ -122,5 +122,19 @@ describe('JobRunner', () => {
     expect(jobs.busy).toBe(false);
     spawned[0].child.emit('close', null);
     expect(jobs.get(s.id)!.state).toBe('cancelled');
+  });
+});
+
+describe('exitCode', () => {
+  test('the exit line ends the file; a run in progress has none', () => {
+    const steps = JSON.stringify({ kind: 'steps', label: 'Fitting', done: 1, total: 2 });
+    expect(exitCode(`${steps}\n${JSON.stringify({ kind: 'exit', code: 1 })}\n`)).toBe(1);
+    expect(exitCode(`${steps}\n`)).toBeUndefined();
+    expect(exitCode('')).toBeUndefined();
+  });
+
+  test('the exit line does not hide the last progress', () => {
+    const text = `${JSON.stringify({ kind: 'phase', label: 'Done' })}\n${JSON.stringify({ kind: 'exit', code: 0 })}\n`;
+    expect(lastProgress(text)).toEqual({ label: 'Done', detail: undefined });
   });
 });

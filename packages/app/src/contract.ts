@@ -121,12 +121,13 @@ export interface RatingProfile {
   learned: boolean;
 }
 
-export type JobKind = 'cull' | 'rate' | 'doctor';
+/** train and calibrate run detached: they finish even when Lightroom closes and the app stops. */
+export type JobKind = 'cull' | 'rate' | 'doctor' | 'train' | 'calibrate';
 export type JobState = 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface JobRequest {
   kind: JobKind;
-  /** cull/rate: the folder as listed, so the job sees exactly the photos on screen. */
+  /** cull/rate: the folder as listed, so the job sees exactly the photos on screen; train: the folder to learn from. */
   folder?: string;
   recursive?: boolean;
   profile?: string;
@@ -137,6 +138,29 @@ export interface JobProgress {
   done?: number;
   total?: number;
   detail?: string;
+  /** A page the job serves and waits on, such as the calibration review. */
+  url?: string;
+}
+
+/** A training waiting for Lightroom: the plug-in exports this folder's develop settings for it. */
+export interface CatalogRequest {
+  job: string;
+  folder: string;
+  recursive: boolean;
+}
+
+/** What `develop status --json` reports about the trained profile; the parts the app shows. */
+export interface DevelopStatus {
+  command: 'develop-status';
+  dataset: { path: string; exists: boolean; bytes: number };
+  profile: {
+    path: string;
+    exists?: false;
+    name?: string;
+    trainedAt?: string;
+    stats?: { edited: number; color: number; bw: number };
+    calibration?: { at: string; stale: boolean } | null;
+  };
 }
 
 export interface JobStatus {

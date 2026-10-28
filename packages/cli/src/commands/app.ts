@@ -6,11 +6,15 @@
  * it detached, reads the URL and token from ~/.shoots/app.json, opens the
  * browser itself and keeps a lease alive; without that lease the server stops.
  */
+import { execFile } from 'node:child_process';
+import path from 'node:path';
 import type { Command } from 'commander';
+import type { DevelopStatus } from '@shoots/app';
 import { appDbPath, shootsHome } from '@shoots/core';
 import { allProfileNames, PROFILE_NAMES } from '@shoots/inference';
 import { logError, makeIo, parsePositiveInt } from '../io.js';
 import { ensureExiftoolReady } from '../tools.js';
+import { selfInvocation } from '../selfInvoke.js';
 import { VERSION } from '../version.js';
 import type { AppServer } from '../app/server.js';
 import type { AppStore } from '../app/store.js';
@@ -33,10 +37,11 @@ export function registerAppCommand(program: Command): void {
 
 async function runApp(options: AppOptions): Promise<void> {
   // Loaded here so commands that never serve the page neither load nor need it built.
-  const [{ APP_HTML }, { JobRunner }, { Library }, { clearSession, writeSession }, { createToken }, { createAppServer }, { AppStore }] =
+  const [{ APP_HTML }, { JobRunner }, { DurableJobs }, { Library }, { clearSession, writeSession }, { createToken }, { createAppServer }, { AppStore }] =
     await Promise.all([
       import('@shoots/app'),
       import('../app/jobs.js'),
+      import('../app/durableJobs.js'),
       import('../app/library.js'),
       import('../app/lifecycle.js'),
       import('../app/security.js'),
@@ -68,7 +73,10 @@ async function runApp(options: AppOptions): Promise<void> {
     info: { version: VERSION, platform: process.platform, home: shootsHome() },
     library,
     jobs,
+    // Next to the database: a training started by an earlier server is picked up here.
+    durable: new DurableJobs(path.join(path.dirname(appDbPath()), 'jobs')),
     store,
+    developStatus,
     profiles: async () => {
       const builtin = new Set(PROFILE_NAMES);
       return (await allProfileNames()).map((name) => ({ name, learned: !builtin.has(name) }));
@@ -98,4 +106,18 @@ async function runApp(options: AppOptions): Promise<void> {
 
   for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => app!.stop('shutdown'));
   await done;
+}
+
+/** `develop status --json`, run as a child like every other engine call. */
+function developStatus(): Promise<DevelopStatus> {
+  const { command, args } = selfInvocation(['develop', 'status', '--json']);
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      try {
+        resolve(JSON.parse(stdout) as DevelopStatus);
+      } catch {
+        reject(new Error(err ? err.message : 'Could not read the develop profile.'));
+      }
+    });
+  });
 }

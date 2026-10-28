@@ -41,6 +41,9 @@ export function jobArgs(request: JobRequest, listFile: string | undefined): stri
         '--json',
         ...(request.profile ? ['--profile', request.profile] : []),
       ];
+    default:
+      // train and calibrate outlive the server: see durableJobs.ts.
+      throw new JobError('That job runs detached.', 400);
   }
 }
 
@@ -150,7 +153,8 @@ export class JobRunner {
   }
 }
 
-function parseJson(text: string): unknown {
+/** A command's --json report, or undefined when stdout holds none. */
+export function parseJson(text: string): unknown {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
   try {

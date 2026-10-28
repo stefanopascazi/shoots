@@ -10,9 +10,13 @@
 import { appendFileSync } from 'node:fs';
 
 export type ProgressEvent =
-  | { kind: 'phase'; label: string; detail?: string }
+  /** `url`: a page the host should offer, such as the calibration review. */
+  | { kind: 'phase'; label: string; detail?: string; url?: string }
   | { kind: 'steps'; label: string; done: number; total: number; detail?: string }
   | { kind: 'download'; label: string; received: number; total: number | null };
+
+/** A line of the progress file: an event, or the exit marker written once at the end. */
+export type ProgressLine = ProgressEvent | { kind: 'exit'; code: number };
 
 export const PROGRESS_FILE_ENV = 'SHOOTS_PROGRESS_FILE';
 
@@ -63,4 +67,22 @@ let shared: ProgressChannel | undefined;
 export function emitProgress(event: ProgressEvent): void {
   shared ??= createProgressChannel(process.env[PROGRESS_FILE_ENV]);
   shared.emit(event);
+}
+
+/**
+ * Append `{ kind: 'exit', code }` to the progress file when the process ends.
+ *
+ * A host that outlives its own restart — the app server re-adopting a training
+ * run after Lightroom closed it — cannot wait on the child, so this line is how
+ * it learns the run finished, rather than guessing from a process id.
+ */
+export function markExitOnProgressFile(file: string | undefined = process.env[PROGRESS_FILE_ENV]): void {
+  if (!file) return;
+  process.once('exit', (code) => {
+    try {
+      appendFileSync(file, JSON.stringify({ kind: 'exit', code: code ?? 0 }) + '\n', 'utf8');
+    } catch {
+      // Advisory only.
+    }
+  });
 }

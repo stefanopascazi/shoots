@@ -9,6 +9,8 @@ export interface JobHandle {
   error: string | undefined;
   running: boolean;
   start: (request: JobRequest) => Promise<JobStatus | undefined>;
+  /** Follows a job started earlier, such as a training found running when the page opens. */
+  follow: (status: JobStatus) => Promise<JobStatus | undefined>;
   cancel: () => void;
 }
 
@@ -27,16 +29,11 @@ export function useJob(): JobHandle {
     [],
   );
 
-  const start = useCallback(async (request: JobRequest) => {
-    setError(undefined);
-    let status: JobStatus;
-    try {
-      status = await api.startJob(request);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      return undefined;
-    }
+  const follow = useCallback((initial: JobStatus) => {
+    clearTimeout(timer.current);
+    let status = initial;
     setJob(status);
+    if (status.state !== 'running') return Promise.resolve<JobStatus | undefined>(status);
     return new Promise<JobStatus | undefined>((resolve) => {
       const poll = async () => {
         if (!mounted.current) return resolve(undefined);
@@ -58,9 +55,24 @@ export function useJob(): JobHandle {
     });
   }, []);
 
+  const start = useCallback(
+    async (request: JobRequest) => {
+      setError(undefined);
+      let status: JobStatus;
+      try {
+        status = await api.startJob(request);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return undefined;
+      }
+      return follow(status);
+    },
+    [follow],
+  );
+
   const cancel = useCallback(() => {
     if (job?.state === 'running') void api.cancelJob(job.id).catch(() => {});
   }, [job]);
 
-  return { job, error, running: job?.state === 'running', start, cancel };
+  return { job, error, running: job?.state === 'running', start, follow, cancel };
 }

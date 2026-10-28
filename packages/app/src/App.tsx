@@ -19,9 +19,10 @@ import { useHashRoute } from './hooks/useHashRoute.js';
 import { useHeartbeat } from './hooks/useHeartbeat.js';
 import { useSettings } from './hooks/useSettings.js';
 import { LibraryScreen } from './library/LibraryScreen.js';
+import { TrainingScreen } from './training/TrainingScreen.js';
 
-const ROUTES = ['library', 'setup'] as const;
-const TITLES: Record<(typeof ROUTES)[number], string> = { library: 'Library', setup: 'Setup' };
+const ROUTES = ['library', 'training', 'setup'] as const;
+const TITLES: Record<(typeof ROUTES)[number], string> = { library: 'Library', training: 'Training', setup: 'Setup' };
 
 /** Loads what the server remembers, then shows the app as it was left. */
 export function App() {
@@ -82,6 +83,9 @@ function Shell({ start }: { start: StartState }) {
           <NavItem icon="grid" href="#library" active={route === 'library'}>
             Library
           </NavItem>
+          <NavItem icon="sparkle" href="#training" active={route === 'training'}>
+            Training
+          </NavItem>
           <NavItem icon="settings" href="#setup" active={route === 'setup'}>
             Setup
           </NavItem>
@@ -113,6 +117,8 @@ function Shell({ start }: { start: StartState }) {
               start={{ folder: start.startFolder, recursive: start.settings.recursive, recent: start.recent }}
               prefs={prefs}
             />
+          ) : route === 'training' ? (
+            <TrainingScreen prefs={prefs} />
           ) : (
             <HealthScreen info={info} prefs={prefs} />
           )}

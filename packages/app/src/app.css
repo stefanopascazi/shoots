@@ -119,6 +119,8 @@
 
 .app-health { display: grid; gap: var(--sh-space-4); grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); align-items: start; }
 .app-side { display: grid; gap: var(--sh-space-4); }
+.app-training__folder { display: flex; align-items: center; gap: var(--sh-space-3); margin-bottom: var(--sh-space-3); }
+.app-training__path { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: var(--sh-text-sm); }
 .app-boot { min-height: 100vh; display: grid; place-items: center; padding: var(--sh-space-6); }
 .app-health__name { font-weight: 500; white-space: nowrap; }
 .app-health__detail { overflow-wrap: anywhere; }

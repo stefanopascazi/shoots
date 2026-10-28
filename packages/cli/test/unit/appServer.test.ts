@@ -10,6 +10,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { JobRunner } from '../../src/app/jobs.js';
+import { DurableJobs, type DetachedChild } from '../../src/app/durableJobs.js';
 import { Library } from '../../src/app/library.js';
 import { clearSession, readSession, startIdleWatch, writeSession } from '../../src/app/lifecycle.js';
 import { createAppServer, parseJobRequest, type AppServer, type StopReason } from '../../src/app/server.js';
@@ -23,12 +24,19 @@ class FakeChild extends EventEmitter {
   }
 }
 
+class FakeDetached extends EventEmitter implements DetachedChild {
+  pid = 4242;
+  unref() {}
+}
+
 const TOKEN = 'test-token-0123456789';
 let running: AppServer | undefined;
 
 async function start(overrides: { hostLeaseMs?: number; pageIdleMs?: number } = {}) {
   const stops: StopReason[] = [];
   const children: FakeChild[] = [];
+  const detached: string[][] = [];
+  const jobsRoot = mkdtempSync(path.join(tmpdir(), 'shoots-server-jobs-'));
   let app: AppServer | undefined;
   const jobs = new JobRunner(
     () => {
@@ -44,7 +52,19 @@ async function start(overrides: { hostLeaseMs?: number; pageIdleMs?: number } = 
     info: { version: '9.9.9', platform: 'test', home: '/h' },
     library: new Library(),
     jobs,
+    durable: new DurableJobs(jobsRoot, {
+      spawner: (_cmd, args) => {
+        detached.push(args);
+        return new FakeDetached();
+      },
+      processes: { alive: () => true, kill: () => {} },
+    }),
     store: await AppStore.open(':memory:'),
+    developStatus: async () => ({
+      command: 'develop-status',
+      dataset: { path: 'd', exists: false, bytes: 0 },
+      profile: { path: 'p', exists: false },
+    }),
     profiles: async () => [{ name: 'street', learned: false }],
     hostLeaseMs: overrides.hostLeaseMs ?? 60_000,
     pageIdleMs: overrides.pageIdleMs ?? 60_000,
@@ -52,12 +72,15 @@ async function start(overrides: { hostLeaseMs?: number; pageIdleMs?: number } = 
   });
   const port = await app.listen(0);
   running = app;
-  return { port, stops, children, base: `http://127.0.0.1:${port}` };
+  roots.push(jobsRoot);
+  return { port, stops, children, detached, base: `http://127.0.0.1:${port}` };
 }
 
+const roots: string[] = [];
 afterEach(() => {
   running?.stop('shutdown');
   running = undefined;
+  for (const r of roots.splice(0)) rmSync(r, { recursive: true, force: true });
 });
 
 const auth = { 'x-shoots-token': TOKEN };
@@ -258,6 +281,44 @@ describe('following Lightroom', () => {
   });
 });
 
+describe('training', () => {
+  const post = (base: string, route: string, body: unknown) =>
+    fetch(`${base}${route}`, { method: 'POST', headers: auth, body: typeof body === 'string' ? body : JSON.stringify(body) });
+
+  test('the heartbeat asks for the catalog; the export starts the detached run', async () => {
+    const { base, detached } = await start();
+    const job = await (await post(base, '/api/jobs', { kind: 'train', folder: 'C:/Shoot', recursive: true })).json();
+    expect(job).toMatchObject({ kind: 'train', state: 'running' });
+
+    const beat = await (await post(base, '/api/host/heartbeat', {})).json();
+    expect(beat.export).toEqual({ job: job.id, folder: 'C:/Shoot', recursive: true });
+    // Nothing else may start meanwhile.
+    expect((await post(base, '/api/jobs', { kind: 'doctor' })).status).toBe(409);
+
+    expect((await post(base, `/api/catalog/export?job=${job.id}`, 'not json')).status).toBe(400);
+    const res = await post(base, `/api/catalog/export?job=${job.id}`, { version: 1, folder: 'C:/Shoot', photos: [] });
+    expect(res.status).toBe(200);
+    expect(detached).toHaveLength(1);
+    expect(detached[0]).toContain('--catalog');
+    expect((await (await post(base, '/api/host/heartbeat', {})).json()).export).toBeNull();
+
+    const latest = await (await fetch(`${base}/api/jobs/training`, { headers: auth })).json();
+    expect(latest.job).toMatchObject({ id: job.id, state: 'running' });
+    expect((await (await fetch(`${base}/api/jobs/${job.id}`, { headers: auth })).json()).id).toBe(job.id);
+  });
+
+  test('an export for no waiting training is refused', async () => {
+    const { base } = await start();
+    expect((await post(base, '/api/catalog/export?job=job-x', { version: 1, folder: 'f', photos: [] })).status).toBe(409);
+  });
+
+  test('the develop profile status is served', async () => {
+    const { base } = await start();
+    const status = await (await fetch(`${base}/api/develop/status`, { headers: auth })).json();
+    expect(status.profile.exists).toBe(false);
+  });
+});
+
 describe('parseJobRequest', () => {
   test('accepts known jobs and sanitises the profile', () => {
     expect(parseJobRequest('{"kind":"rate","folder":"/p","profile":"my-eye"}')).toEqual({
@@ -267,11 +328,14 @@ describe('parseJobRequest', () => {
       profile: 'my-eye',
     });
     expect(parseJobRequest('{"kind":"rate","folder":"/p","profile":"--evil x"}')?.profile).toBeUndefined();
+    expect(parseJobRequest('{"kind":"train","folder":"/p"}')).toMatchObject({ kind: 'train', folder: '/p' });
+    expect(parseJobRequest('{"kind":"calibrate"}')).toMatchObject({ kind: 'calibrate' });
   });
 
   test('rejects unknown kinds, photo jobs without a folder, and bad JSON', () => {
     expect(parseJobRequest('{"kind":"rm"}')).toBeUndefined();
     expect(parseJobRequest('{"kind":"cull"}')).toBeUndefined();
+    expect(parseJobRequest('{"kind":"train"}')).toBeUndefined();
     expect(parseJobRequest('nope')).toBeUndefined();
   });
 });

@@ -61,10 +61,19 @@ launch.
       changed. A first report imports non-default stars/flags/labels where the app
       has no mark; a later change in Lightroom overwrites the app's mark; an echo
       of a send is recognised. The page refreshes within ~3 s.
+- [x] L2 catalog export: on a training request (heartbeat `export`) the plug-in
+      posts the folder's `getDevelopSettings()` as JSON; the engine reads it with
+      `develop init|export --catalog <file>` (ingest-only `lightroom` adapter), no sidecars.
+- [x] Track W: Training screen — train (`develop init --catalog`, boldness 1,
+      anchor-gain 2) and calibrate (`develop calibrate --review`, page linked
+      from the app). Both run **detached** with their state in
+      `~/.shoots/app/jobs/<id>`; the CLI ends its progress file with an `exit`
+      line, so a later server re-adopts a run that outlived Lightroom.
 
 **Not verified yet:** anything inside a real Lightroom (SDK calls, Plug-in Manager
-panel), and the installer launched by the plugin (needs a release carrying
-`--files-from`).
+panel; for L2, that `getDevelopSettings()` keys match the crs names and how it
+returns the tone curve and Look), and the installer launched by the plugin
+(needs a release carrying `--files-from`).
 
 **Next, in order:**
 
@@ -78,9 +87,9 @@ panel), and the installer launched by the plugin (needs a release carrying
    zip to `release.yml`.
 3. **L1 leftovers**: write `rate` keywords into the catalog; decide whether cull
    should also flag keepers; cancel support (kill the child process).
-4. **L2 catalog export** → training reads JSON, not sidecars.
-5. **Track W** — next: field-test Send to Lightroom, then training and
-   calibrate in the app. Monetisation gate still to
+4. **L2 catalog export** — shipped; field-test it with step 1.
+5. **Track W** — next: field-test Send to Lightroom and training from the
+   catalog; finish the calibration screen (still rough). Monetisation gate still to
    decide: today only the hidden command and the lease keep the app plugin-only;
    a signed licence checked by the server is the real one.
 6. **L3** apply predictions via `applyDevelopSettings`.
