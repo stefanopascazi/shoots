@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { render } from 'preact-render-to-string';
 import { JobPanel } from '../src/library/JobPanel.js';
+import { LightroomErrorAlert } from '../src/LightroomErrorAlert.js';
 import { FolderPicker } from '../src/library/FolderPicker.js';
 import { thumbUrl } from '../src/api/client.js';
 
@@ -36,5 +37,16 @@ describe('FolderPicker', () => {
     const html = render(<FolderPicker open start={null} onPick={() => {}} onClose={() => {}} />);
     expect(html).toContain('aria-label="Folder path"');
     expect(html).toContain('NAS');
+  });
+});
+
+describe('LightroomErrorAlert', () => {
+  test('names the failed step, the reason and where the log is', () => {
+    const html = render(
+      <LightroomErrorAlert error={{ where: 'send to Lightroom', message: 'catalog busy', at: 0 }} onDismiss={() => {}} />,
+    );
+    expect(html).toContain('Lightroom could not complete: send to Lightroom');
+    expect(html).toContain('catalog busy');
+    expect(html).toContain('shoots.log');
   });
 });

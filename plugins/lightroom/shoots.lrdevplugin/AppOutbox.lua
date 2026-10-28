@@ -7,6 +7,7 @@ async task.
 
 local LrApplication = import 'LrApplication'
 local LrHttp = import 'LrHttp'
+local LrTasks = import 'LrTasks'
 
 local AppSession = require 'AppSession'
 local Outbox = require 'Outbox'
@@ -46,7 +47,8 @@ function AppOutbox.apply(session)
   if #found > 0 then
     -- Another write in progress (the user editing) makes this fail; nothing is
     -- acknowledged then, so the next heartbeat simply tries again.
-    local ok, status = pcall(function()
+    -- LrTasks.pcall: withWriteAccessDo yields, which a plain pcall cannot carry.
+    local ok, status = LrTasks.pcall(function()
       return catalog:withWriteAccessDo('shoots: Apply from the app', function()
         for _, entry in ipairs(found) do
           for field, value in pairs(Outbox.fields(entry.item)) do

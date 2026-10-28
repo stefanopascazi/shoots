@@ -19,6 +19,8 @@ local AppSession = require 'AppSession'
 local AppSync = require 'AppSync'
 local CatalogExport = require 'CatalogExport'
 local Command = require 'Command'
+local HostError = require 'HostError'
+local Log = require 'Log'
 local Outbox = require 'Outbox'
 local Runner = require 'Runner'
 local Sync = require 'Sync'
@@ -49,6 +51,16 @@ local function post(session, route)
   return nil
 end
 
+--- Run one step of the lease loop, logging and reporting a failure instead of hiding it.
+--- LrTasks.pcall, never pcall: every step talks HTTP or writes the catalog, both of
+--- which yield, and Lua 5.1 cannot yield through a plain pcall — every step failed so.
+local function step(session, where, fn, ...)
+  local ok, err = LrTasks.pcall(fn, ...)
+  if ok then return end
+  Log.error(where .. ': ' .. tostring(err))
+  LrTasks.pcall(LrHttp.post, AppSession.endpoint(session, '/api/host/error'), HostError.body(where, err), AppSession.headers(session), 'POST', 5)
+end
+
 -- One lease loop per Lightroom session, renewing whichever server is current.
 local leaseRunning = false
 
@@ -62,14 +74,16 @@ local function holdLease()
       local reply = session and post(session, '/api/host/heartbeat')
       if reply then
         misses = 0
-        if Outbox.pendingCount(reply) > 0 then pcall(AppOutbox.apply, session) end
+        if Outbox.pendingCount(reply) > 0 then step(session, 'send to Lightroom', AppOutbox.apply, session) end
         -- After applying, so what the app just sent reads back as already in place.
         local watch = Sync.watch(reply)
-        if watch then pcall(AppSync.run, session, watch) end
+        if watch then step(session, 'read back from Lightroom', AppSync.run, session, watch) end
         -- A training the app started waits for this folder's develop settings.
         local export = CatalogExport.request(reply)
         if export then
-          pcall(AppExport.run, session, export, function() post(session, '/api/host/heartbeat') end)
+          step(session, 'catalog export', AppExport.run, session, export, function(done, total)
+            post(session, CatalogExport.progressRoute(export.job, done, total))
+          end)
         end
       else
         misses = misses + 1

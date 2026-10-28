@@ -42,6 +42,12 @@ export const REVIEW_TIMEOUT_MINUTES = '60';
 const KEEP_FINISHED = 10;
 
 const WAITING_LABEL = 'Reading your edits from Lightroom';
+/**
+ * How long a job waits for the plug-in without a sign of it. The plug-in reports
+ * progress while it reads, so only a plug-in that never started (or failed) runs
+ * this out — instead of the job waiting for ever.
+ */
+export const CATALOG_WAIT_MS = 3 * 60_000;
 
 /** CLI arguments for a durable job; `catalogFile` is the plug-in's export (training only). */
 export function durableArgs(request: JobRequest, catalogFile: string | undefined): string[] {
@@ -143,6 +149,8 @@ export class DurableJobs {
   private readonly processes: Processes;
   private readonly now: () => number;
   private readonly exportsDir: string;
+  /** The plug-in's progress on each waiting job, and when it last gave a sign. */
+  private readonly reading = new Map<string, { done: number; total: number; at: number }>();
 
   constructor(
     private readonly root: string,
@@ -234,7 +242,7 @@ export class DurableJobs {
       kind: record.kind,
       state: 'running',
       startedAt: record.startedAt ?? record.createdAt,
-      progress: record.phase === 'waiting' ? { label: WAITING_LABEL } : lastProgress(this.read(id, FILES.progress)),
+      progress: record.phase === 'waiting' ? this.waitingProgress(id) : lastProgress(this.read(id, FILES.progress)),
     };
   }
 
@@ -265,6 +273,17 @@ export class DurableJobs {
     for (const r of [...this.active.values()]) {
       if (r.phase === 'waiting') this.finish(r, { state: 'failed', error: 'Lightroom closed before your edits were read. Start it again.' });
     }
+  }
+
+  /** The plug-in reading a folder for a waiting job: a sign of life, and how far it got. */
+  catalogProgress(id: string, done: number, total: number): void {
+    if (this.active.get(id)?.phase !== 'waiting') return;
+    this.reading.set(id, { done, total, at: this.now() });
+  }
+
+  private waitingProgress(id: string): JobStatus['progress'] {
+    const r = this.reading.get(id);
+    return r ? { label: WAITING_LABEL, done: r.done, total: r.total } : { label: WAITING_LABEL };
   }
 
   /** Folders of the jobs that ended: the history a clean-up may drop. */
@@ -313,7 +332,19 @@ export class DurableJobs {
   /** Settles a running job whose process has ended. */
   private refresh(id: string): void {
     const record = this.active.get(id);
-    if (!record || record.phase !== 'running') return;
+    if (!record) return;
+    if (record.phase === 'waiting') {
+      const lastSign = this.reading.get(id)?.at ?? record.createdAt;
+      if (this.now() - lastSign > CATALOG_WAIT_MS) {
+        this.finish(record, {
+          state: 'failed',
+          error:
+            'Lightroom did not send the folder’s settings. Check that the plug-in is up to date; ' +
+            'its log is Documents\\LrClassicLogs\\shoots.log.',
+        });
+      }
+      return;
+    }
     const code = exitCode(this.read(id, FILES.progress));
     if (code === undefined && record.pid !== undefined && this.processes.alive(record.pid)) return;
 

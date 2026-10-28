@@ -3,7 +3,7 @@ import { EventEmitter } from 'node:events';
 import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DurableJobs, durableArgs, type DetachedChild, type Processes } from '../../src/app/durableJobs.js';
+import { CATALOG_WAIT_MS, DurableJobs, durableArgs, type DetachedChild, type Processes } from '../../src/app/durableJobs.js';
 import { JobError } from '../../src/app/jobs.js';
 
 const CATALOG = JSON.stringify({ version: 1, folder: 'F', photos: [] });
@@ -94,6 +94,30 @@ describe('DurableJobs', () => {
   test('an export nobody waits for is refused', async () => {
     const { jobs } = setup();
     await expect(jobs.provideCatalog('job-nope', CATALOG)).rejects.toThrow(JobError);
+  });
+
+  test('the plug-in reading a folder shows as progress', () => {
+    const { jobs } = setup();
+    const job = jobs.start({ kind: 'catalog', folder: 'F' });
+    jobs.catalogProgress(job.id, 50, 380);
+    expect(jobs.get(job.id)!.progress).toEqual({ label: 'Reading your edits from Lightroom', done: 50, total: 380 });
+  });
+
+  test('a job the plug-in never answers fails instead of waiting for ever', () => {
+    let clock = 0;
+    const root = mkdtempSync(path.join(tmpdir(), 'shoots-durable-'));
+    roots.push(root);
+    const jobs = new DurableJobs(root, { processes: { alive: () => true, kill: () => {} }, now: () => clock });
+    const job = jobs.start({ kind: 'catalog', folder: 'F' });
+    clock = CATALOG_WAIT_MS - 1;
+    jobs.catalogProgress(job.id, 0, 400);
+    clock += CATALOG_WAIT_MS - 1;
+    // Still within the window from the last sign of the plug-in.
+    expect(jobs.get(job.id)!.state).toBe('running');
+    clock += 2;
+    expect(jobs.get(job.id)).toMatchObject({ state: 'failed' });
+    expect(jobs.get(job.id)!.error).toContain('did not send');
+    expect(jobs.busy).toBe(false);
   });
 
   test('a folder Lightroom does not have fails the job and names the folder', async () => {

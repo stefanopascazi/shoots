@@ -266,13 +266,13 @@ describe('following Lightroom', () => {
     expect((await beat()).watch).toEqual({ folder: listing.folder, recursive: false });
 
     const sync = () => fetch(`${base}/api/sync`, { headers: auth }).then((r) => r.json());
-    expect(await sync()).toEqual({ revision: 0, following: false });
+    expect(await sync()).toEqual({ revision: 0, following: false, lightroomError: null });
 
     const report = (photos: unknown[]) =>
       fetch(`${base}/api/lightroom/state`, { method: 'POST', headers: auth, body: JSON.stringify({ folder: listing.folder, photos }) }).then((r) => r.json());
     // A photo outside the folder and a malformed one are ignored.
     expect(await report([{ path: photo, rating: 4, pick: 1, label: 'red' }, { path: '/etc/x.jpg', rating: 1, pick: 0, label: 'none' }, { path: photo }])).toEqual({ changed: 1 });
-    expect(await sync()).toEqual({ revision: 1, following: true });
+    expect(await sync()).toEqual({ revision: 1, following: true, lightroomError: null });
 
     const again = await (await fetch(`${base}/api/library?folder=${encodeURIComponent(dir)}`, { headers: auth })).json();
     expect(again.marks[photo]).toEqual({ stars: 4, flag: 'pick', label: 'red' });
@@ -309,6 +309,20 @@ describe('training', () => {
     const latest = await (await fetch(`${base}/api/jobs/training`, { headers: auth })).json();
     expect(latest.job).toMatchObject({ id: job.id, state: 'running' });
     expect((await (await fetch(`${base}/api/jobs/${job.id}`, { headers: auth })).json()).id).toBe(job.id);
+  });
+
+  test('the plug-in reports how far it read, and what failed in Lightroom', async () => {
+    const { base } = await start();
+    const job = await (await post(base, '/api/jobs', { kind: 'catalog', folder: 'C:/Shoot' })).json();
+    expect((await post(base, `/api/catalog/progress?job=${job.id}&done=50&total=380`, '')).status).toBe(200);
+    expect((await (await fetch(`${base}/api/jobs/${job.id}`, { headers: auth })).json()).progress).toMatchObject({ done: 50, total: 380 });
+
+    expect((await (await fetch(`${base}/api/sync`, { headers: auth })).json()).lightroomError).toBeNull();
+    await post(base, '/api/host/error', { where: 'send to Lightroom', message: 'Yielding is not allowed' });
+    expect((await (await fetch(`${base}/api/sync`, { headers: auth })).json()).lightroomError).toMatchObject({
+      where: 'send to Lightroom',
+      message: 'Yielding is not allowed',
+    });
   });
 
   test('an export for no waiting training is refused', async () => {

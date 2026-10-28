@@ -72,6 +72,11 @@ launch.
 - [x] Network shares: the folder picker takes a typed path (UNC); a folder the
       catalog lacks fails with its name instead of an empty export. Browse,
       listing and `develop export` verified over `\\localhost\C$`.
+- [x] Field test fix: the lease loop's steps (send, read back, export) ran
+      under a plain `pcall`, which cannot carry Lightroom's yields — every one
+      failed silently. Now `LrTasks.pcall` (a test forbids the plain one), errors
+      logged to `LrClassicLogs/shoots.log` and shown in the app; the export
+      reports progress and a job the plug-in never answers fails after 3 min.
 - [x] Setup › Training data: remove dataset, profile, calibration, shoot files,
       journal (never preselected), job history and catalog exports — through
       `develop clean --only`, refused while a job runs.

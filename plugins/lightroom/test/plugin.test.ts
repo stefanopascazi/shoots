@@ -180,7 +180,39 @@ describe('CatalogExport', () => {
   });
 });
 
+describe('yielding inside Lightroom', () => {
+  // Lua 5.1 cannot yield through a plain pcall, and LrHttp and catalog writes
+  // always yield: such a pcall fails at once and hides why. It cost every
+  // step of the lease loop. Only pure decoding may use a plain pcall.
+  test('every pcall around Lightroom calls is LrTasks.pcall', async () => {
+    const offenders: string[] = [];
+    for (const name of (await readdir(SOURCE_DIR)).filter((f) => f.endsWith('.lua'))) {
+      const lines = (await readFile(path.join(SOURCE_DIR, name), 'utf8')).split('\n');
+      lines.forEach((line, i) => {
+        if (/^\s*--/.test(line)) return;
+        for (const m of line.matchAll(/(LrTasks\.)?pcall\(\s*([\w.]+)?/g)) {
+          if (!m[1] && m[2] !== 'Json.decode') offenders.push(`${name}:${i + 1}: ${line.trim()}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('HostError', () => {
+  test('a failure travels as JSON, quoted and capped', () => {
+    const body = runLua<string>(`return require('HostError').body('send to Lightroom', 'AppOutbox.lua:51: "boom"\\nnext')`);
+    expect(JSON.parse(body)).toEqual({ where: 'send to Lightroom', message: 'AppOutbox.lua:51: "boom"\nnext' });
+    const long = JSON.parse(runLua<string>(`return require('HostError').body('x', string.rep('a', 900))`));
+    expect(long.message.length).toBeLessThan(510);
+  });
+});
+
 describe('CatalogExport, folders', () => {
+  test('progress is reported on its own route', () => {
+    expect(runLua(`return require('CatalogExport').progressRoute('job-1', 50, 380)`)).toBe('/api/catalog/progress?job=job-1&done=50&total=380');
+  });
+
   test('a folder path loses its trailing separator, except at a drive root', () => {
     const p = (folder: string) => runLua(`return require('CatalogExport').folderPath(${JSON.stringify(folder)})`);
     expect(p('\\\\NAS\\Photos\\')).toBe('\\\\NAS\\Photos');

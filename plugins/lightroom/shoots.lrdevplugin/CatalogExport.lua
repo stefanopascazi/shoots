@@ -24,6 +24,11 @@ function CatalogExport.request(body)
   return { job = e.job, folder = CatalogExport.folderPath(e.folder), recursive = e.recursive == true, raw = e.raw == true }
 end
 
+--- The route reporting how far the plug-in read a folder for `job`.
+function CatalogExport.progressRoute(job, done, total)
+  return '/api/catalog/progress?job=' .. job .. '&done=' .. string.format('%d', done) .. '&total=' .. string.format('%d', total)
+end
+
 --- A folder path as the catalog looks it up: no trailing separator, except on a
 --- drive root (C:\) or a bare /. A share root reads back from the app as
 --- \\NAS\Photos\, which the catalog would not find.

@@ -21,6 +21,7 @@ import {
   type ColorLabel,
   type DevelopStatus,
   type LightroomChange,
+  type LightroomError,
   type LightroomState,
   type RateReport,
   type RatingProfile,
@@ -111,6 +112,8 @@ export function createAppServer(opts: AppServerOptions): AppServer {
   /** Bumped whenever Lightroom changes something the page shows, so the page knows to look again. */
   let revision = 0;
   let lightroomSeenAt: number | null = null;
+  /** The last failure the plug-in reported from its lease loop, for the page to show. */
+  let lightroomError: LightroomError | null = null;
   const caseInsensitive = process.platform === 'win32';
 
   const stop = (reason: StopReason): void => {
@@ -182,7 +185,18 @@ export function createAppServer(opts: AppServerOptions): AppServer {
       case 'POST /api/lightroom/state':
         return takeLightroomState(req, res);
       case 'GET /api/sync':
-        return sendJson(res, 200, { revision, following: watched !== null && lightroomSeenAt !== null });
+        return sendJson(res, 200, { revision, following: watched !== null && lightroomSeenAt !== null, lightroomError });
+      case 'POST /api/host/error':
+        return takeHostError(req, res);
+      case 'POST /api/catalog/progress': {
+        // The plug-in reading a folder for a job: renews the lease while the loop is busy.
+        hostLease?.touch();
+        const done = Number(url.searchParams.get('done'));
+        const total = Number(url.searchParams.get('total'));
+        const id = url.searchParams.get('job');
+        if (id && Number.isFinite(done) && Number.isFinite(total)) opts.durable.catalogProgress(id, done, total);
+        return sendJson(res, 200, { ok: true });
+      }
       case 'GET /api/outbox':
         return sendJson(res, 200, { items: opts.store.pending() });
       case 'POST /api/outbox':
@@ -426,6 +440,20 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     if (parts.length === 0) return sendJson(res, 400, { error: 'Choose what to remove.' });
     if (busy()) return sendJson(res, 409, { error: 'A job is running. Wait for it to end, or stop it.' });
     await withUserError(res, async () => ({ removed: await opts.cleanup.run(parts) }));
+  }
+
+  /** Body: `{ where, message }` — a step of the plug-in's lease loop failed. */
+  async function takeHostError(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let body: { where?: unknown; message?: unknown };
+    try {
+      body = JSON.parse(await readBody(req));
+    } catch {
+      return sendJson(res, 400, { error: 'Not an error report.' });
+    }
+    const text = (v: unknown, max: number) => (typeof v === 'string' ? v.slice(0, max) : '');
+    lightroomError = { where: text(body.where, 80), message: text(body.message, 600), at: Date.now() };
+    process.stderr.write(`plug-in: ${lightroomError.where}: ${lightroomError.message}\n`);
+    sendJson(res, 200, { ok: true });
   }
 
   /** Either runner at work: one job at a time across both. */

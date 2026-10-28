@@ -12,6 +12,7 @@ import type {
   JobRequest,
   JobStatus,
   LibraryListing,
+  LightroomError,
   RatingProfile,
 } from '../contract.js';
 import type { SentChange } from '../outbox.js';
@@ -69,7 +70,7 @@ export const api = {
   reset: (request: ResetRequest) => call<{ reset: number }>('POST', '/api/reset', request),
   clearMemory: () => call<{ ok: boolean }>('DELETE', '/api/memory'),
   /** Bumps whenever Lightroom changed something the page shows; `following` once the plug-in reports the open folder. */
-  sync: () => call<{ revision: number; following: boolean }>('GET', '/api/sync'),
+  sync: () => call<{ revision: number; following: boolean; lightroomError: LightroomError | null }>('GET', '/api/sync'),
   info: () => call<AppInfo>('GET', '/api/info'),
   profiles: () => call<RatingProfile[]>('GET', '/api/profiles'),
   heartbeat: () => call<{ ok: boolean; busy: boolean }>('POST', '/api/heartbeat'),

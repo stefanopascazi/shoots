@@ -13,14 +13,16 @@ local CatalogExport = require 'CatalogExport'
 
 local AppExport = {}
 
--- Reading thousands of photos holds up the lease loop: renew the lease meanwhile.
-local RENEW_EVERY = 100
+-- Reading thousands of photos holds up the lease loop: report progress meanwhile,
+-- which also renews the lease and tells the app the plug-in is at work.
+local REPORT_EVERY = 50
 local POST_TIMEOUT_SECONDS = 120
 
---- Read the requested folder and post its settings (training, or export only). `renew` renews the lease.
-function AppExport.run(session, request, renew)
+--- Read the requested folder and post its settings (training, or export only).
+--- `report(done, total)` tells the app how far the reading got.
+function AppExport.run(session, request, report)
   local catalog = LrApplication.activeCatalog()
-  local folder = catalog:getFolderByPath(request.folder)
+  local folder = catalog:getFolderByPath(CatalogExport.folderPath(request.folder))
   local photos = {}
   if not folder then
     -- Said out loud: an empty export would read as "nothing edited here".
@@ -35,6 +37,7 @@ function AppExport.run(session, request, renew)
   end
   do
     local all = folder:getPhotos(request.recursive)
+    report(0, #all)
     local meta = catalog:batchGetRawMetadata(all, { 'path', 'isVirtualCopy' })
     for i, photo in ipairs(all) do
       local m = meta[photo]
@@ -44,7 +47,7 @@ function AppExport.run(session, request, renew)
         -- Export only (the field test) also sends the settings untouched, to compare.
         photos[#photos + 1] = { path = m.path, settings = CatalogExport.settings(settings), raw = request.raw and settings or nil }
       end
-      if i % RENEW_EVERY == 0 then renew() end
+      if i % REPORT_EVERY == 0 then report(i, #all) end
     end
   end
   -- A folder with no photos is still sent: the run then says there was nothing to learn from.

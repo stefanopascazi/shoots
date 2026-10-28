@@ -76,6 +76,14 @@ export interface LightroomState {
   label: ColorLabel;
 }
 
+/** A step of the plug-in's loop that failed in Lightroom, as it reported it. */
+export interface LightroomError {
+  /** Which step: send to Lightroom, read back from Lightroom, catalog export. */
+  where: string;
+  message: string;
+  at: number;
+}
+
 /** What the plug-in should follow: the folder open in the app. */
 export interface SyncWatch {
   folder: string;

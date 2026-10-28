@@ -17,6 +17,8 @@ import type { AppInfo } from './contract.js';
 import { HealthScreen } from './health/HealthScreen.js';
 import { useHashRoute } from './hooks/useHashRoute.js';
 import { useHeartbeat } from './hooks/useHeartbeat.js';
+import { useLightroomError } from './hooks/useLightroomError.js';
+import { LightroomErrorAlert } from './LightroomErrorAlert.js';
 import { useSettings } from './hooks/useSettings.js';
 import { LibraryScreen } from './library/LibraryScreen.js';
 import { TrainingScreen } from './training/TrainingScreen.js';
@@ -46,6 +48,7 @@ export function App() {
 function Shell({ start }: { start: StartState }) {
   const route = useHashRoute(ROUTES);
   const connected = useHeartbeat();
+  const lightroom = useLightroomError();
   const prefs = useSettings(start.settings);
   const [theme, setTheme] = useTheme();
   const [info, setInfo] = useState<AppInfo>();
@@ -111,6 +114,7 @@ function Shell({ start }: { start: StartState }) {
               It stops when Lightroom closes or the app is closed from the plug-in. Open it again from Library › Plug-in Extras › Open shoots.
             </Alert>
           )}
+          {connected && lightroom.error && <LightroomErrorAlert error={lightroom.error} onDismiss={lightroom.dismiss} />}
           {route === 'library' ? (
             <LibraryScreen
               windows={navigator.platform.startsWith('Win')}

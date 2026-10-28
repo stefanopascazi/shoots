@@ -4,7 +4,8 @@ local LrTasks = import 'LrTasks'
 return {
   LrShutdownFunction = function(doneFunction)
     LrTasks.startAsyncTask(function()
-      pcall(function() require('AppLauncher').close() end)
+      -- LrTasks.pcall: close() posts over HTTP, which yields.
+      LrTasks.pcall(function() require('AppLauncher').close() end)
       doneFunction()
     end)
   end,
