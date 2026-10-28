@@ -1,5 +1,5 @@
 /**
- * shoots rate <path>
+ * shoots rate <path> | --files-from <list>
  *
  * End-to-end wiring of the @shoots/inference QualityModel seam: score each
  * image (focus + aesthetic + keyword suggestions via the deterministic stub
@@ -15,7 +15,7 @@ import { writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { Command } from 'commander';
-import { defaultModelConcurrency, JobQueue, scanFiles } from '@shoots/core';
+import { defaultModelConcurrency, JobQueue } from '@shoots/core';
 import { writeXmpSidecar } from '@shoots/imaging';
 import {
   createQualityModel,
@@ -42,11 +42,13 @@ import { DerivedCache } from '../cache/store.js';
 import { assessCached } from '../cache/quality.js';
 import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 import { TriageStore } from '../triage/store.js';
+import { resolveTargets, skippedAsError } from '../targets.js';
 import { VERSION } from '../version.js';
 
 interface RateOptions {
   model: string;
   profile: string;
+  filesFrom?: string;
   writeXmp?: boolean;
   mark?: boolean;
   concurrency: string;
@@ -71,7 +73,8 @@ export function registerRateCommand(program: Command): void {
   program
     .command('rate')
     .description('Score images (focus/aesthetic/keywords) via the ONNX inference model and write star ratings to sidecars')
-    .argument('<path>', 'folder (or single file) to rate')
+    .argument('[path]', 'folder (or single file) to rate')
+    .option('--files-from <list>', 'rate exactly the files listed in this text file, one path per line, instead of scanning <path>')
     .option('--model <kind>', 'inference backend (default: onnx)', 'onnx')
     .option('--profile <name>', `rating profile: ${PROFILE_NAMES.join(' | ')} | a learned profile in ~/.shoots/profiles`, DEFAULT_PROFILE_NAME)
     .option('--write-xmp', 'write XMP sidecars via exiftool instead of JSON sidecars')
@@ -84,7 +87,7 @@ export function registerRateCommand(program: Command): void {
     .action(runRate);
 }
 
-async function runRate(targetPath: string, options: RateOptions): Promise<void> {
+async function runRate(targetPath: string | undefined, options: RateOptions): Promise<void> {
   const io = makeIo(options);
 
   const AVAILABLE_MODELS: ModelKind[] = ['onnx'];
@@ -109,14 +112,36 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
     return;
   }
 
+  // A list has no folder for the triage store to live beside.
+  if (options.filesFrom && options.mark) {
+    logError('--mark needs a <path>: the marks are stored per folder, and --files-from names none');
+    process.exitCode = 2;
+    return;
+  }
+
   const scanPhase = startPhase(io, 'Scanning');
-  const files = await scanFiles(targetPath, {
-    onProgress: (found) => scanPhase.update(`${found} files`),
-  });
+  const resolved = await resolveTargets(targetPath, options.filesFrom, (found) => scanPhase.update(`${found} files`));
+  if (!resolved.ok) {
+    scanPhase.done('');
+    logError(resolved.error);
+    process.exitCode = 2;
+    return;
+  }
+  const { files, skipped } = resolved.targets;
   scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
-    if (io.json) printJson({ command: 'rate', model: model.name, results: [], summary: { total: 0, rated: 0, failed: 0 } });
+    if (io.json) {
+      printJson({
+        command: 'rate',
+        model: model.name,
+        results: [],
+        errors: skipped.map(skippedAsError),
+        summary: { total: skipped.length, rated: 0, failed: skipped.length },
+      });
+    }
+    for (const s of skipped) logError(`${s.path}: ${skippedAsError(s).error}`);
+    if (skipped.length > 0) markFailure();
     return;
   }
   logVerbose(io, `Rating ${files.length} files with model ${model.name}`);
@@ -207,16 +232,19 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
   await model.dispose();
 
   const rated = outcomes.filter((o) => o.ok).map((o) => o.value!);
-  const errors = outcomes
-    .filter((o) => !o.ok)
-    .map((o) => ({ file: o.item.path, error: o.error?.message ?? 'unknown error' }));
+  const errors = [
+    ...skipped.map(skippedAsError),
+    ...outcomes
+      .filter((o) => !o.ok)
+      .map((o) => ({ file: o.item.path, error: o.error?.message ?? 'unknown error' })),
+  ];
 
   // ---- record the scores as triage marks (--mark) ----
   // One store write for the whole batch, after the queue: the marks are a single
   // file, and a save per image would be both slower and a torn-file hazard.
   let marked = 0;
   if (options.mark && !options.dryRun && rated.length > 0) {
-    const store = await TriageStore.open(targetPath);
+    const store = await TriageStore.open(targetPath!);
     const tool = `rate@${VERSION}`;
     // Size and mtime came back with the scan; re-stat'ing every photograph here
     // buys nothing and costs a round trip each on a network catalog.
@@ -244,7 +272,7 @@ async function runRate(targetPath: string, options: RateOptions): Promise<void> 
       results: rated,
       errors,
       ...(options.mark ? { marked: { count: options.dryRun ? rated.length : marked, planned: !!options.dryRun } } : {}),
-      summary: { total: files.length, rated: rated.length, failed: errors.length },
+      summary: { total: files.length + skipped.length, rated: rated.length, failed: errors.length },
     });
   } else {
     for (const r of rated) {

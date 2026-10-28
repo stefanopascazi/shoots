@@ -16,12 +16,13 @@ focus map. It is fast, deterministic and needs no model.
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `<path>` | yes | Folder (recursive) or a single file to analyze |
+| `<path>` | unless `--files-from` | Folder (recursive) or a single file to analyze |
 
 ## Options
 
 | Option | Default | Description |
 | --- | --- | --- |
+| `--files-from <list>` | — | Analyze exactly the files listed in a text file, one path per line (`#` comments allowed). Missing or non-image paths are reported as errors. Not combinable with `--dest` or `--mark` |
 | `--threshold <n>` | `100` | Global Laplacian variance below this = blurry |
 | `--focus-threshold <n>` | `250` | Keep a globally-soft frame if its sharpest region scores above this |
 | `--no-focus-rescue` | rescue on | Disable the shallow-DoF rescue; classify purely on the global score |

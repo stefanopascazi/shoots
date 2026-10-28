@@ -16,12 +16,13 @@ Backed by a local ONNX **CLIP** model (`vit-b32-int8`) running on
 
 | Argument | Required | Description |
 | --- | --- | --- |
-| `<path>` | yes | Folder (recursive) or single file to rate |
+| `<path>` | unless `--files-from` | Folder (recursive) or single file to rate |
 
 ## Options
 
 | Option | Default | Description |
 | --- | --- | --- |
+| `--files-from <list>` | — | Rate exactly the files listed in a text file, one path per line (`#` comments allowed). Missing or non-image paths are reported as errors. Not combinable with `--mark` |
 | `--model <kind>` | `onnx` | Inference backend. Currently only `onnx`. |
 | `--profile <name>` | `street` | Rating profile: `street`, `generic`, `portrait`, `wildlife`, `wedding`, or a learned profile in `~/.shoots/profiles` |
 | `--mark` | off | Record stars and keywords as a triage mark instead of writing a sidecar |

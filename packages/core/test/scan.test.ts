@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { classifyExtension, scanFiles, PROCESSED_EXTENSIONS, RAW_EXTENSIONS } from '../src/fs/scan.js';
+import { classifyExtension, parsePathList, scanFileList, scanFiles, PROCESSED_EXTENSIONS, RAW_EXTENSIONS } from '../src/fs/scan.js';
 
 let root: string;
 
@@ -178,5 +178,43 @@ describe('scanFiles under concurrency', () => {
     const counts: number[] = [];
     const found = await scanFiles(deep, { onProgress: (n) => counts.push(n) });
     expect(counts).toEqual(Array.from({ length: found.length }, (_, i) => i + 1));
+  });
+});
+
+describe('parsePathList', () => {
+  test('one path per line, ignoring blanks, comments, CRLF and a BOM', () => {
+    expect(parsePathList('﻿/a.jpg\r\n\r\n# note\n  /b c.cr3  \n')).toEqual(['/a.jpg', '/b c.cr3']);
+  });
+
+  test('an empty list is empty', () => {
+    expect(parsePathList('')).toEqual([]);
+  });
+});
+
+describe('scanFileList', () => {
+  test('keeps listed images in order and collapses duplicates', async () => {
+    const b = path.join(root, 'b.jpg');
+    const a = path.join(root, 'a.CR3');
+    const { files, skipped } = await scanFileList([b, a, b]);
+    expect(files.map((f) => f.path)).toEqual([b, a]);
+    expect(files[1]!.kind).toBe('raw');
+    expect(skipped).toEqual([]);
+  });
+
+  test('reports missing and unsupported paths instead of throwing', async () => {
+    const gone = path.join(root, 'gone.jpg');
+    const text = path.join(root, 'notes.txt');
+    const { files, skipped } = await scanFileList([gone, text]);
+    expect(files).toEqual([]);
+    expect(skipped).toEqual([
+      { path: gone, reason: 'missing' },
+      { path: text, reason: 'unsupported' },
+    ]);
+  });
+
+  test('a directory is not a file', async () => {
+    await mkdir(path.join(root, 'folder.jpg'), { recursive: true });
+    const { skipped } = await scanFileList([path.join(root, 'folder.jpg')]);
+    expect(skipped[0]!.reason).toBe('missing');
   });
 });

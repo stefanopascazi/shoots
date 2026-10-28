@@ -205,8 +205,10 @@ describe('validation', () => {
         HEADER +
           `steps:
   - run: rate
+    args: /photos
     with:
       profil: wedding
+  - run: exif
   - run: cul
     args: /photos
   - run: develop
@@ -215,7 +217,7 @@ describe('validation', () => {
       );
       expect(run.code).toBe(2);
       expect(run.err).toContain('4 problem(s)');
-      expect(run.err).toContain("needs 1 positional argument(s) <path>"); // rate, no args
+      expect(run.err).toContain("needs 1 positional argument(s) <path>"); // exif, no args
       expect(run.err).toContain("has no option '--profil'");
       expect(run.err).toContain("no such shoots command 'cul'");
     },

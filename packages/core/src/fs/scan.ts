@@ -170,6 +170,55 @@ async function walkDirectories(
   });
 }
 
+/** Parse a path list: one path per line; blank lines and `#` comments are ignored. */
+export function parsePathList(text: string): string[] {
+  return text
+    .replace(/^﻿/, '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('#'));
+}
+
+/** A listed path that could not be turned into a {@link ScannedFile}. */
+export interface SkippedFile {
+  path: string;
+  reason: 'missing' | 'unsupported';
+}
+
+/**
+ * Resolve an explicit list of files — what a host editor's selection hands over —
+ * instead of walking a folder. Duplicates collapse, order is preserved, and a
+ * path that is gone or not an image is reported rather than thrown over: one
+ * offline frame in a selection must not sink the rest.
+ */
+export async function scanFileList(
+  paths: readonly string[],
+  options: Pick<ScanOptions, 'concurrency'> = {},
+): Promise<{ files: ScannedFile[]; skipped: SkippedFile[] }> {
+  const limit = Math.max(1, options.concurrency ?? DEFAULT_SCAN_CONCURRENCY);
+  const unique = [...new Set(paths.map((p) => path.resolve(p)))];
+  const entries = await mapLimit(unique, limit, async (resolved): Promise<ScannedFile | SkippedFile> => {
+    const name = path.basename(resolved);
+    const ext = extensionOf(name);
+    const kind = classifyExtension(ext);
+    if (!kind) return { path: resolved, reason: 'unsupported' };
+    try {
+      const s = await stat(resolved);
+      if (!s.isFile()) return { path: resolved, reason: 'missing' };
+      return { path: resolved, name, ext, kind, size: s.size, mtime: s.mtime };
+    } catch {
+      return { path: resolved, reason: 'missing' };
+    }
+  });
+  const files: ScannedFile[] = [];
+  const skipped: SkippedFile[] = [];
+  for (const e of entries) {
+    if ('reason' in e) skipped.push(e);
+    else files.push(e);
+  }
+  return { files, skipped };
+}
+
 /**
  * Recursively discover RAW / processed image files under a root path.
  * The root may also be a single file. Hidden entries (dot-prefixed) are skipped.

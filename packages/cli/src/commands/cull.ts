@@ -1,5 +1,5 @@
 /**
- * shoots cull <path>
+ * shoots cull <path> | --files-from <list>
  *
  * Classic Laplacian-variance blur detection over a folder of RAW/JPG/PNG
  * files (RAW files are analyzed via their embedded JPEG preview). Produces a
@@ -10,7 +10,7 @@ import { statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Command } from 'commander';
-import { defaultImageConcurrency, JobQueue, scanFiles } from '@shoots/core';
+import { defaultImageConcurrency, JobQueue } from '@shoots/core';
 import {
   DEFAULT_BLUR_THRESHOLD,
   DEFAULT_FOCUS_THRESHOLD,
@@ -33,6 +33,7 @@ import { startPhase, startProgress } from '../progress.js';
 import { relocateAll } from '../relocate.js';
 import { ensureExiftoolReady } from '../tools.js';
 import { TriageStore } from '../triage/store.js';
+import { resolveTargets, skippedAsError } from '../targets.js';
 import { isSemanticLabel, SEMANTIC_LABELS, type SemanticLabel } from '../triage/schema.js';
 import { VERSION } from '../version.js';
 
@@ -40,6 +41,7 @@ interface CullOptions {
   threshold: string;
   focusThreshold: string;
   focusRescue?: boolean;
+  filesFrom?: string;
   dest?: string;
   copy?: boolean;
   mark?: boolean;
@@ -59,7 +61,8 @@ export function registerCullCommand(program: Command): void {
   program
     .command('cull')
     .description('Detect blurry shots via Laplacian variance, focus-aware to spare shallow-DoF keepers; keepers stay put, rejects go to --dest mirroring the source structure')
-    .argument('<path>', 'folder (or single file) to analyze')
+    .argument('[path]', 'folder (or single file) to analyze')
+    .option('--files-from <list>', 'analyze exactly the files listed in this text file, one path per line, instead of scanning <path>')
     .option('--threshold <n>', 'global Laplacian variance below this = blurry', String(DEFAULT_BLUR_THRESHOLD))
     .option('--focus-threshold <n>', 'keep a globally-soft frame if its sharpest region scores above this (rescues shallow depth of field)', String(DEFAULT_FOCUS_THRESHOLD))
     .option('--no-focus-rescue', 'disable the shallow-DoF rescue and classify purely on the global score')
@@ -84,7 +87,7 @@ interface CullError {
   error: string;
 }
 
-async function runCull(targetPath: string, options: CullOptions): Promise<void> {
+async function runCull(targetPath: string | undefined, options: CullOptions): Promise<void> {
   const io = makeIo(options);
   // --review is an interactive mode that only the shell can host (it owns the
   // Ink terminal). Reaching runCull with it set means a plain batch invocation.
@@ -97,6 +100,12 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   // act on it) and do compose, but `--copy` only means something to a relocation.
   if (options.copy && !options.dest) {
     logError('--copy has no meaning without --dest (it chooses copy over move for the relocated rejects)');
+    process.exitCode = 2;
+    return;
+  }
+  // Both mirror or store relative to a scanned folder, which a list does not have.
+  if (options.filesFrom && (options.dest || options.mark)) {
+    logError(`${options.dest ? '--dest' : '--mark'} needs a <path>: --files-from names files, not the folder they are relative to`);
     process.exitCode = 2;
     return;
   }
@@ -149,20 +158,39 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   // --dest sits inside the target a second run would re-analyze relocated files.
   const destRoot = options.dest ? path.resolve(options.dest) : undefined;
   // Root the mirror at the scanned folder; a single-file target mirrors by basename.
-  const scanRoot = statSync(targetPath).isDirectory()
-    ? path.resolve(targetPath)
-    : path.dirname(path.resolve(targetPath));
   const scanPhase = startPhase(io, 'Scanning');
-  const scanned = await scanFiles(targetPath, {
-    onProgress: (found) => scanPhase.update(`${found} files`),
-  });
+  const resolved = await resolveTargets(targetPath, options.filesFrom, (found) => scanPhase.update(`${found} files`));
+  if (!resolved.ok) {
+    scanPhase.done('');
+    logError(resolved.error);
+    process.exitCode = 2;
+    return;
+  }
+  const { files: scanned, skipped } = resolved.targets;
+  // Only --mark and --dest read it, and both are refused with --files-from above.
+  const scanRoot = targetPath
+    ? statSync(targetPath).isDirectory()
+      ? path.resolve(targetPath)
+      : path.dirname(path.resolve(targetPath))
+    : '';
   scanPhase.done(`${scanned.length} files`);
   const files = destRoot
     ? scanned.filter((f) => f.path !== destRoot && !f.path.startsWith(destRoot + path.sep))
     : scanned;
   if (files.length === 0) {
     printHuman(io, 'No image files found.');
-    if (io.json) printJson({ command: 'cull', threshold, results: [], errors: [], summary: { total: 0, sharp: 0, blurry: 0, failed: 0 } });
+    const skippedErrors = skipped.map(skippedAsError);
+    if (io.json) {
+      printJson({
+        command: 'cull',
+        threshold,
+        results: [],
+        errors: skippedErrors,
+        summary: { total: skipped.length, sharp: 0, blurry: 0, failed: skipped.length },
+      });
+    }
+    for (const e of skippedErrors) logError(`${e.file}: ${e.error}`);
+    if (skipped.length > 0) markFailure();
     return;
   }
   logVerbose(
@@ -200,7 +228,7 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
   );
 
   const results: BlurAnalysis[] = [];
-  const errors: CullError[] = [];
+  const errors: CullError[] = skipped.map(skippedAsError);
   for (const o of outcomes) {
     if (o.ok && o.value) results.push(o.value);
     else errors.push({ file: o.item.path, error: o.error?.message ?? 'unknown error' });
@@ -303,7 +331,7 @@ async function runCull(targetPath: string, options: CullOptions): Promise<void> 
           planned: !!options.dryRun,
         }
       : undefined,
-    summary: { total: files.length, sharp: sharp.length, blurry: blurry.length, rescued: rescued.length, failed: errors.length },
+    summary: { total: files.length + skipped.length, sharp: sharp.length, blurry: blurry.length, rescued: rescued.length, failed: errors.length },
   };
 
   const reportText =
