@@ -8,5 +8,7 @@
   // extra times; this is that work, once. The per-package configs stay for
   // editors and for `npm run typecheck -w @shoots/<pkg>` while working on one.
   "extends": "./tsconfig.base.json",
-  "include": ["packages/*/src"]
+  "include": ["packages/*/src"],
+  // Browser code with DOM types and Preact JSX: checked as its own program.
+  "exclude": ["packages/ui/src"]
 }

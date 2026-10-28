@@ -51,7 +51,8 @@ In order:
   picks and labels written straight into the catalog, no sidecars.
 - **A local app the plugin opens.** Training, calibration and review in the
   browser, served on your machine: opening it from Lightroom starts the server,
-  closing it stops it.
+  closing it stops it. Built on `@shoots/ui`, a shared design system (tokens,
+  dark/light themes, Preact components) meant for every shoots web surface.
 - **Train from the catalog.** The plugin exports your develop settings as JSON;
   training reads that instead of XMP sidecars. XMP support is removed once this
   is in place.

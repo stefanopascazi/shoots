@@ -56,7 +56,8 @@ panel), and the installer launched by the plugin (needs a release carrying
 3. **L1 leftovers**: write `rate` keywords into the catalog; decide whether cull
    should also flag keepers; cancel support (kill the child process).
 4. **L2 catalog export** → training reads JSON, not sidecars.
-5. **Track W** — local web app, started/stopped from the plugin.
+5. **Track W** — local web app, started/stopped from the plugin. Design system
+   `packages/ui` done (showcase: `bun packages/ui/showcase/build.ts`); app next.
 6. **L3** apply predictions via `applyDevelopSettings`.
 7. Remove the Ink shell, then XMP (only after 4 and 6).
 8. Beta data program (Track C) — legal pack first.

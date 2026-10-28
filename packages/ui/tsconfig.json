@@ -1,0 +1,14 @@
+{
+  // Browser code: DOM types and Preact's JSX. Checked as its own program
+  // (see the root `typecheck` script) so DOM globals never leak into the
+  // Node packages.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "types": []
+  },
+  "include": ["src", "showcase"],
+  "exclude": ["showcase/build.ts"]
+}

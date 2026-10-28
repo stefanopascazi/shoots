@@ -1,0 +1,92 @@
+/* Spinner */
+.sh-spinner {
+  display: inline-block;
+  flex: none;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  opacity: 0.85;
+  animation: sh-spin 0.7s linear infinite;
+}
+@keyframes sh-spin { to { transform: rotate(360deg); } }
+
+/* Badge */
+.sh-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-full);
+  background: var(--sh-surface-3);
+  color: var(--sh-fg-muted);
+  font-size: var(--sh-text-xs);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+.sh-badge__dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.sh-badge--accent { background: var(--sh-accent-soft); border-color: transparent; color: var(--sh-accent-text); }
+.sh-badge--success { background: var(--sh-success-soft); border-color: transparent; color: var(--sh-success); }
+.sh-badge--warning { background: var(--sh-warning-soft); border-color: transparent; color: var(--sh-warning); }
+.sh-badge--danger { background: var(--sh-danger-soft); border-color: transparent; color: var(--sh-danger); }
+.sh-badge--info { background: var(--sh-info-soft); border-color: transparent; color: var(--sh-info); }
+
+/* Progress */
+.sh-progress { display: grid; gap: 6px; }
+.sh-progress__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sh-space-3);
+  font-size: var(--sh-text-sm);
+  color: var(--sh-fg-muted);
+}
+.sh-progress__meta strong { color: var(--sh-fg); font-weight: 500; }
+.sh-progress__track {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--sh-radius-full);
+  background: var(--sh-surface-3);
+}
+.sh-progress__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--sh-accent);
+  transition: width var(--sh-normal) var(--sh-ease);
+}
+.sh-progress--indeterminate .sh-progress__bar {
+  position: absolute;
+  width: 35%;
+  animation: sh-indeterminate 1.3s var(--sh-ease) infinite;
+}
+@keyframes sh-indeterminate {
+  from { left: -35%; }
+  to { left: 100%; }
+}
+
+/* Alert */
+.sh-alert {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--sh-space-3);
+  padding: var(--sh-space-3) 14px;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-md);
+  background: var(--sh-surface-2);
+  font-size: var(--sh-text-sm);
+}
+.sh-alert > .sh-icon { margin-top: 1px; color: var(--sh-fg-muted); }
+.sh-alert__title { font-weight: 600; color: var(--sh-fg); }
+.sh-alert__body { color: var(--sh-fg-muted); }
+.sh-alert__title + .sh-alert__body { margin-top: 2px; }
+.sh-alert--info { background: var(--sh-info-soft); border-color: transparent; }
+.sh-alert--info > .sh-icon { color: var(--sh-info); }
+.sh-alert--success { background: var(--sh-success-soft); border-color: transparent; }
+.sh-alert--success > .sh-icon { color: var(--sh-success); }
+.sh-alert--warning { background: var(--sh-warning-soft); border-color: transparent; }
+.sh-alert--warning > .sh-icon { color: var(--sh-warning); }
+.sh-alert--danger { background: var(--sh-danger-soft); border-color: transparent; }
+.sh-alert--danger > .sh-icon { color: var(--sh-danger); }

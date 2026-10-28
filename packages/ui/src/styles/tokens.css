@@ -1,0 +1,153 @@
+/*
+ * shoots design tokens.
+ *
+ * Dark is the default: photographs are judged on a dark surround, which is what
+ * Lightroom does too. Light applies when the OS asks for it, and either theme can
+ * be forced with data-theme="dark" | "light" on <html>.
+ *
+ * Neutrals are deliberately near-grey (hue 215, chroma kept tiny) so the UI never
+ * tints the photographs next to it. The amber accent comes from the logo.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, back to front. */
+  --sh-bg: #0e1013;
+  --sh-surface: #15181c;
+  --sh-surface-2: #1b1f24;
+  --sh-surface-3: #23282e;
+  --sh-overlay: rgb(5 6 8 / 0.72);
+
+  --sh-border: #2a3037;
+  --sh-border-strong: #3a414a;
+
+  --sh-fg: #e9ebee;
+  --sh-fg-muted: #a3aab4;
+  --sh-fg-subtle: #747c87;
+
+  /* Accent: a fill with dark text on it, and a separate tone for accent text. */
+  --sh-accent: #f0b429;
+  --sh-accent-hover: #f6c453;
+  --sh-accent-fg: #1c1503;
+  --sh-accent-text: #f5c451;
+  --sh-accent-soft: rgb(240 180 41 / 0.14);
+  --sh-accent-ring: rgb(240 180 41 / 0.45);
+
+  --sh-success: #3fb27f;
+  --sh-success-soft: rgb(63 178 127 / 0.14);
+  --sh-warning: #e8a33d;
+  --sh-warning-soft: rgb(232 163 61 / 0.14);
+  --sh-danger: #f06a6a;
+  --sh-danger-soft: rgb(240 106 106 / 0.14);
+  --sh-info: #6aa7f0;
+  --sh-info-soft: rgb(106 167 240 / 0.14);
+
+  --sh-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --sh-shadow-md: 0 4px 16px rgb(0 0 0 / 0.35);
+  --sh-shadow-lg: 0 12px 40px rgb(0 0 0 / 0.5);
+
+  /* Typography. System stacks: nothing to license, nothing to download. */
+  --sh-font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --sh-font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  --sh-text-xs: 11px;
+  --sh-text-sm: 12.5px;
+  --sh-text-md: 14px;
+  --sh-text-lg: 16px;
+  --sh-text-xl: 20px;
+  --sh-text-2xl: 26px;
+  --sh-text-3xl: 34px;
+  --sh-leading: 1.5;
+  --sh-leading-tight: 1.2;
+
+  /* 4px grid. */
+  --sh-space-1: 4px;
+  --sh-space-2: 8px;
+  --sh-space-3: 12px;
+  --sh-space-4: 16px;
+  --sh-space-5: 20px;
+  --sh-space-6: 24px;
+  --sh-space-8: 32px;
+  --sh-space-10: 40px;
+  --sh-space-12: 48px;
+
+  --sh-radius-sm: 4px;
+  --sh-radius-md: 7px;
+  --sh-radius-lg: 10px;
+  --sh-radius-xl: 14px;
+  --sh-radius-full: 999px;
+
+  --sh-control-sm: 28px;
+  --sh-control-md: 34px;
+  --sh-control-lg: 42px;
+
+  --sh-ease: cubic-bezier(0.2, 0, 0, 1);
+  --sh-fast: 120ms;
+  --sh-normal: 200ms;
+
+  --sh-sidebar-width: 232px;
+  --sh-topbar-height: 52px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --sh-bg: #f4f5f7;
+  --sh-surface: #ffffff;
+  --sh-surface-2: #f8f9fa;
+  --sh-surface-3: #eef0f3;
+  --sh-overlay: rgb(15 18 22 / 0.45);
+  --sh-border: #e1e4e8;
+  --sh-border-strong: #c9ced5;
+  --sh-fg: #14171b;
+  --sh-fg-muted: #555d68;
+  --sh-fg-subtle: #6d7581;
+  --sh-accent: #f0b429;
+  --sh-accent-hover: #e3a514;
+  --sh-accent-fg: #1c1503;
+  --sh-accent-text: #8a5a00;
+  --sh-accent-soft: rgb(240 180 41 / 0.16);
+  --sh-accent-ring: rgb(214 152 10 / 0.5);
+  --sh-success: #1c7f53;
+  --sh-success-soft: rgb(28 127 83 / 0.1);
+  --sh-warning: #9a5b00;
+  --sh-warning-soft: rgb(196 120 0 / 0.12);
+  --sh-danger: #c42b2b;
+  --sh-danger-soft: rgb(196 43 43 / 0.09);
+  --sh-info: #2563c4;
+  --sh-info-soft: rgb(37 99 196 / 0.09);
+  --sh-shadow-sm: 0 1px 2px rgb(16 24 40 / 0.06);
+  --sh-shadow-md: 0 4px 14px rgb(16 24 40 / 0.08);
+  --sh-shadow-lg: 0 12px 36px rgb(16 24 40 / 0.14);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --sh-bg: #f4f5f7;
+    --sh-surface: #ffffff;
+    --sh-surface-2: #f8f9fa;
+    --sh-surface-3: #eef0f3;
+    --sh-overlay: rgb(15 18 22 / 0.45);
+    --sh-border: #e1e4e8;
+    --sh-border-strong: #c9ced5;
+    --sh-fg: #14171b;
+    --sh-fg-muted: #555d68;
+    --sh-fg-subtle: #6d7581;
+    --sh-accent: #f0b429;
+    --sh-accent-hover: #e3a514;
+    --sh-accent-fg: #1c1503;
+    --sh-accent-text: #8a5a00;
+    --sh-accent-soft: rgb(240 180 41 / 0.16);
+    --sh-accent-ring: rgb(214 152 10 / 0.5);
+    --sh-success: #1c7f53;
+    --sh-success-soft: rgb(28 127 83 / 0.1);
+    --sh-warning: #9a5b00;
+    --sh-warning-soft: rgb(196 120 0 / 0.12);
+    --sh-danger: #c42b2b;
+    --sh-danger-soft: rgb(196 43 43 / 0.09);
+    --sh-info: #2563c4;
+    --sh-info-soft: rgb(37 99 196 / 0.09);
+    --sh-shadow-sm: 0 1px 2px rgb(16 24 40 / 0.06);
+    --sh-shadow-md: 0 4px 14px rgb(16 24 40 / 0.08);
+    --sh-shadow-lg: 0 12px 36px rgb(16 24 40 / 0.14);
+  }
+}

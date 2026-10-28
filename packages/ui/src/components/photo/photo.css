@@ -1,0 +1,68 @@
+/* Photo tile: thumbnail with selection, rating and flag. */
+.sh-photo {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: var(--sh-ratio, 3 / 2);
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--sh-radius-md);
+  background: var(--sh-surface-3);
+  color: inherit;
+  cursor: pointer;
+}
+.sh-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform var(--sh-normal) var(--sh-ease), opacity var(--sh-normal) var(--sh-ease);
+}
+.sh-photo:hover img { transform: scale(1.025); }
+.sh-photo[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--sh-accent); }
+.sh-photo--rejected img { opacity: 0.32; filter: grayscale(0.7); }
+.sh-photo__placeholder { display: grid; place-items: center; width: 100%; height: 100%; color: var(--sh-fg-subtle); }
+.sh-photo__overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 20px 8px 6px;
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.68));
+  color: #fff;
+  font-size: var(--sh-text-xs);
+  text-align: left;
+}
+.sh-photo__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.88; }
+.sh-photo__flag { position: absolute; top: 6px; left: 6px; }
+.sh-photo__overlay .sh-stars { color: #ffd479; }
+
+/* Star rating */
+.sh-stars { display: inline-flex; gap: 1px; color: var(--sh-accent); line-height: 0; }
+.sh-stars__star { padding: 0; border: 0; background: none; color: inherit; line-height: 0; }
+.sh-stars__star--off { opacity: 0.3; }
+button.sh-stars__star { cursor: pointer; padding: 2px; border-radius: var(--sh-radius-sm); }
+button.sh-stars__star:hover { opacity: 1; }
+
+/* Film strip: horizontal row of tiles. */
+.sh-filmstrip {
+  display: flex;
+  gap: var(--sh-space-2);
+  padding: var(--sh-space-2);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.sh-filmstrip > .sh-photo { flex: 0 0 auto; width: var(--sh-thumb, 104px); }
+
+/* Photo grid: responsive contact sheet. */
+.sh-photo-grid {
+  display: grid;
+  gap: var(--sh-space-3);
+  grid-template-columns: repeat(auto-fill, minmax(var(--sh-thumb, 180px), 1fr));
+}
+
+/* Flags sit on the picture, not on a surface: solid dark chip, fixed tones. */
+.sh-photo__flag .sh-badge { border-color: transparent; background: rgb(0 0 0 / 0.62); backdrop-filter: blur(4px); }
+.sh-photo__flag .sh-badge--success { color: #7fe0b2; }
+.sh-photo__flag .sh-badge--danger { color: #ffa3a3; }

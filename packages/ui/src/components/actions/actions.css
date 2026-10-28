@@ -1,0 +1,53 @@
+.sh-icon { flex: none; }
+
+.sh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sh-space-2);
+  height: var(--sh-control-md);
+  padding: 0 var(--sh-space-4);
+  border: 1px solid var(--sh-border-strong);
+  border-radius: var(--sh-radius-md);
+  background: var(--sh-surface-2);
+  color: var(--sh-fg);
+  font-size: var(--sh-text-md);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background var(--sh-fast) var(--sh-ease),
+    border-color var(--sh-fast) var(--sh-ease),
+    color var(--sh-fast) var(--sh-ease),
+    box-shadow var(--sh-fast) var(--sh-ease);
+}
+.sh-btn:hover { background: var(--sh-surface-3); text-decoration: none; }
+.sh-btn:active { transform: translateY(0.5px); }
+.sh-btn:disabled,
+.sh-btn[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; transform: none; }
+.sh-btn[aria-busy="true"] { cursor: progress; }
+
+.sh-btn--primary {
+  background: var(--sh-accent);
+  border-color: var(--sh-accent);
+  color: var(--sh-accent-fg);
+  font-weight: 600;
+}
+.sh-btn--primary:hover { background: var(--sh-accent-hover); border-color: var(--sh-accent-hover); }
+
+.sh-btn--ghost { background: transparent; border-color: transparent; color: var(--sh-fg-muted); }
+.sh-btn--ghost:hover { background: var(--sh-surface-3); color: var(--sh-fg); }
+
+.sh-btn--danger { background: var(--sh-danger-soft); border-color: transparent; color: var(--sh-danger); }
+.sh-btn--danger:hover { background: var(--sh-danger); color: var(--sh-bg); }
+
+.sh-btn--sm { height: var(--sh-control-sm); padding: 0 10px; gap: 6px; font-size: var(--sh-text-sm); border-radius: var(--sh-radius-sm); }
+.sh-btn--lg { height: var(--sh-control-lg); padding: 0 var(--sh-space-5); font-size: var(--sh-text-lg); }
+.sh-btn--block { width: 100%; }
+
+.sh-btn--icon { width: var(--sh-control-md); padding: 0; }
+.sh-btn--icon.sh-btn--sm { width: var(--sh-control-sm); }
+.sh-btn--icon.sh-btn--lg { width: var(--sh-control-lg); }

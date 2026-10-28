@@ -1,0 +1,180 @@
+/* Field: label + control + hint/error */
+.sh-field { display: grid; gap: 6px; }
+.sh-field__label { font-size: var(--sh-text-sm); font-weight: 500; color: var(--sh-fg); }
+.sh-field__hint { font-size: var(--sh-text-xs); color: var(--sh-fg-subtle); }
+.sh-field__error { font-size: var(--sh-text-xs); color: var(--sh-danger); }
+
+/* Text controls */
+.sh-input,
+.sh-select,
+.sh-textarea {
+  width: 100%;
+  height: var(--sh-control-md);
+  padding: 0 var(--sh-space-3);
+  border: 1px solid var(--sh-border-strong);
+  border-radius: var(--sh-radius-md);
+  background: var(--sh-surface-2);
+  color: var(--sh-fg);
+  font-size: var(--sh-text-md);
+  transition: border-color var(--sh-fast) var(--sh-ease), box-shadow var(--sh-fast) var(--sh-ease);
+}
+.sh-input::placeholder,
+.sh-textarea::placeholder { color: var(--sh-fg-subtle); }
+.sh-input:hover,
+.sh-select:hover,
+.sh-textarea:hover { border-color: var(--sh-fg-subtle); }
+.sh-input:focus,
+.sh-select:focus,
+.sh-textarea:focus {
+  outline: none;
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 3px var(--sh-accent-soft);
+}
+.sh-input[aria-invalid="true"],
+.sh-select[aria-invalid="true"],
+.sh-textarea[aria-invalid="true"] { border-color: var(--sh-danger); }
+.sh-input:disabled,
+.sh-select:disabled,
+.sh-textarea:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.sh-textarea { height: auto; min-height: 84px; padding: var(--sh-space-2) var(--sh-space-3); resize: vertical; }
+
+.sh-select {
+  appearance: none;
+  padding-right: 32px;
+  cursor: pointer;
+  /* Neutral chevron that reads on both themes. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238a919b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9.5l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+/* Slider: label, live value in the parameter's own units, track, ends */
+.sh-slider { display: grid; gap: var(--sh-space-2); }
+.sh-slider__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sh-space-3); }
+.sh-slider__label { font-size: var(--sh-text-sm); font-weight: 500; }
+.sh-slider__value {
+  font-family: var(--sh-font-mono);
+  font-size: var(--sh-text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.sh-slider__ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--sh-text-xs);
+  color: var(--sh-fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.sh-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.sh-range:focus { outline: none; }
+.sh-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--sh-radius-full);
+  background: linear-gradient(to right, var(--sh-accent) var(--sh-fill, 0%), var(--sh-surface-3) var(--sh-fill, 0%));
+}
+.sh-range::-moz-range-track { height: 4px; border-radius: var(--sh-radius-full); background: var(--sh-surface-3); }
+.sh-range::-moz-range-progress { height: 4px; border-radius: var(--sh-radius-full); background: var(--sh-accent); }
+.sh-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sh-fg);
+  box-shadow: var(--sh-shadow-sm);
+  transition: transform var(--sh-fast) var(--sh-ease), box-shadow var(--sh-fast) var(--sh-ease);
+}
+.sh-range::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sh-fg);
+  box-shadow: var(--sh-shadow-sm);
+}
+.sh-range:hover::-webkit-slider-thumb { transform: scale(1.12); }
+.sh-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--sh-accent-ring); }
+.sh-range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 4px var(--sh-accent-ring); }
+.sh-range:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Switch */
+.sh-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--sh-fg);
+  font-size: var(--sh-text-md);
+  cursor: pointer;
+  text-align: left;
+}
+.sh-switch__track {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border: 1px solid var(--sh-border-strong);
+  border-radius: var(--sh-radius-full);
+  background: var(--sh-surface-3);
+  transition: background var(--sh-fast) var(--sh-ease), border-color var(--sh-fast) var(--sh-ease);
+}
+.sh-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--sh-fg-muted);
+  transition: transform var(--sh-normal) var(--sh-ease), background var(--sh-fast) var(--sh-ease);
+}
+.sh-switch[aria-checked="true"] .sh-switch__track { background: var(--sh-accent); border-color: var(--sh-accent); }
+.sh-switch[aria-checked="true"] .sh-switch__thumb { transform: translateX(14px); background: var(--sh-accent-fg); }
+.sh-switch:disabled { opacity: 0.5; cursor: not-allowed; }
+.sh-switch:focus-visible { outline: none; }
+.sh-switch:focus-visible .sh-switch__track { box-shadow: 0 0 0 3px var(--sh-accent-ring); }
+
+/* Segmented control */
+.sh-segmented {
+  width: max-content;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-md);
+  background: var(--sh-surface-2);
+}
+.sh-segmented__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 var(--sh-space-3);
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--sh-fg-muted);
+  font-size: var(--sh-text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--sh-fast) var(--sh-ease), color var(--sh-fast) var(--sh-ease);
+}
+.sh-segmented__item:hover { color: var(--sh-fg); }
+.sh-segmented__item[aria-checked="true"] {
+  background: var(--sh-surface);
+  color: var(--sh-fg);
+  box-shadow: var(--sh-shadow-sm), 0 0 0 1px var(--sh-border);
+}
