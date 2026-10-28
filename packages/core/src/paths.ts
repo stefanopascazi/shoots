@@ -142,6 +142,11 @@ export function matchDbPath(name: string): string {
   return path.join(matchHome(), `${name}.db`);
 }
 
+/** The local app's own state: settings, recent folders, results, decisions. */
+export function appDbPath(): string {
+  return path.join(shootsHome(), 'app', 'app.db');
+}
+
 /** Root for log files. */
 export function logsDir(): string {
   return path.join(shootsHome(), 'logs');

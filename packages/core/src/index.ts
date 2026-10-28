@@ -33,6 +33,7 @@ export {
   labelSetsDir,
   matchHome,
   matchDbPath,
+  appDbPath,
   logsDir,
   configPath,
 } from './paths.js';
@@ -54,6 +55,8 @@ export {
 } from './provision.js';
 
 export { compareSemver } from './semver.js';
+
+export { openSqlite, sqliteDriver, type Db, type Statement } from './db/sqlite.js';
 
 export {
   renderTemplate,
