@@ -53,6 +53,8 @@ In order:
   browser, served on your machine: opening it from Lightroom starts the server,
   closing it stops it. Built on `@shoots/ui`, a shared design system (tokens,
   dark/light themes, Preact components) meant for every shoots web surface.
+  Cull verdicts are reviewed there, and every one can be reversed: this
+  replaces the shell's `cull --review`.
 - **Train from the catalog.** The plugin exports your develop settings as JSON;
   training reads that instead of XMP sidecars. XMP support is removed once this
   is in place.

@@ -287,7 +287,9 @@ Frames rescued this way show as `sharp*` with `rescued: true`.
 
 ### `--review needs the interactive shell`
 
-`--review` drives a live UI, so it only works inside the shell:
+`--review` is deprecated: review the verdicts in the shoots app instead
+([Reviewing the verdicts](./commands/cull.md#reviewing-the-verdicts)). Until the
+shell is removed, it still works there:
 
 ```sh
 shoots                                   # opens the shell

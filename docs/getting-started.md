@@ -154,7 +154,7 @@ Run `shoots` with no arguments on a terminal:
   ╚══════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝    ╚═╝   ╚══════╝
   ◉ v0.4.1 — batch automation for photographers
 
-❯ /cull @raw/ --dest @rejects/ --review
+❯ /cull @raw/ --dest @rejects/
 ```
 
 Type `/` for the command palette, `@` to autocomplete paths. See

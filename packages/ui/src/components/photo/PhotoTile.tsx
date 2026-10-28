@@ -5,7 +5,14 @@ import { Icon } from '../../icons/Icon.js';
 import { Badge } from '../feedback/Badge.js';
 import { StarRating } from './StarRating.js';
 
-export type PhotoFlag = 'pick' | 'rejected';
+/** `review` marks a frame waiting for a person's decision. */
+export type PhotoFlag = 'pick' | 'rejected' | 'review';
+
+const FLAG_BADGE: Record<PhotoFlag, { tone: 'success' | 'danger' | 'warning'; label: string }> = {
+  pick: { tone: 'success', label: 'Pick' },
+  rejected: { tone: 'danger', label: 'Rejected' },
+  review: { tone: 'warning', label: 'Review' },
+};
 
 export interface PhotoTileProps {
   src?: string;
@@ -39,7 +46,7 @@ export function PhotoTile({ src, name, rating, flag, selected, ratio, meta, onCl
       )}
       {flag && (
         <span class="sh-photo__flag">
-          {flag === 'pick' ? <Badge tone="success">Pick</Badge> : <Badge tone="danger">Rejected</Badge>}
+          <Badge tone={FLAG_BADGE[flag].tone}>{FLAG_BADGE[flag].label}</Badge>
         </span>
       )}
       <span class="sh-photo__overlay">

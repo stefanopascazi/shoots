@@ -153,25 +153,16 @@ shoots cull ./landscape --threshold 130 --no-focus-rescue --dest ./rejects
 ## 5. Human-in-the-loop culling
 
 When you want the machine to handle the obvious cases and hand you only the hard
-ones. **Requires the interactive shell.**
+ones. In Lightroom Classic, choose **Library › Plug-in Extras › Open shoots**,
+open the folder, and choose **Find blurry**.
 
-```sh
-shoots            # opens the shell
-```
+Nothing is written. The uncertain shallow-DoF rescues are marked **Review**;
+**Review** walks you through only those, with a focus map showing where focus
+landed. Any other verdict can be reversed from the photograph too: a soft frame
+may be soft on purpose.
+`K` keep · `X` reject · `U` undo · `S` skip · `H` focus map · `Esc` finish.
 
-```
-❯ /cd D:/Shoots/2026/smith-wedding
-❯ /cull @raw/ --review --mark --dry-run    # learn the UI, touch nothing
-❯ /cull @raw/ --review --mark              # for real — nothing moves
-```
-
-Confident rejects are disposed of immediately; you review only the uncertain
-shallow-DoF rescues, with a focus heatmap showing where focus landed.
-`K` keep · `D` discard · `P` preview · `S` skip · `Esc` finish.
-
-`--mark` records the verdicts and leaves the catalog alone; swap it for
-`--dest @rejects/` if you would rather the rejects move. Either satisfies the
-review — it just needs to know what to do with a discard.
+See [Reviewing the verdicts](./commands/cull.md#reviewing-the-verdicts).
 
 ---
 

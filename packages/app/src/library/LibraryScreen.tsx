@@ -19,7 +19,7 @@ import type { CullReport, RateReport, RatingProfile } from '../contract.js';
 import { useJob } from '../hooks/useJob.js';
 import { FolderPicker } from './FolderPicker.js';
 import { JobPanel } from './JobPanel.js';
-import { folderName, totals, visible, type Filter, type Sort } from './model.js';
+import { awaitsReview, flagFor, folderName, totals, visible, type Filter, type Sort } from './model.js';
 import { PhotoViewer } from './PhotoViewer.js';
 import { useLibrary } from './useLibrary.js';
 
@@ -29,7 +29,8 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
   const [picking, setPicking] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [sort, setSort] = useState<Sort>('name');
-  const [viewing, setViewing] = useState<number>();
+  // The viewer walks a fixed list of paths, so deciding a frame never reshuffles what comes next.
+  const [viewer, setViewer] = useState<{ paths: string[]; index: number; review: boolean }>();
   const [profiles, setProfiles] = useState<RatingProfile[]>([]);
   const [profile, setProfile] = useState<string>();
 
@@ -45,12 +46,21 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
 
   const shown = useMemo(() => visible(lib.photos, filter, sort), [lib.photos, filter, sort]);
   const sum = useMemo(() => totals(lib.photos), [lib.photos]);
+  const byPath = useMemo(() => new Map(lib.photos.map((p) => [p.path, p])), [lib.photos]);
+  const viewerPhotos = useMemo(() => viewer?.paths.map((p) => byPath.get(p)!).filter(Boolean) ?? [], [viewer, byPath]);
+  const startReview = () => {
+    const paths = lib.photos.filter(awaitsReview).map((p) => p.path);
+    if (paths.length) setViewer({ paths, index: 0, review: true });
+  };
 
   const run = async (kind: 'cull' | 'rate') => {
     if (!lib.listing) return;
     const done = await job.start({ kind, folder: lib.listing.folder, recursive: lib.recursive, profile });
     if (done?.state !== 'done') return;
-    if (kind === 'cull') lib.setCull(done.result as CullReport);
+    if (kind === 'cull') {
+      lib.setCull(done.result as CullReport);
+      setFilter('all');
+    }
     else {
       lib.setRate(done.result as RateReport);
       setSort('rating');
@@ -171,14 +181,28 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
             <Card flush class="app-summary">
               <Stat label="Photos" value={sum.total} hint={lib.recursive ? 'with subfolders' : 'in this folder'} />
               <Stat
-                label="Blurry"
-                value={sum.checked ? sum.blurry : '—'}
-                hint={sum.checked ? `of ${sum.checked} checked` : 'not checked yet'}
-                hintTone={sum.blurry ? 'danger' : 'neutral'}
+                label="Rejected"
+                value={sum.checked ? sum.rejected : '—'}
+                hint={!sum.checked ? 'not checked yet' : sum.toReview ? `${sum.toReview} to review` : sum.decided ? `${sum.decided} decided by you` : `of ${sum.checked} checked`}
+                hintTone={sum.toReview ? 'danger' : 'neutral'}
               />
               <Stat label="Rated" value={sum.rated || '—'} hint={sum.rated ? `profile ${profile ?? ''}` : 'not rated yet'} />
               <Stat label="Average" value={sum.meanStars === undefined ? '—' : sum.meanStars.toFixed(1)} unit={sum.meanStars === undefined ? undefined : '★'} hint="stars" />
             </Card>
+
+            {sum.toReview > 0 && !job.running && (
+              <Alert
+                tone="warning"
+                title={`${sum.toReview} frame${sum.toReview === 1 ? ' needs' : 's need'} your eye`}
+                action={
+                  <Button size="sm" variant="primary" onClick={startReview}>
+                    Review
+                  </Button>
+                }
+              >
+                Soft overall but sharp in one area, as with a wide aperture. shoots kept them; you decide. Any other verdict can be changed from the photo too.
+              </Alert>
+            )}
 
             <div class="app-toolbar">
               <Segmented
@@ -187,8 +211,9 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
                 onChange={setFilter}
                 options={[
                   { value: 'all', label: `All ${sum.total}` },
-                  { value: 'keepers', label: `Keepers ${sum.total - sum.blurry}` },
-                  { value: 'blurry', label: `Blurry ${sum.blurry}` },
+                  { value: 'keepers', label: `Keepers ${sum.total - sum.rejected}` },
+                  { value: 'rejected', label: `Rejected ${sum.rejected}` },
+                  ...(sum.toReview ? [{ value: 'review' as const, label: `To review ${sum.toReview}` }] : []),
                 ]}
               />
               <span class="sh-spacer" />
@@ -203,6 +228,12 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
               />
             </div>
 
+            {sum.decided > 0 && (
+              <p class="app-note sh-muted">
+                {sum.decided} decision{sum.decided === 1 ? '' : 's'} by you, saved on this computer. They are not in Lightroom yet.
+              </p>
+            )}
+
             {shown.length === 0 ? (
               <p class="sh-muted app-center">Nothing matches this filter.</p>
             ) : (
@@ -213,8 +244,8 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
                     src={thumbUrl(p.path, 400)}
                     name={p.name}
                     rating={p.stars}
-                    flag={p.blur ? (p.blur.verdict === 'blurry' ? 'rejected' : undefined) : undefined}
-                    onClick={() => setViewing(i)}
+                    flag={flagFor(p)}
+                    onClick={() => setViewer({ paths: shown.map((x) => x.path), index: i, review: false })}
                   />
                 ))}
               </PhotoGrid>
@@ -223,7 +254,16 @@ export function LibraryScreen({ windows }: { windows: boolean }) {
         )
       )}
 
-      {viewing !== undefined && <PhotoViewer photos={shown} index={viewing} onIndex={setViewing} onClose={() => setViewing(undefined)} />}
+      {viewer && viewerPhotos.length > 0 && (
+        <PhotoViewer
+          photos={viewerPhotos}
+          index={Math.min(viewer.index, viewerPhotos.length - 1)}
+          review={viewer.review}
+          onIndex={(index) => setViewer((v) => v && { ...v, index })}
+          onClose={() => setViewer(undefined)}
+          onDecide={lib.decide}
+        />
+      )}
       {picker}
     </>
   );

@@ -155,7 +155,12 @@ Toggle it off when you need to copy a path or an error message out of the output
 
 ---
 
-## `cull --review` — the shell-only mode
+## `cull --review` — deprecated
+
+> Reviewing cull verdicts has moved to the **shoots app**, opened from Lightroom
+> with Library › Plug-in Extras › Open shoots, where every verdict can be
+> reversed. See [Reviewing the verdicts](./commands/cull.md#reviewing-the-verdicts).
+> The shell mode below still works and is removed together with the shell.
 
 The interactive triage UI requires the shell. In batch mode it exits `2` and tells
 you so.
@@ -190,7 +195,7 @@ heatmap** with a legend (soft → sharp) marking where focus actually landed.
 - `--dry-run` walks the entire flow without touching a file. Use it to learn the
   interface.
 
-Full details: [`cull`](./commands/cull.md#interactive-review---review).
+Full details: [`cull`](./commands/cull.md#reviewing-the-verdicts).
 
 ---
 

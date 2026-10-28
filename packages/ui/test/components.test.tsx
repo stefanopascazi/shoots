@@ -168,6 +168,12 @@ describe('content components', () => {
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain('sh-photo__placeholder');
   });
+
+  test('PhotoTile marks a frame awaiting review', () => {
+    const html = render(<PhotoTile name="a.cr3" flag="review" />);
+    expect(html).toContain('sh-badge--warning');
+    expect(html).toContain('Review');
+  });
 });
 
 describe('every class a component renders is styled', () => {

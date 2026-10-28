@@ -276,9 +276,9 @@ There is **no GUI dependency**. The interactive Ink progress UI activates only o
 a TTY; in a pipe, a cron job or CI you get plain log lines on stderr and the same
 result on stdout.
 
-The single exception is `cull --review`, which drives a live UI and therefore
-requires the interactive shell. It refuses with exit code `2` in batch mode, and
-tells you so.
+Reviewing cull verdicts is the one interactive step, and it lives in the shoots
+app opened from Lightroom, not in the CLI. The deprecated `cull --review` refuses
+with exit code `2` in batch mode and tells you so.
 
 ---
 

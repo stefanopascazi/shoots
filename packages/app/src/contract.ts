@@ -74,11 +74,22 @@ export interface JobStatus {
   endedAt?: number;
 }
 
+export interface FocusMap {
+  cols: number;
+  rows: number;
+  /** Sharpness per tile, row-major. */
+  tiles: number[];
+}
+
 export interface CullResultItem {
   file: string;
   score: number;
+  focusPeak: number;
   verdict: 'sharp' | 'blurry';
+  /** Soft overall but sharp somewhere: shallow depth of field, kept by the focus rescue. */
   rescued: boolean;
+  aperture: number | null;
+  focusMap?: FocusMap;
 }
 
 export interface CullReport {

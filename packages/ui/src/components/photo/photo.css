@@ -66,3 +66,4 @@ button.sh-stars__star:hover { opacity: 1; }
 .sh-photo__flag .sh-badge { border-color: transparent; background: rgb(0 0 0 / 0.62); backdrop-filter: blur(4px); }
 .sh-photo__flag .sh-badge--success { color: #7fe0b2; }
 .sh-photo__flag .sh-badge--danger { color: #ffa3a3; }
+.sh-photo__flag .sh-badge--warning { color: #ffd27a; }

@@ -38,7 +38,7 @@ focus map. It is fast, deterministic and needs no model.
 | `--dry-run` | off | Analyze and report, but relocate nothing and write no report file |
 | `--json` | off | Machine-readable JSON on stdout |
 | `--verbose` | off | Verbose logging on stderr |
-| `--review` | off | Interactive human-in-the-loop review — **shell only** |
+| `--review` | off | **Deprecated** — review the verdicts in the shoots app instead ([below](#reviewing-the-verdicts)); still works inside the shell |
 
 ---
 
@@ -249,28 +249,41 @@ shoots cull ./raw --concurrency 12 --json --out cull.json
 
 ---
 
-## Interactive review (`--review`)
+## Reviewing the verdicts
 
-Available **only inside the interactive shell** — it drives a live UI. In batch
-mode it exits `2` with a pointer to the shell.
+A cull verdict is a proposal, not a decision: a soft frame can be soft on
+purpose. The review lives in the **shoots app**, which you open from Lightroom
+Classic with **Library › Plug-in Extras › Open shoots**:
 
-```
-❯ /cull ./catalog --review --mark
-❯ /cull ./catalog --review --dest ./rejects
-```
+1. Open the folder in **Library** and choose **Find blurry**. The focus-aware
+   analysis runs over the whole folder and nothing is written.
+2. Frames the focus rescue kept (soft overall, sharp in one area, as with a wide
+   aperture) are marked **Review**, and **Review** walks you through only those.
+3. Every other verdict can be changed too. Open any photograph and **Keep** a
+   frame shoots rejected, or **Reject** one it kept.
 
-The flow is designed to not waste your time:
+The viewer shows the global score, the focus peak, the aperture and a **focus
+map** over the photograph (soft → sharp) marking where focus actually landed.
 
-1. The focus-aware analysis runs over the whole folder.
-2. **Confident rejects are disposed of immediately** — marked, or relocated.
-   Keepers stay in place either way.
-3. You are handed *only* the uncertain shallow-DoF rescues — one card at a time.
+| Key | Action |
+| --- | --- |
+| `K` | Keep |
+| `X` or `D` | Reject |
+| `U` | Undo your decision; the verdict applies again |
+| `S` | Skip — decide later |
+| `H` | Show or hide the focus map |
+| `←` `→` | Previous / next photograph |
+| `Esc` | Finish |
 
-Each review card shows the global score, the focus peak, the aperture, and a
-**focus heatmap** with a legend (soft → sharp) marking where focus actually landed.
+Your decisions are kept per folder on this computer, survive a re-run of the
+analysis, and always win over the verdict. They are not written to the
+Lightroom catalog yet.
 
-| Key | Action | With `--mark` | With `--dest` |
-| --- | --- | --- | --- |
+> **`--review` in the shell is deprecated.** It still works inside the
+> interactive shell (`/cull <path> --review --mark`), and is removed together
+> with the shell. In batch mode it exits `2` with a pointer to the shoots app.
+
+--- | --- | --- | --- |
 | `K` | Keep | Records `--mark-keepers`, if you set one | The file stays where it is |
 | `D` | Discard | Records the reject label | Relocates it to `--dest` |
 | `P` | Preview — open the frame in your system image viewer | | |
@@ -311,7 +324,8 @@ scriptable. Only the review UI is interactive.
       "verdict": "sharp",
       "rescued": true,
       "aperture": 1.4,
-      "pixelSource": "embedded-preview"
+      "pixelSource": "embedded-preview",
+      "focusMap": { "cols": 8, "rows": 8, "tiles": [412, 388, 97, "…"] }
     }
   ],
   "errors": [],
@@ -333,6 +347,7 @@ scriptable. Only the review UI is interactive.
 | `rescued` | `true` when the focus rescue flipped it to sharp (`sharp*` in the table) |
 | `aperture` | EXIF `FNumber`, or `null` when unavailable |
 | `pixelSource` | Which pixels were scored — e.g. `embedded-preview` for RAW |
+| `focusMap` | Sharpness per tile, row-major, turned upright like the photograph — where focus landed |
 | `relocated` | Present only with `--dest`. `planned: true` under `--dry-run`. |
 | `marked` | Present only with `--mark`: the labels used and how many records were written. |
 
