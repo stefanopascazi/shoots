@@ -13,9 +13,11 @@ local LrHttp = import 'LrHttp'
 local LrPathUtils = import 'LrPathUtils'
 local LrTasks = import 'LrTasks'
 
+local AppExport = require 'AppExport'
 local AppOutbox = require 'AppOutbox'
 local AppSession = require 'AppSession'
 local AppSync = require 'AppSync'
+local CatalogExport = require 'CatalogExport'
 local Command = require 'Command'
 local Outbox = require 'Outbox'
 local Runner = require 'Runner'
@@ -23,9 +25,9 @@ local Sync = require 'Sync'
 
 local AppLauncher = {}
 
--- Renews the lease, applies changes sent from the app and reads back the folder
--- the app has open. Short, so both directions land within seconds; the server's
--- lease window is far longer.
+-- Renews the lease, applies changes sent from the app, reads back the folder
+-- the app has open and exports a folder's develop settings for training. Short,
+-- so both directions land within seconds; the server's lease window is far longer.
 local HEARTBEAT_SECONDS = 5
 local START_TIMEOUT_SECONDS = 20
 
@@ -64,6 +66,11 @@ local function holdLease()
         -- After applying, so what the app just sent reads back as already in place.
         local watch = Sync.watch(reply)
         if watch then pcall(AppSync.run, session, watch) end
+        -- A training the app started waits for this folder's develop settings.
+        local export = CatalogExport.request(reply)
+        if export then
+          pcall(AppExport.run, session, export, function() post(session, '/api/host/heartbeat') end)
+        end
       else
         misses = misses + 1
       end

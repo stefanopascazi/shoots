@@ -9,6 +9,8 @@ import path from 'node:path';
 import AdmZip from 'adm-zip';
 import { buildPlugin, PLUGIN_FOLDER, SOURCE_DIR, stampInfoVersion, stampPluginVersion } from '../build.js';
 import { compileLuaFile, runLua } from './lua.js';
+import { catalogAdapter } from '../../../packages/cli/src/develop/adapters/lightroom/index.js';
+import { parseCatalogExport } from '../../../packages/cli/src/develop/adapters/lightroom/catalog.js';
 
 describe('Json.decode', () => {
   test('decodes a cull report as the CLI prints it', () => {
@@ -122,6 +124,57 @@ describe('Outbox', () => {
   test('the acknowledgement lists applied and missing ids', () => {
     expect(runLua(`return require('Outbox').ackBody({ 1, 2 }, {})`)).toBe('{"applied":[1,2],"missing":[]}');
     expect(JSON.parse(runLua<string>(`return require('Outbox').ackBody({}, { 7 })`))).toEqual({ applied: [], missing: [7] });
+  });
+});
+
+describe('CatalogExport', () => {
+  test('reads the training to export for off the heartbeat', () => {
+    const reply = JSON.stringify({ ok: true, export: { job: 'job-abc-12', folder: 'C:\\Shoot', recursive: true } });
+    expect(runLua(`return require('CatalogExport').request(${JSON.stringify(reply)})`)).toEqual({ job: 'job-abc-12', folder: 'C:\\Shoot', recursive: true });
+    expect(runLua(`return require('CatalogExport').request('{"ok":true,"export":null}')`)).toBeNull();
+    // The id goes into a URL: anything but a plain id is refused.
+    expect(runLua(`return require('CatalogExport').request('{"export":{"job":"a&b","folder":"x"}}')`)).toBeNull();
+    expect(runLua(`return require('CatalogExport').request('nope')`)).toBeNull();
+  });
+
+  test('keeps scalars, the tone curve and the look name; drops masks', () => {
+    const out = runLua(`return require('CatalogExport').settings({
+      Exposure2012 = 0.35, WhiteBalance = 'Custom', ConvertToGrayscale = false,
+      ToneCurvePV2012 = { 0, 0, 128, 140, 255, 255 },
+      Look = { Name = 'Adobe Color', Amount = 1 },
+      MaskGroupBasedCorrections = { { What = 'Mask' } },
+    })`);
+    expect(out).toEqual({
+      Exposure2012: 0.35,
+      WhiteBalance: 'Custom',
+      ConvertToGrayscale: false,
+      ToneCurvePV2012: [0, 0, 128, 140, 255, 255],
+      LookName: 'Adobe Color',
+    });
+  });
+
+  test('the body is what the engine reads, edit for edit', async () => {
+    const body = runLua<string>(`local C = require('CatalogExport')
+      return C.body('C:\\\\Shoot', {
+        { path = 'C:\\\\Shoot\\\\a "1".CR3', settings = C.settings({
+          Exposure2012 = -0.5, Temperature = 5600, WhiteBalance = 'Custom', ConvertToGrayscale = false,
+          Contrast2012 = 12, ToneCurvePV2012 = { 0, 0, 255, 255 }, CameraProfile = 'Adobe Standard',
+        }) },
+        { path = 'C:\\\\Shoot\\\\b.CR3', settings = C.settings({ Exposure2012 = 0, WhiteBalance = 'As Shot' }) },
+      })`);
+    const data = parseCatalogExport(body);
+    expect(data.folder).toBe('C:\\Shoot');
+    expect(data.photos.map((p) => p.path)).toEqual(['C:\\Shoot\\a "1".CR3', 'C:\\Shoot\\b.CR3']);
+
+    const files = data.photos.map((p) => p.path);
+    const edits = await catalogAdapter(data).readEdits(files, { json: true, verbose: false });
+    const a = edits.get(files[0])!;
+    expect(a.develop).toMatchObject({ Exposure2012: -0.5, Temperature: 5600, Contrast2012: 12, ConvertToGrayscale: 0 });
+    expect(a.edited).toBe(true);
+    expect(a.treatment).toBe('color');
+    expect(a.baseProfile).toBe('Adobe Standard');
+    // Lightroom's neutral settings on an untouched photo are not an edit.
+    expect(edits.get(files[1])?.edited ?? false).toBe(false);
   });
 });
 

@@ -31,6 +31,12 @@ The other way round, the plug-in reads the folder open in the app back from
 the catalog and reports flags, stars and labels that changed in Lightroom; the
 latest change wins.
 
+Training started in the app needs Lightroom once: the plug-in exports the
+folder's develop settings from the catalog (`getDevelopSettings()`, scalars and
+the tone curve, no masks) and posts them to the app. The run then goes on
+detached, and finishes even if Lightroom and the app close; reopening the app
+shows where it is.
+
 ## Requirements
 
 - Lightroom Classic 6 or later.
