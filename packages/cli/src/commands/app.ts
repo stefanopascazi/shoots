@@ -42,7 +42,8 @@ async function runApp(options: AppOptions): Promise<void> {
   // Loaded here so commands that never serve the page neither load nor need it built.
   const [{ APP_HTML }, { JobRunner }, { DurableJobs }, { createCleanup }, { Library }, { clearSession, writeSession }, { createToken }, { createAppServer }, { AppStore }] =
     await Promise.all([
-      import('@shoots/app'),
+      // The subpath, never the bare name: see packages/app/src/page.d.ts.
+      import('@shoots/app/page'),
       import('../app/jobs.js'),
       import('../app/durableJobs.js'),
       import('../app/cleanup.js'),
