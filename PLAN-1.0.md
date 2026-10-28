@@ -79,7 +79,7 @@ returns the tone curve and Look), and the installer launched by the plugin
 
 1. **Field test on the Lightroom PC.** Copy `dist-bin/shoots.exe` (from
    `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
-   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`), read-back of the open folder (`getFolderByPath`, `batchGetRawMetadata`) and a change made in Lightroom showing in the app,
+   `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`), read-back of the open folder (`getFolderByPath`, `batchGetRawMetadata`) and a change made in Lightroom showing in the app, Training › **Export only** (no training: keeps the catalog export, raw SDK settings included, under `~/.shoots/app/exports/` and reports names not matched — bring that file back to fix L2),
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
    breaks.
 2. **Release `0.7.4`** (features, no migration note → patch) once the field test

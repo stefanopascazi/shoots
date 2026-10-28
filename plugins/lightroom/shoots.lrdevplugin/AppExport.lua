@@ -17,7 +17,7 @@ local AppExport = {}
 local RENEW_EVERY = 100
 local POST_TIMEOUT_SECONDS = 120
 
---- Read the requested folder and post its settings. `renew` renews the lease.
+--- Read the requested folder and post its settings (training, or export only). `renew` renews the lease.
 function AppExport.run(session, request, renew)
   local catalog = LrApplication.activeCatalog()
   local folder = catalog:getFolderByPath(request.folder)
@@ -29,7 +29,9 @@ function AppExport.run(session, request, renew)
       local m = meta[photo]
       -- A virtual copy shares its master's file; the master's edit is the one on disk.
       if m and not m.isVirtualCopy and type(m.path) == 'string' then
-        photos[#photos + 1] = { path = m.path, settings = CatalogExport.settings(photo:getDevelopSettings()) }
+        local settings = photo:getDevelopSettings()
+        -- Export only (the field test) also sends the settings untouched, to compare.
+        photos[#photos + 1] = { path = m.path, settings = CatalogExport.settings(settings), raw = request.raw and settings or nil }
       end
       if i % RENEW_EVERY == 0 then renew() end
     end

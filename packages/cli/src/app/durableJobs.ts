@@ -25,8 +25,11 @@ import { PROGRESS_FILE_ENV } from '../progressChannel.js';
 import { selfInvocation } from '../selfInvoke.js';
 import { JobError, lastErrorLine, parseJson } from './jobs.js';
 import { exitCode, lastProgress } from './progress.js';
+import { inspectCatalogExport } from '../develop/adapters/lightroom/inspect.js';
 
-export const DURABLE_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['train', 'calibrate']);
+export const DURABLE_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['train', 'calibrate', 'catalog']);
+/** Jobs that start by waiting for the plug-in's catalog export. */
+const NEEDS_CATALOG: ReadonlySet<JobKind> = new Set<JobKind>(['train', 'catalog']);
 
 /** The settings the owner confirmed by eye on real shoots (see the develop README). */
 export const TRAIN_BOLDNESS = '1';
@@ -116,6 +119,8 @@ export const systemProcesses: Processes = {
 };
 
 export interface DurableJobsOptions {
+  /** Where export-only runs keep the catalog export; default: `exports` next to the jobs folder. */
+  exportsDir?: string;
   spawner?: DetachedSpawner;
   processes?: Processes;
   now?: () => number;
@@ -136,6 +141,7 @@ export class DurableJobs {
   private readonly spawner: DetachedSpawner;
   private readonly processes: Processes;
   private readonly now: () => number;
+  private readonly exportsDir: string;
 
   constructor(
     private readonly root: string,
@@ -144,6 +150,7 @@ export class DurableJobs {
     this.spawner = options.spawner ?? defaultSpawn;
     this.processes = options.processes ?? systemProcesses;
     this.now = options.now ?? Date.now;
+    this.exportsDir = options.exportsDir ?? path.join(path.dirname(root), 'exports');
     this.recover();
   }
 
@@ -156,7 +163,7 @@ export class DurableJobs {
   start(request: JobRequest): JobStatus {
     if (!DURABLE_KINDS.has(request.kind)) throw new JobError('Not a training job.', 400);
     if (this.busy) throw new JobError('Another job is still running.', 409);
-    if (request.kind === 'train' && !request.folder) throw new JobError('Choose a folder.', 400);
+    if (NEEDS_CATALOG.has(request.kind) && !request.folder) throw new JobError('Choose a folder.', 400);
 
     const record: JobRecord = {
       id: `job-${this.now().toString(36)}-${randomBytes(3).toString('hex')}`,
@@ -167,7 +174,7 @@ export class DurableJobs {
     };
     mkdirSync(this.dir(record.id), { recursive: true });
     this.active.set(record.id, record);
-    if (request.kind === 'train') this.save(record);
+    if (NEEDS_CATALOG.has(request.kind)) this.save(record);
     else this.launch(record, undefined);
     return this.get(record.id)!;
   }
@@ -175,15 +182,32 @@ export class DurableJobs {
   /** The training waiting for its catalog export, for the plug-in to pick up. */
   awaitingCatalog(): CatalogRequest | undefined {
     for (const r of this.active.values()) {
-      if (r.kind === 'train' && r.phase === 'waiting') return { job: r.id, folder: r.request.folder!, recursive: r.request.recursive === true };
+      if (NEEDS_CATALOG.has(r.kind) && r.phase === 'waiting') {
+        return { job: r.id, folder: r.request.folder!, recursive: r.request.recursive === true, raw: r.kind === 'catalog' };
+      }
     }
     return undefined;
   }
 
-  /** The plug-in's export for a waiting training: stored next to the job, then the run starts. */
-  provideCatalog(id: string, text: string): JobStatus {
+  /**
+   * The plug-in's export for a waiting job. Training stores it next to the job
+   * and starts the run; an export-only job keeps it under exports/ and reports
+   * how it reads.
+   */
+  async provideCatalog(id: string, text: string): Promise<JobStatus> {
     const record = this.active.get(id);
-    if (!record || record.kind !== 'train' || record.phase !== 'waiting') throw new JobError('No training is waiting for that export.', 409);
+    if (!record || !NEEDS_CATALOG.has(record.kind) || record.phase !== 'waiting') throw new JobError('No job is waiting for that export.', 409);
+    if (record.kind === 'catalog') {
+      mkdirSync(this.exportsDir, { recursive: true });
+      const kept = path.join(this.exportsDir, `catalog-${new Date(this.now()).toISOString().replace(/[:.]/g, '-')}.json`);
+      writeFileSync(kept, text, 'utf8');
+      try {
+        this.finish(record, { state: 'done', result: await inspectCatalogExport(text, kept) });
+      } catch (e) {
+        this.finish(record, { state: 'failed', error: e instanceof Error ? e.message : String(e) });
+      }
+      return this.get(id)!;
+    }
     const file = path.join(this.dir(id), FILES.catalog);
     writeFileSync(file, text, 'utf8');
     this.launch(record, file);
@@ -228,7 +252,7 @@ export class DurableJobs {
    */
   release(): void {
     for (const r of [...this.active.values()]) {
-      if (r.phase === 'waiting') this.finish(r, { state: 'failed', error: 'Lightroom closed before your edits were read. Start the training again.' });
+      if (r.phase === 'waiting') this.finish(r, { state: 'failed', error: 'Lightroom closed before your edits were read. Start it again.' });
     }
   }
 
@@ -317,7 +341,7 @@ export class DurableJobs {
       if (!record || record.id !== id) continue;
       this.active.set(id, record);
       // The server that asked Lightroom for the export is gone, and the request with it.
-      if (record.phase === 'waiting') this.finish(record, { state: 'failed', error: 'Lightroom closed before your edits were read. Start the training again.' });
+      if (record.phase === 'waiting') this.finish(record, { state: 'failed', error: 'Lightroom closed before your edits were read. Start it again.' });
       else this.refresh(id);
     }
     this.prune();

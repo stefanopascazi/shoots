@@ -40,17 +40,25 @@ export interface Outcome {
   text: string;
 }
 
-/** How a finished training or calibration ended, in the photographer's terms. */
+const FAILED: Partial<Record<JobStatus['kind'], string>> = {
+  train: 'The training did not finish',
+  calibrate: 'The calibration did not finish',
+  catalog: 'The catalog export did not finish',
+};
+
+/** How a finished training, calibration or export check ended, in the photographer's terms. */
 export function outcome(job: JobStatus | undefined): Outcome | undefined {
   if (!job || job.state === 'running') return undefined;
   const took = job.endedAt ? ` in ${duration(job.endedAt - job.startedAt)}` : '';
+  // A finished export check shows its own report.
+  if (job.kind === 'catalog' && job.state === 'done') return undefined;
   if (job.state === 'cancelled') {
-    return { tone: 'info', title: 'Stopped', text: job.kind === 'train' ? 'The training was stopped; your profile is as it was.' : 'The calibration was stopped.' };
+    return { tone: 'info', title: 'Stopped', text: job.kind === 'train' ? 'The training was stopped; your profile is as it was.' : 'It was stopped.' };
   }
   if (job.state === 'failed') {
     return {
       tone: 'danger',
-      title: job.kind === 'train' ? 'The training did not finish' : 'The calibration did not finish',
+      title: FAILED[job.kind] ?? 'The job did not finish',
       text: job.error ?? 'Something went wrong.',
     };
   }

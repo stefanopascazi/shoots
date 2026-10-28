@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { EventEmitter } from 'node:events';
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DurableJobs, durableArgs, type DetachedChild, type Processes } from '../../src/app/durableJobs.js';
@@ -76,30 +76,49 @@ describe('durableArgs', () => {
 });
 
 describe('DurableJobs', () => {
-  test('training waits for Lightroom, then runs on the export', () => {
+  test('training waits for Lightroom, then runs on the export', async () => {
     const { jobs, spawned } = setup();
     const job = jobs.start({ kind: 'train', folder: 'F', recursive: true });
     expect(job).toMatchObject({ kind: 'train', state: 'running', progress: { label: 'Reading your edits from Lightroom' } });
     expect(spawned).toHaveLength(0);
-    expect(jobs.awaitingCatalog()).toEqual({ job: job.id, folder: 'F', recursive: true });
+    expect(jobs.awaitingCatalog()).toEqual({ job: job.id, folder: 'F', recursive: true, raw: false });
     expect(jobs.busy).toBe(true);
 
-    jobs.provideCatalog(job.id, CATALOG);
+    await jobs.provideCatalog(job.id, CATALOG);
     expect(spawned).toHaveLength(1);
     expect(jobs.awaitingCatalog()).toBeUndefined();
     const catalogFile = spawned[0].args[spawned[0].args.indexOf('--catalog') + 1];
     expect(existsSync(catalogFile)).toBe(true);
   });
 
-  test('an export nobody waits for is refused', () => {
+  test('an export nobody waits for is refused', async () => {
     const { jobs } = setup();
-    expect(() => jobs.provideCatalog('job-nope', CATALOG)).toThrow(JobError);
+    await expect(jobs.provideCatalog('job-nope', CATALOG)).rejects.toThrow(JobError);
   });
 
-  test('a report on exit is done; the export is dropped', () => {
+  test('export only keeps the file, reports how it reads, and starts nothing', async () => {
+    const { root, jobs, spawned } = setup();
+    const job = jobs.start({ kind: 'catalog', folder: 'F' });
+    expect(jobs.awaitingCatalog()).toMatchObject({ job: job.id, raw: true });
+    const text = JSON.stringify({
+      version: 1,
+      folder: 'F',
+      photos: [{ path: '/F/a.cr3', settings: { Contrast2012: 12 }, raw: { Contrast2012: 12, ToneCurvePV2012: [0, 0, 255, 255] } }],
+    });
+    const done = await jobs.provideCatalog(job.id, text);
+    expect(spawned).toHaveLength(0);
+    expect(done).toMatchObject({ state: 'done', result: { photos: 1, edited: 1, raw: true, shapes: { ToneCurvePV2012: 'array of 4 numbers' } } });
+    const kept = (done.result as { file: string }).file;
+    expect(path.dirname(kept)).toBe(path.join(path.dirname(root), 'exports'));
+    expect(readFileSync(kept, 'utf8')).toBe(text);
+    rmSync(path.dirname(kept), { recursive: true, force: true });
+    expect(jobs.busy).toBe(false);
+  });
+
+  test('a report on exit is done; the export is dropped', async () => {
     const { jobs, spawned, end } = setup();
     const job = jobs.start({ kind: 'train', folder: 'F' });
-    jobs.provideCatalog(job.id, CATALOG);
+    await jobs.provideCatalog(job.id, CATALOG);
     appendFileSync(spawned[0].env.SHOOTS_PROGRESS_FILE!, JSON.stringify({ kind: 'steps', label: 'Fitting the profile', done: 2, total: 5 }) + '\n');
     expect(jobs.get(job.id)!.progress).toMatchObject({ label: 'Fitting the profile', done: 2, total: 5 });
 
@@ -167,10 +186,10 @@ describe('DurableJobs', () => {
     expect(jobs.get(running.id)!.state).toBe('running');
   });
 
-  test('a later server picks up a run still going, and one that finished meanwhile', () => {
+  test('a later server picks up a run still going, and one that finished meanwhile', async () => {
     const first = setup();
     const job = first.jobs.start({ kind: 'train', folder: 'F' });
-    first.jobs.provideCatalog(job.id, CATALOG);
+    await first.jobs.provideCatalog(job.id, CATALOG);
 
     // The server is gone; the run goes on.
     const second = first.make();

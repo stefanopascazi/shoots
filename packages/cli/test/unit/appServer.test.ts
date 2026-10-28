@@ -291,7 +291,7 @@ describe('training', () => {
     expect(job).toMatchObject({ kind: 'train', state: 'running' });
 
     const beat = await (await post(base, '/api/host/heartbeat', {})).json();
-    expect(beat.export).toEqual({ job: job.id, folder: 'C:/Shoot', recursive: true });
+    expect(beat.export).toEqual({ job: job.id, folder: 'C:/Shoot', recursive: true, raw: false });
     // Nothing else may start meanwhile.
     expect((await post(base, '/api/jobs', { kind: 'doctor' })).status).toBe(409);
 

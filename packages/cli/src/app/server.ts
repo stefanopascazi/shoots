@@ -425,7 +425,7 @@ export function createAppServer(opts: AppServerOptions): AppServer {
       return sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
     try {
-      sendJson(res, 200, opts.durable.provideCatalog(id, text));
+      sendJson(res, 200, await opts.durable.provideCatalog(id, text));
     } catch (err) {
       sendJson(res, err instanceof JobError ? err.status : 400, { error: err instanceof Error ? err.message : String(err) });
     }
@@ -471,8 +471,8 @@ export function parseLightroomState(raw: unknown): LightroomState | undefined {
   return { path: r.path, rating: r.rating as number, pick: r.pick, label: r.label as ColorLabel };
 }
 
-const JOB_KINDS: readonly JobKind[] = ['cull', 'rate', 'doctor', 'train', 'calibrate'];
-const NEEDS_FOLDER: ReadonlySet<JobKind> = new Set<JobKind>(['cull', 'rate', 'train']);
+const JOB_KINDS: readonly JobKind[] = ['cull', 'rate', 'doctor', 'train', 'calibrate', 'catalog'];
+const NEEDS_FOLDER: ReadonlySet<JobKind> = new Set<JobKind>(['cull', 'rate', 'train', 'catalog']);
 
 export function parseJobRequest(body: string): JobRequest | undefined {
   let raw: Partial<JobRequest>;

@@ -11,6 +11,7 @@ import { buildPlugin, PLUGIN_FOLDER, SOURCE_DIR, stampInfoVersion, stampPluginVe
 import { compileLuaFile, runLua } from './lua.js';
 import { catalogAdapter } from '../../../packages/cli/src/develop/adapters/lightroom/index.js';
 import { parseCatalogExport } from '../../../packages/cli/src/develop/adapters/lightroom/catalog.js';
+import { inspectCatalogExport } from '../../../packages/cli/src/develop/adapters/lightroom/inspect.js';
 
 describe('Json.decode', () => {
   test('decodes a cull report as the CLI prints it', () => {
@@ -130,7 +131,8 @@ describe('Outbox', () => {
 describe('CatalogExport', () => {
   test('reads the training to export for off the heartbeat', () => {
     const reply = JSON.stringify({ ok: true, export: { job: 'job-abc-12', folder: 'C:\\Shoot', recursive: true } });
-    expect(runLua(`return require('CatalogExport').request(${JSON.stringify(reply)})`)).toEqual({ job: 'job-abc-12', folder: 'C:\\Shoot', recursive: true });
+    expect(runLua(`return require('CatalogExport').request(${JSON.stringify(reply)})`)).toEqual({ job: 'job-abc-12', folder: 'C:\\Shoot', recursive: true, raw: false });
+    expect(runLua(`return require('CatalogExport').request('{"export":{"job":"j","folder":"f","raw":true}}')`)).toMatchObject({ raw: true });
     expect(runLua(`return require('CatalogExport').request('{"ok":true,"export":null}')`)).toBeNull();
     // The id goes into a URL: anything but a plain id is refused.
     expect(runLua(`return require('CatalogExport').request('{"export":{"job":"a&b","folder":"x"}}')`)).toBeNull();
@@ -175,6 +177,36 @@ describe('CatalogExport', () => {
     expect(a.baseProfile).toBe('Adobe Standard');
     // Lightroom's neutral settings on an untouched photo are not an edit.
     expect(edits.get(files[1])?.edited ?? false).toBe(false);
+  });
+});
+
+describe('CatalogExport, export only', () => {
+  test('raw settings travel as they are: nested tables, lists, odd values', () => {
+    const text = runLua<string>(`return require('CatalogExport').encodeRaw({
+      Exposure2012 = 0.5, Look = { Name = 'Adobe Color', Parameters = { Version = 2 } },
+      ToneCurvePV2012 = { 0, 0, 255, 255 }, Sparse = { [1] = 'a', [3] = 'c' }, Fn = function() end,
+    })`);
+    expect(JSON.parse(text)).toEqual({
+      Exposure2012: 0.5,
+      Fn: '<function>',
+      Look: { Name: 'Adobe Color', Parameters: { Version: 2 } },
+      Sparse: { '1': 'a', '3': 'c' },
+      ToneCurvePV2012: [0, 0, 255, 255],
+    });
+  });
+
+  test('the engine reports the shapes and the names that did not match', async () => {
+    const body = runLua<string>(`local C = require('CatalogExport')
+      local raw = { Exposure = 0.3, Contrast2012 = 10, WhiteBalance = 'Custom',
+        ToneCurvePV2012 = { 0, 0, 255, 255 }, Look = { Name = 'Adobe Color', UUID = 'x' } }
+      return C.body('/s', { { path = '/s/a.cr3', settings = C.settings(raw), raw = raw } })`);
+    const report = await inspectCatalogExport(body, 'kept.json');
+    expect(report).toMatchObject({ photos: 1, withSettings: 1, edited: 1, raw: true });
+    expect(report.shapes).toEqual({ ToneCurvePV2012: 'array of 4 numbers', Look: 'object: Name, UUID' });
+    // A key named differently from the crs property is unknown, and its target missing.
+    expect(report.unknown).toContain('Exposure');
+    expect(report.missing).toContain('Exposure2012');
+    expect(report.missing).not.toContain('Contrast2012');
   });
 });
 

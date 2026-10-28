@@ -1,8 +1,10 @@
 /** @jsxImportSource preact */
 import { useState } from 'preact/hooks';
 import { Alert, Button, Card, Checkbox, PageHeader } from '@shoots/ui';
+import type { CatalogInspection } from '../contract.js';
 import type { SettingsHandle } from '../hooks/useSettings.js';
 import { FolderPicker } from '../library/FolderPicker.js';
+import { CatalogReportCard } from './CatalogReportCard.js';
 import { outcome, profileSummary } from './model.js';
 import { ProfileCard } from './ProfileCard.js';
 import { TrainingJobCard } from './TrainingJobCard.js';
@@ -22,6 +24,7 @@ export function TrainingScreen({ prefs }: { prefs: SettingsHandle }) {
   const current = job.job;
   const running = current?.state === 'running';
   const ended = outcome(current);
+  const report = current?.kind === 'catalog' && current.state === 'done' ? (current.result as CatalogInspection) : undefined;
 
   return (
     <>
@@ -32,20 +35,27 @@ export function TrainingScreen({ prefs }: { prefs: SettingsHandle }) {
           {ended.text}
         </Alert>
       )}
+      {report && <CatalogReportCard report={report} />}
       <div class="app-health">
         <div class="app-side">
           <Card
             title="Learn from a folder"
             description="Your develop settings are read from the Lightroom catalog. Training runs on this computer and can take hours; it carries on if you close Lightroom."
             footer={
-              <Button
-                variant="primary"
-                icon="sparkle"
-                disabled={!folder || running}
-                onClick={() => folder && run({ kind: 'train', folder, recursive })}
-              >
-                Start training
-              </Button>
+              <div class="app-training__actions">
+                <Button
+                  variant="primary"
+                  icon="sparkle"
+                  disabled={!folder || running}
+                  onClick={() => folder && run({ kind: 'train', folder, recursive })}
+                >
+                  Start training
+                </Button>
+                {/* Field test: what Lightroom returns, checked against the engine, without training. */}
+                <Button variant="ghost" icon="download" disabled={!folder || running} onClick={() => folder && run({ kind: 'catalog', folder, recursive })}>
+                  Export only
+                </Button>
+              </div>
             }
           >
             <div class="app-training__folder">

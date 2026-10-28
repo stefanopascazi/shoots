@@ -4,6 +4,7 @@ import { render } from 'preact-render-to-string';
 import type { DevelopStatus, JobStatus } from '../src/contract.js';
 import { duration, outcome, profileSummary, stepLabel } from '../src/training/model.js';
 import { ProfileCard } from '../src/training/ProfileCard.js';
+import { CatalogReportCard } from '../src/training/CatalogReportCard.js';
 import { TrainingJobCard } from '../src/training/TrainingJobCard.js';
 
 const status = (profile: DevelopStatus['profile']): DevelopStatus => ({
@@ -83,5 +84,37 @@ describe('TrainingJobCard', () => {
 describe('ProfileCard', () => {
   test('an empty state before the first training', () => {
     expect(render(<ProfileCard profile={undefined} />)).toContain('No profile yet');
+  });
+});
+
+describe('export only', () => {
+  const report = {
+    file: 'C:/x/catalog.json',
+    folder: 'C:/Shoot',
+    photos: 12,
+    withSettings: 12,
+    edited: 9,
+    bw: 1,
+    raw: true,
+    missing: ['Exposure2012'],
+    unknown: ['Exposure', 'ProcessVersion'],
+    shapes: { ToneCurvePV2012: 'array of 4 numbers' },
+  };
+
+  test('a finished check shows its report, not an outcome', () => {
+    expect(outcome(job({ kind: 'catalog', state: 'done', result: report }))).toBeUndefined();
+    expect(outcome(job({ kind: 'catalog', state: 'failed', error: 'x' }))!.title).toBe('The catalog export did not finish');
+  });
+
+  test('the report names what did not match and how the curve arrived', () => {
+    const html = render(<CatalogReportCard report={report} />);
+    expect(html).toContain('1 names not found');
+    expect(html).toContain('Exposure2012');
+    expect(html).toContain('Returned but not read (2)');
+    expect(html).toContain('array of 4 numbers');
+  });
+
+  test('warns when the plug-in sent no raw settings', () => {
+    expect(render(<CatalogReportCard report={{ ...report, raw: false }} />)).toContain('No raw settings');
   });
 });

@@ -121,8 +121,11 @@ export interface RatingProfile {
   learned: boolean;
 }
 
-/** train and calibrate run detached: they finish even when Lightroom closes and the app stops. */
-export type JobKind = 'cull' | 'rate' | 'doctor' | 'train' | 'calibrate';
+/**
+ * train and calibrate run detached: they finish even when Lightroom closes and the app stops.
+ * catalog only exports the folder's develop settings from Lightroom and checks them, for the field test.
+ */
+export type JobKind = 'cull' | 'rate' | 'doctor' | 'train' | 'calibrate' | 'catalog';
 export type JobState = 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface JobRequest {
@@ -147,6 +150,29 @@ export interface CatalogRequest {
   job: string;
   folder: string;
   recursive: boolean;
+  /** Also send each photo's settings exactly as the SDK returned them (export only). */
+  raw: boolean;
+}
+
+/** What an export-only run found: does the catalog speak the names the engine reads? */
+export interface CatalogInspection {
+  /** Where the export was kept. */
+  file: string;
+  folder: string;
+  photos: number;
+  /** Photos that returned any setting the engine keeps. */
+  withSettings: number;
+  /** Photos carrying a real edit, as training would count them. */
+  edited: number;
+  bw: number;
+  /** The plug-in sent the unfiltered settings too. */
+  raw: boolean;
+  /** Engine targets no photo carried: a naming mismatch shows up here. */
+  missing: string[];
+  /** Keys Lightroom returned that the engine does not read. */
+  unknown: string[];
+  /** How the tone curve and the Look really arrive. */
+  shapes: Record<string, string>;
 }
 
 /** What `develop status --json` reports about the trained profile; the parts the app shows. */
