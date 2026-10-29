@@ -44,6 +44,7 @@ const FAILED: Partial<Record<JobStatus['kind'], string>> = {
   train: 'The training did not finish',
   calibrate: 'The calibration did not finish',
   catalog: 'The catalog export did not finish',
+  refine: 'The profile was not improved',
 };
 
 /** How a finished training, calibration or export check ended, in the photographer's terms. */
@@ -53,7 +54,16 @@ export function outcome(job: JobStatus | undefined): Outcome | undefined {
   // A finished export check shows its own report.
   if (job.kind === 'catalog' && job.state === 'done') return undefined;
   if (job.state === 'cancelled') {
-    return { tone: 'info', title: 'Stopped', text: job.kind === 'train' ? 'The training was stopped; your profile is as it was.' : 'It was stopped.' };
+    return {
+      tone: 'info',
+      title: 'Stopped',
+      text:
+        job.kind === 'train'
+          ? 'The training was stopped; your profile is as it was.'
+          : job.kind === 'refine'
+            ? 'The improvement was stopped; your profile is as it was.'
+            : 'It was stopped.',
+    };
   }
   if (job.state === 'failed') {
     return {
@@ -63,6 +73,9 @@ export function outcome(job: JobStatus | undefined): Outcome | undefined {
     };
   }
   if (job.kind === 'train') return { tone: 'success', title: 'Your style profile is ready', text: `Trained${took}.` };
+  if (job.kind === 'refine') {
+    return { tone: 'success', title: 'Your profile has learned from this shoot', text: `What you kept is in the model${took}; the next Develop Selection uses it.` };
+  }
   return job.result
     ? { tone: 'success', title: 'Calibration saved', text: 'The profile now corrects as strongly as you chose.' }
     : { tone: 'info', title: 'Nothing changed', text: 'The calibration closed without saving; the profile keeps its fitted values.' };

@@ -41,7 +41,7 @@ export interface RefineArgs {
   editor?: string;
   /** A Lightroom catalog export from the plug-in: what was kept is read from it instead of the sidecars. */
   catalog?: string;
-  name: string;
+  name?: string;
   lambda: string;
   folds: number;
   groupBy?: string;

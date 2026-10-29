@@ -530,8 +530,8 @@ export function parseLightroomState(raw: unknown): LightroomState | undefined {
   return { path: r.path, rating: r.rating as number, pick: r.pick, label: r.label as ColorLabel };
 }
 
-const JOB_KINDS: readonly JobKind[] = ['cull', 'rate', 'doctor', 'train', 'calibrate', 'catalog'];
-const NEEDS_FOLDER: ReadonlySet<JobKind> = new Set<JobKind>(['cull', 'rate', 'train', 'catalog']);
+const JOB_KINDS: readonly JobKind[] = ['cull', 'rate', 'doctor', 'train', 'calibrate', 'catalog', 'refine'];
+const NEEDS_FOLDER: ReadonlySet<JobKind> = new Set<JobKind>(['cull', 'rate', 'train', 'catalog', 'refine']);
 
 export function parseJobRequest(body: string): JobRequest | undefined {
   let raw: Partial<JobRequest>;

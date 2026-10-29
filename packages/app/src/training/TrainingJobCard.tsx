@@ -8,6 +8,7 @@ const TITLE: Partial<Record<JobStatus['kind'], string>> = {
   train: 'Learning your style',
   calibrate: 'Calibrating',
   catalog: 'Checking the catalog export',
+  refine: 'Improving your profile',
 };
 
 /** A running training or calibration: where it is, the review page when it waits on one, a way to stop it. */

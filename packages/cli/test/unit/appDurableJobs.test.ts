@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { EventEmitter } from 'node:events';
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { CATALOG_WAIT_MS, DurableJobs, durableArgs, type DetachedChild, type Processes } from '../../src/app/durableJobs.js';
 import { JobError } from '../../src/app/jobs.js';
+import { shootWorkDir } from '../../src/develop/shoot.js';
 
 const CATALOG = JSON.stringify({ version: 1, folder: 'F', photos: [] });
 
@@ -70,8 +71,39 @@ describe('durableArgs', () => {
     expect(durableArgs({ kind: 'calibrate' }, undefined)).toEqual(['develop', 'calibrate', '--review', '--review-timeout', '60', '--json']);
   });
 
+  test('improving refits from the catalog with the training settings', () => {
+    expect(durableArgs({ kind: 'refine', folder: 'C:\\Shoot' }, 'cat.json')).toEqual([
+      'develop', 'refine', 'C:\\Shoot', '--catalog', 'cat.json', '--boldness', '1', '--anchor-gain', '2', '--json',
+    ]);
+  });
+
   test('photo jobs are not durable', () => {
     expect(() => durableArgs({ kind: 'cull', folder: 'x' }, undefined)).toThrow(JobError);
+  });
+});
+
+describe('DurableJobs, refine', () => {
+  const previous = process.env.SHOOTS_HOME;
+  afterEach(() => {
+    if (previous === undefined) delete process.env.SHOOTS_HOME;
+    else process.env.SHOOTS_HOME = previous;
+  });
+
+  test('a folder never developed with shoots is refused before Lightroom is asked', () => {
+    const { root, jobs } = setup();
+    process.env.SHOOTS_HOME = root;
+    expect(() => jobs.start({ kind: 'refine', folder: path.join(root, 'shoot') })).toThrow(/Develop Selection/);
+  });
+
+  test('a developed folder waits for its export, subfolders included', () => {
+    const { root, jobs } = setup();
+    process.env.SHOOTS_HOME = root;
+    const folder = path.join(root, 'shoot');
+    const work = shootWorkDir(folder);
+    mkdirSync(work, { recursive: true });
+    writeFileSync(path.join(work, 'prediction.json'), '{}');
+    jobs.start({ kind: 'refine', folder });
+    expect(jobs.awaitingCatalog()).toMatchObject({ folder, recursive: true, raw: false });
   });
 });
 

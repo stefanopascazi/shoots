@@ -69,6 +69,15 @@ export function TrainingScreen({ prefs }: { prefs: SettingsHandle }) {
             </Checkbox>
           </Card>
           <Card
+            title="Improve from a developed shoot"
+            description="After Develop Selection and your own finishing touches in Lightroom, shoots compares what you kept with what it predicted and learns from the difference. Uses the folder above."
+            footer={
+              <Button icon="refresh" disabled={!profile || !folder || running} onClick={() => folder && run({ kind: 'refine', folder })}>
+                Improve profile
+              </Button>
+            }
+          />
+          <Card
             title="Calibrate"
             description="Set by eye how strongly the profile corrects exposure and tone. Opens a page with a few of your photos."
             footer={

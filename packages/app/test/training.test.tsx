@@ -52,6 +52,11 @@ describe('outcome', () => {
     expect(outcome(job({ kind: 'calibrate', state: 'done', result: { review: {} } }))!.title).toBe('Calibration saved');
   });
 
+  test('an improvement says the profile learned, and a stopped one that nothing changed', () => {
+    expect(outcome(job({ kind: 'refine', state: 'done' }))!.title).toBe('Your profile has learned from this shoot');
+    expect(outcome(job({ kind: 'refine', state: 'cancelled' }))!.text).toContain('profile is as it was');
+  });
+
   test('a failure carries its error', () => {
     expect(outcome(job({ state: 'failed', error: 'No edited files found' }))).toMatchObject({ tone: 'danger', text: 'No edited files found' });
   });

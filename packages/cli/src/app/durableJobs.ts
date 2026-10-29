@@ -27,10 +27,11 @@ import { JobError, lastErrorLine, parseJson } from './jobs.js';
 import { exitCode, lastProgress } from './progress.js';
 import { inspectCatalogExport } from '../develop/adapters/lightroom/inspect.js';
 import { parseCatalogExport } from '../develop/adapters/lightroom/catalog.js';
+import { shootWorkDir } from '../develop/shoot.js';
 
-export const DURABLE_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['train', 'calibrate', 'catalog']);
+export const DURABLE_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['train', 'calibrate', 'catalog', 'refine']);
 /** Jobs that start by waiting for the plug-in's catalog export. */
-const NEEDS_CATALOG: ReadonlySet<JobKind> = new Set<JobKind>(['train', 'catalog']);
+const NEEDS_CATALOG: ReadonlySet<JobKind> = new Set<JobKind>(['train', 'catalog', 'refine']);
 
 /** The settings the owner confirmed by eye on real shoots (see the develop README). */
 export const TRAIN_BOLDNESS = '1';
@@ -67,6 +68,20 @@ export function durableArgs(request: JobRequest, catalogFile: string | undefined
       ];
     case 'calibrate':
       return ['develop', 'calibrate', '--review', '--review-timeout', REVIEW_TIMEOUT_MINUTES, '--json'];
+    case 'refine':
+      // The refit keeps the settings the profile was trained with.
+      return [
+        'develop',
+        'refine',
+        request.folder!,
+        '--catalog',
+        catalogFile!,
+        '--boldness',
+        TRAIN_BOLDNESS,
+        '--anchor-gain',
+        TRAIN_ANCHOR_GAIN,
+        '--json',
+      ];
     default:
       throw new JobError('Not a training job.', 400);
   }
@@ -173,6 +188,13 @@ export class DurableJobs {
     if (!DURABLE_KINDS.has(request.kind)) throw new JobError('Not a training job.', 400);
     if (this.busy) throw new JobError('Another job is still running.', 409);
     if (NEEDS_CATALOG.has(request.kind) && !request.folder) throw new JobError('Choose a folder.', 400);
+    if (request.kind === 'refine') {
+      if (!existsSync(path.join(shootWorkDir(request.folder!), 'prediction.json'))) {
+        throw new JobError('Nothing in this folder was developed with shoots yet: use Develop Selection in Lightroom first.', 400);
+      }
+      // What was developed may sit in subfolders of the one chosen: read them all back.
+      request = { ...request, recursive: true };
+    }
 
     const record: JobRecord = {
       id: `job-${this.now().toString(36)}-${randomBytes(3).toString('hex')}`,

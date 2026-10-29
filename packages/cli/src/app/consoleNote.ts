@@ -23,6 +23,7 @@ const STARTED: Partial<Record<JobKind, string>> = {
   train: 'Training started',
   calibrate: 'Calibration started',
   catalog: 'Catalog export check started',
+  refine: 'Profile improvement started',
 };
 
 /** One line for a job the app started, with the local time; undefined for jobs not worth a line. */

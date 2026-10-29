@@ -55,7 +55,8 @@ export interface LearnArgs {
   editor?: string;
   /** A Lightroom catalog export from the plug-in: the shoot's edits are read from it instead of the sidecars. */
   catalog?: string;
-  name: string;
+  /** Default: the name the refitted profile already carries, else "my-style". */
+  name?: string;
   lambda: string;
   folds: number;
   groupBy?: string;
@@ -252,9 +253,18 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
   // held-out shoots over the whole catalog, not just the frames just folded in.
   // Saying so before it starts is the difference between a wait and a hang.
   printHuman(io, `\nRefitting the profile on all ${merged.size} images → ${profilePath}`);
+  // A refit is the same profile, improved: it keeps its name unless told otherwise.
+  let name = args.name;
+  if (!name && existsSync(profilePath)) {
+    try {
+      name = (JSON.parse(readFileSync(profilePath, 'utf8')) as DevelopProfile).name;
+    } catch {
+      // Unreadable: the default below.
+    }
+  }
   await runTrain({
     data: dataPath,
-    name: args.name,
+    name: name ?? 'my-style',
     out: profilePath,
     lambda: args.lambda,
     folds: args.folds,

@@ -163,12 +163,12 @@ export interface RatingProfile {
  * train and calibrate run detached: they finish even when Lightroom closes and the app stops.
  * catalog only exports the folder's develop settings from Lightroom and checks them, for the field test.
  */
-export type JobKind = 'cull' | 'rate' | 'doctor' | 'train' | 'calibrate' | 'catalog';
+export type JobKind = 'cull' | 'rate' | 'doctor' | 'train' | 'calibrate' | 'catalog' | 'refine';
 export type JobState = 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface JobRequest {
   kind: JobKind;
-  /** cull/rate: the folder as listed, so the job sees exactly the photos on screen; train: the folder to learn from. */
+  /** cull/rate: the folder as listed, so the job sees exactly the photos on screen; train: the folder to learn from; refine: the folder developed with shoots. */
   folder?: string;
   recursive?: boolean;
   profile?: string;

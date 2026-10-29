@@ -9,6 +9,7 @@ const TITLE: Record<JobStatus['kind'], string> = {
   train: 'Learning your style',
   calibrate: 'Calibrating',
   catalog: 'Reading your edits from Lightroom',
+  refine: 'Improving your profile',
 };
 
 /** The running job: what it is doing now and a way to stop it. */
