@@ -13,6 +13,7 @@ import type {
   JobStatus,
   LibraryListing,
   LightroomError,
+  PhotoExif,
   RatingProfile,
 } from '../contract.js';
 import type { SentChange } from '../outbox.js';
@@ -75,6 +76,8 @@ export const api = {
   profiles: () => call<RatingProfile[]>('GET', '/api/profiles'),
   heartbeat: () => call<{ ok: boolean; busy: boolean }>('POST', '/api/heartbeat'),
   browse: (path: string | null) => call<BrowseResult>('GET', `/api/browse${q({ path: path ?? undefined })}`),
+  /** Capture data read from the photo's EXIF; only for photos in a listed folder. */
+  exif: (path: string) => call<PhotoExif>('GET', `/api/exif${q({ path })}`),
   library: (folder: string, recursive: boolean) =>
     call<LibraryListing>('GET', `/api/library${q({ folder, recursive: recursive ? '1' : undefined })}`),
   startJob: (request: JobRequest) => call<JobStatus>('POST', '/api/jobs', request),

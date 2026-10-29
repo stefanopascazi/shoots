@@ -3,6 +3,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { Badge, Button, IconButton } from '@shoots/ui';
 import { thumbUrl } from '../api/client.js';
 import type { MarksPatch, ResetPart } from '../contract.js';
+import { ExifFacts } from './ExifFacts.js';
 import { FocusHeatmap, HeatLegend } from './FocusHeatmap.js';
 import { MarksPanel } from './MarksPanel.js';
 import { formatBytes, SEND_LABEL, type PhotoView } from './model.js';
@@ -140,6 +141,8 @@ export function PhotoViewer({ photos, index, onIndex, onClose, onMark, onReset, 
             </>
           )}
         </dl>
+
+        <ExifFacts key={photo.path} path={photo.path} />
 
         <div class="app-heat-toggle">
           {blur?.focusMap && (

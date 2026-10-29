@@ -8,12 +8,13 @@
 import { existsSync } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { BrowseResult, LibraryListing, LibraryPhoto } from '@shoots/app';
+import type { BrowseResult, LibraryListing, LibraryPhoto, PhotoExif } from '@shoots/app';
 
 /** A folder's photographs, before anything known about them is added. */
 export type FolderListing = Pick<LibraryListing, 'folder' | 'recursive' | 'photos'>;
 import { classifyExtension, scanFiles } from '@shoots/core';
-import { generateThumbnail, isRawFile } from '@shoots/imaging';
+import { generateThumbnail, isRawFile, readMetadata, type ExifRecord } from '@shoots/imaging';
+import { EXIF_TAGS, summarizeExif } from './exif.js';
 
 /** Roots to offer when no folder is chosen yet: drives on Windows, / elsewhere. */
 export function fsRoots(platform: NodeJS.Platform = process.platform): string[] {
@@ -48,6 +49,7 @@ export class Library {
   /** Folders listed this session; thumbnails are served only from inside them. */
   private readonly roots = new Map<string, boolean>();
   private readonly thumbs = new Map<string, Buffer>();
+  private readonly exifs = new Map<string, PhotoExif>();
   private inFlight = 0;
   private readonly waiting: Array<() => void> = [];
 
@@ -55,6 +57,8 @@ export class Library {
     private readonly ensureRawSupport: () => Promise<boolean> = async () => true,
     private readonly maxThumbs = 600,
     private readonly concurrency = 4,
+    private readonly readExif: (file: string) => Promise<ExifRecord | undefined> = async (file) =>
+      (await readMetadata([file], { tags: EXIF_TAGS }))[0],
   ) {}
 
   async list(folder: string, recursive: boolean): Promise<FolderListing> {
@@ -107,6 +111,21 @@ export class Library {
     } finally {
       this.release();
     }
+  }
+
+  /** The photo's capture data. Needs exiftool for every format; cached until the file changes. */
+  async exif(file: string): Promise<PhotoExif> {
+    const resolved = path.resolve(file);
+    const { mtimeMs } = await stat(resolved);
+    const key = `${resolved}|${mtimeMs}`;
+    const hit = this.exifs.get(key);
+    if (hit) return hit;
+    if (!(await this.ensureRawSupport())) throw new Error('Capture data needs exiftool, which could not be set up.');
+    const record = await this.readExif(resolved);
+    const summary = record ? summarizeExif(record) : {};
+    this.exifs.set(key, summary);
+    if (this.exifs.size > this.maxThumbs) this.exifs.delete(this.exifs.keys().next().value!);
+    return summary;
   }
 
   private acquire(): Promise<void> {

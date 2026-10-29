@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { exifRows } from '../src/library/exifRows.js';
 import type { CullResultItem, LibraryPhoto, RateResultItem } from '../src/contract.js';
 import { heatColor } from '../src/library/FocusHeatmap.js';
 import { parseLegacyDecisions, withMarks } from '../src/library/marks.js';
@@ -226,5 +227,16 @@ describe('rated', () => {
     expect(totals(manual).rated).toBe(0);
     const run = mergeResults(PHOTOS.slice(0, 1), undefined, [{ file: PHOTOS[0].path, stars: 0, focus: 0, aesthetic: 0, keywords: [] }]);
     expect(totals(run).rated).toBe(1);
+  });
+});
+
+describe('exifRows', () => {
+  test('recorded fields only, in display order', () => {
+    expect(exifRows({ lens: '85mm', taken: '2026-05-01', location: '1, 2' })).toEqual([
+      { label: 'Taken', value: '2026-05-01' },
+      { label: 'Lens', value: '85mm' },
+      { label: 'Location', value: '1, 2' },
+    ]);
+    expect(exifRows({})).toEqual([]);
   });
 });

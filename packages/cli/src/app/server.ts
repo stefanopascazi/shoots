@@ -260,6 +260,11 @@ export function createAppServer(opts: AppServerOptions): AppServer {
       }
       case 'GET /api/thumb':
         return thumb(res, url);
+      case 'GET /api/exif': {
+        const file = url.searchParams.get('path');
+        if (!file || !opts.library.isServable(file)) return sendJson(res, 404, { error: 'Not found.' });
+        return withUserError(res, () => opts.library.exif(file));
+      }
       case 'POST /api/jobs':
         return startJob(req, res);
       case 'GET /api/jobs/training':

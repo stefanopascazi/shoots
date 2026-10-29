@@ -35,6 +35,23 @@ export interface LibraryPhoto {
   mtime: number;
 }
 
+/** A photograph's capture data, read from its EXIF and formatted for display; absent fields were not recorded. */
+export interface PhotoExif {
+  taken?: string;
+  camera?: string;
+  lens?: string;
+  /** Shutter, aperture, ISO and exposure compensation, on one line. */
+  exposure?: string;
+  focalLength?: string;
+  /** Exposure program and metering mode. */
+  mode?: string;
+  flash?: string;
+  whiteBalance?: string;
+  dimensions?: string;
+  /** Decimal latitude, longitude. */
+  location?: string;
+}
+
 /** Lightroom's flags: pick (P), reject (X), unflagged (U). */
 export type Flag = 'pick' | 'reject' | 'unflagged';
 

@@ -1,6 +1,7 @@
 /** @jsxImportSource preact */
 import { describe, expect, test } from 'bun:test';
 import { render } from 'preact-render-to-string';
+import { ExifList } from '../src/library/ExifFacts.js';
 import { JobPanel } from '../src/library/JobPanel.js';
 import { LightroomErrorAlert } from '../src/LightroomErrorAlert.js';
 import { FolderPicker } from '../src/library/FolderPicker.js';
@@ -48,5 +49,14 @@ describe('LightroomErrorAlert', () => {
     expect(html).toContain('Lightroom could not complete: send to Lightroom');
     expect(html).toContain('catalog busy');
     expect(html).toContain('shoots.log');
+  });
+});
+
+describe('ExifList', () => {
+  test('labels each recorded field, or says nothing was recorded', () => {
+    const html = render(<ExifList rows={[{ label: 'Camera', value: 'SONY ILCE-7M3' }]} />);
+    expect(html).toContain('<dt>Camera</dt>');
+    expect(html).toContain('SONY ILCE-7M3');
+    expect(render(<ExifList rows={[]} />)).toContain('no capture data');
   });
 });

@@ -165,6 +165,19 @@ describe('app server lifetime', () => {
   });
 });
 
+describe('capture data', () => {
+  test('only for photos in a listed folder', async () => {
+    const { base } = await start();
+    const dir = mkdtempSync(path.join(tmpdir(), 'shoots-app-'));
+    const photo = path.join(dir, 'a.jpg');
+    writeFileSync(photo, 'x');
+    const exif = () => fetch(`${base}/api/exif?path=${encodeURIComponent(photo)}`, { headers: auth });
+    expect((await exif()).status).toBe(404);
+    await fetch(`${base}/api/library?folder=${encodeURIComponent(dir)}`, { headers: auth });
+    expect((await exif()).status).not.toBe(404);
+  });
+});
+
 describe('app server memory', () => {
   test('a folder named on the launch URL opens first, once', async () => {
     const { base } = await start();
