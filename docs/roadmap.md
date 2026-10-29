@@ -64,6 +64,10 @@ In order:
   so training through the plugin does not depend on XMP sidecars being up to
   date. Training and calibration start from the app and run on their own: they
   finish even if Lightroom closes. The standalone CLI keeps training from sidecars.
+- **Develop from Lightroom, and learn back.** The plugin applies the profile's
+  predictions to the selection as one undo step; once you have finished the
+  photos, the app compares what you kept with what was predicted and improves
+  the profile from the difference.
 - **A closed beta that shares data.** Testers who opt in share derived
   measurements, never images, so the develop predictor can learn from many
   photographers instead of one. After the beta, sharing becomes an explicit
