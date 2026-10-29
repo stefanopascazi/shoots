@@ -95,6 +95,8 @@ const CSP = [
   "style-src 'unsafe-inline'",
   "img-src 'self' data:",
   "connect-src 'self'",
+  // The calibration page, served by `develop calibrate --review` on its own port.
+  'frame-src http://127.0.0.1:*',
   "frame-ancestors 'none'",
   "base-uri 'none'",
   "form-action 'none'",

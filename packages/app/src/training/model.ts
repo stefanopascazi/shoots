@@ -74,3 +74,18 @@ export function stepLabel(job: JobStatus): string {
   if (!p) return 'Starting…';
   return p.total ? `${p.label} · ${p.done ?? 0} of ${p.total}` : p.label;
 }
+
+/**
+ * The calibration page as the app may frame it: only one the CLI serves on this
+ * machine (`develop calibrate --review`, http on 127.0.0.1). Anything else is
+ * offered as a link at most, never embedded.
+ */
+export function embeddableReviewUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' && u.hostname === '127.0.0.1' && u.port !== '' ? u.href : undefined;
+  } catch {
+    return undefined;
+  }
+}

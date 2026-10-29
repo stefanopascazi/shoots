@@ -831,7 +831,9 @@ document.getElementById('save').addEventListener('click', async function () {
   var r = await fetch('/save', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body)
   });
-  statusEl.textContent = r.ok ? 'Saved — you can close this tab.' : 'Save failed.';
+  // Framed by the app, there is no tab of its own to close.
+  var embedded = window.self !== window.top;
+  statusEl.textContent = r.ok ? (embedded ? 'Saved.' : 'Saved — you can close this tab.') : 'Save failed.';
 });
 
 boot();

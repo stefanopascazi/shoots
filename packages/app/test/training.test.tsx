@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import { render } from 'preact-render-to-string';
 import type { DevelopStatus, JobStatus } from '../src/contract.js';
-import { duration, outcome, profileSummary, stepLabel } from '../src/training/model.js';
+import { duration, embeddableReviewUrl, outcome, profileSummary, stepLabel } from '../src/training/model.js';
 import { ProfileCard } from '../src/training/ProfileCard.js';
 import { CatalogReportCard } from '../src/training/CatalogReportCard.js';
 import { TrainingJobCard } from '../src/training/TrainingJobCard.js';
@@ -64,6 +64,17 @@ describe('stepLabel', () => {
   });
 });
 
+describe('embeddableReviewUrl', () => {
+  test('only the CLI review server on this machine', () => {
+    expect(embeddableReviewUrl('http://127.0.0.1:7391/')).toBe('http://127.0.0.1:7391/');
+    expect(embeddableReviewUrl('http://localhost:7391/')).toBeUndefined();
+    expect(embeddableReviewUrl('https://127.0.0.1:7391/')).toBeUndefined();
+    expect(embeddableReviewUrl('http://example.com/')).toBeUndefined();
+    expect(embeddableReviewUrl('not a url')).toBeUndefined();
+    expect(embeddableReviewUrl(undefined)).toBeUndefined();
+  });
+});
+
 describe('TrainingJobCard', () => {
   test('offers the review page once the calibration serves one', () => {
     const html = render(
@@ -72,8 +83,17 @@ describe('TrainingJobCard', () => {
         onCancel={() => {}}
       />,
     );
+    expect(html).toContain('<iframe class="app-calibration" src="http://127.0.0.1:7391/"');
     expect(html).toContain('href="http://127.0.0.1:7391/"');
-    expect(html).toContain('target="_blank"');
+    expect(html).toContain('Open in a new tab');
+  });
+
+  test('a page it may not frame is only a link', () => {
+    const html = render(
+      <TrainingJobCard job={job({ kind: 'calibrate', progress: { label: 'Waiting', url: 'http://example.com/' } })} onCancel={() => {}} />,
+    );
+    expect(html).not.toContain('<iframe');
+    expect(html).toContain('Open the calibration page');
   });
 
   test('says it outlives Lightroom', () => {

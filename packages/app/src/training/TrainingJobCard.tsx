@@ -1,7 +1,8 @@
 /** @jsxImportSource preact */
 import { Button, Card, Icon, Progress, buttonClass } from '@shoots/ui';
 import type { JobStatus } from '../contract.js';
-import { stepLabel } from './model.js';
+import { CalibrationFrame } from './CalibrationFrame.js';
+import { embeddableReviewUrl, stepLabel } from './model.js';
 
 const TITLE: Partial<Record<JobStatus['kind'], string>> = {
   train: 'Learning your style',
@@ -13,6 +14,7 @@ const TITLE: Partial<Record<JobStatus['kind'], string>> = {
 export function TrainingJobCard({ job, onCancel }: { job: JobStatus; onCancel: () => void }) {
   const p = job.progress;
   const fraction = p?.total ? (p.done ?? 0) / p.total : undefined;
+  const embedded = embeddableReviewUrl(p?.url);
   return (
     <Card class="app-job">
       <div class="app-job__row">
@@ -23,9 +25,9 @@ export function TrainingJobCard({ job, onCancel }: { job: JobStatus; onCancel: (
           </span>
         </div>
         {p?.url && (
-          <a class={buttonClass('primary', 'sm')} href={p.url} target="_blank" rel="noopener noreferrer">
+          <a class={buttonClass(embedded ? 'ghost' : 'primary', 'sm')} href={p.url} target="_blank" rel="noopener noreferrer">
             <Icon name="external" size={14} />
-            Open the calibration page
+            {embedded ? 'Open in a new tab' : 'Open the calibration page'}
           </a>
         )}
         <Button size="sm" variant="ghost" icon="stop" onClick={onCancel}>
@@ -33,6 +35,7 @@ export function TrainingJobCard({ job, onCancel }: { job: JobStatus; onCancel: (
         </Button>
       </div>
       <Progress value={fraction} label={stepLabel(job)} />
+      {embedded && <CalibrationFrame url={embedded} />}
     </Card>
   );
 }

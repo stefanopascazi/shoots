@@ -14,6 +14,9 @@
 .app-job .sh-card__body { display: grid; gap: var(--sh-space-3); }
 .app-job__row { display: flex; align-items: center; gap: var(--sh-space-3); }
 .app-job__text { display: grid; gap: 2px; flex: 1; min-width: 0; font-size: var(--sh-text-sm); }
+/* The CLI's calibration page never scrolls: give it most of the window. */
+.app-calibration { display: block; width: 100%; height: calc(100vh - 330px); min-height: 520px;
+                   border: 1px solid var(--sh-border); border-radius: var(--sh-radius-md); background: var(--sh-bg); }
 
 .app-theme { width: 100%; }
 .app-theme .sh-segmented__item { flex: 1; justify-content: center; }

@@ -119,6 +119,7 @@ describe('app server gate', () => {
     const page = await fetch(`${base}/`, { headers: { cookie } });
     expect(page.status).toBe(200);
     expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+    expect(page.headers.get('content-security-policy')).toContain('frame-src http://127.0.0.1:*');
     expect(await page.text()).toContain('<p>app</p>');
   });
 
