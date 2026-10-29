@@ -62,6 +62,8 @@ export interface AppServerOptions {
   profiles: () => Promise<RatingProfile[]>;
   /** Stop when the plug-in has not renewed its lease for this long. */
   hostLeaseMs: number;
+  /** Told when a training, calibration or export check starts. */
+  onDurableStart?: (status: JobStatus) => void;
   /** Stop when no page has checked in, and no job has run, for this long. */
   pageIdleMs: number;
   onStop: (reason: StopReason) => void;
@@ -306,7 +308,9 @@ export function createAppServer(opts: AppServerOptions): AppServer {
     try {
       if (DURABLE_KINDS.has(request.kind)) {
         pageIdle?.touch();
-        return sendJson(res, 202, opts.durable.start(request));
+        const started = opts.durable.start(request);
+        opts.onDurableStart?.(started);
+        return sendJson(res, 202, started);
       }
       const photos = request.folder ? await opts.library.photosOf(request.folder, request.recursive === true) : [];
       pageIdle?.touch();

@@ -18,6 +18,7 @@ import { logError, makeIo, parsePositiveInt } from '../io.js';
 import { ensureExiftoolReady } from '../tools.js';
 import { selfInvocation } from '../selfInvoke.js';
 import { lastErrorLine } from '../app/jobs.js';
+import { BANNER, CONSOLE_TITLE, consoleWriter, jobLine } from '../app/consoleNote.js';
 import { VERSION } from '../version.js';
 import type { AppServer } from '../app/server.js';
 import type { AppStore } from '../app/store.js';
@@ -54,6 +55,10 @@ async function runApp(options: AppOptions): Promise<void> {
       import('../app/store.js'),
     ]);
   const token = createToken();
+  // The console window the plug-in's launch leaves open on Windows: say what it is.
+  const say = consoleWriter();
+  process.title = CONSOLE_TITLE;
+  say(BANNER);
 
   let rawReady: Promise<boolean> | undefined;
   const library = new Library(() => (rawReady ??= ensureExiftoolReady(makeIo({}))));
@@ -87,6 +92,10 @@ async function runApp(options: AppOptions): Promise<void> {
     profiles: async () => {
       const builtin = new Set(PROFILE_NAMES);
       return (await allProfileNames()).map((name) => ({ name, learned: !builtin.has(name) }));
+    },
+    onDurableStart: (status) => {
+      const line = jobLine(status.kind, new Date(status.startedAt));
+      if (line) say(line);
     },
     hostLeaseMs: parsePositiveInt(options.leaseSeconds, 90) * 1000,
     pageIdleMs: parsePositiveInt(options.idleMinutes, 30) * 60_000,
