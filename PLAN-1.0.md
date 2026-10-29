@@ -99,15 +99,23 @@ launch.
       4 targets never returned (`ColorGrade{Shadow,Highlight}{Hue,Sat}`) are
       missing from sidecars too — Adobe stores them as `SplitToning*`, so the
       schema carries 4 permanent constants (engine issue, not L2).
+- [x] **Training from the catalog, end to end**: Start training on the NAS
+      folder exports from Lightroom, trains detached and writes the profile to
+      `~/.shoots/develop/profile/export.json` (dataset in `develop/export/`).
+- [x] **Calibrate from the app**: the review page opens from the Training screen.
+- [x] **No console window per photo** (training, calibrate): every tool starts
+      with `windowsHide`, guarded by a test. The one window left is the app
+      server's: titled "leave open while you use shoots", with a note that
+      closing it closes the app while a started training keeps running —
+      verified by closing it mid-export.
 
-**Not verified yet:** training from the catalog end to end in Lightroom,
-calibrate from the app, and the installer launched by
-the plugin (needs a release carrying `--files-from`).
+**Not verified yet:** the installer launched by the plugin (needs a release
+carrying `--files-from`).
 
 **Next, in order:**
 
-1. **Field test on the Lightroom PC** — in progress, see above. Left: fix Rate
-   Selection, analyse the export, then train from the catalog. Copy `dist-bin/shoots.exe` (from
+1. **Field test on the Lightroom PC** — passed, see above, except Rate
+   Selection: fix it. Copy `dist-bin/shoots.exe` (from
    `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
    `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`), read-back of the open folder (`getFolderByPath`, `batchGetRawMetadata`) and a change made in Lightroom showing in the app, Training › **Export only** (no training: keeps the catalog export, raw SDK settings included, under `~/.shoots/app/exports/` and reports names not matched — bring that file back to fix L2),
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
@@ -118,8 +126,8 @@ the plugin (needs a release carrying `--files-from`).
 3. **L1 leftovers**: write `rate` keywords into the catalog; decide whether cull
    should also flag keepers; cancel support (kill the child process).
 4. **L2 catalog export** — shipped; field-test it with step 1.
-5. **Track W** — next: field-test Send to Lightroom and training from the
-   catalog; finish the calibration screen (still rough). Monetisation gate still to
+5. **Track W** — Send to Lightroom and training from the catalog pass the field
+   test; next: finish the calibration screen (still rough). Monetisation gate still to
    decide: today only the hidden command and the lease keep the app plugin-only;
    a signed licence checked by the server is the real one.
 6. **L3** apply predictions via `applyDevelopSettings`.
