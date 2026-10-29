@@ -8,7 +8,7 @@
  * later reads that folder back and picks the job up where it is — still running,
  * or finished while nobody was watching.
  *
- * The CLI ends its progress file with `{ kind: 'exit' }` (markExitOnProgressFile),
+ * The CLI ends its progress file with `{ kind: 'exit' }` (markLifetimeOnProgressFile),
  * which is how a run is known to have finished without waiting on the process.
  * A pid that is gone with no such line means the run was killed.
  *

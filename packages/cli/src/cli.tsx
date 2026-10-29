@@ -8,11 +8,11 @@
 import { buildProgram } from './program.js';
 import { assertShellCatalogInSync } from './shell/catalog.js';
 import { installCrashHandlers } from './crash.js';
-import { markExitOnProgressFile } from './progressChannel.js';
+import { markLifetimeOnProgressFile } from './progressChannel.js';
 
 // Before anything else: keep the runtime's own crash banner out of our output.
 installCrashHandlers();
-markExitOnProgressFile();
+markLifetimeOnProgressFile();
 
 const program = buildProgram();
 

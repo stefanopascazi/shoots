@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { createProgressChannel, markExitOnProgressFile } from '../../src/progressChannel.js';
+import { createProgressChannel, markLifetimeOnProgressFile } from '../../src/progressChannel.js';
 
 let dir: string;
 let file: string;
@@ -64,12 +64,12 @@ describe('createProgressChannel', () => {
   });
 });
 
-describe('markExitOnProgressFile', () => {
-  test('the file ends with the exit code', async () => {
+describe('markLifetimeOnProgressFile', () => {
+  test('the file starts with the pid and ends with the exit code', async () => {
     const module = path.resolve(import.meta.dir, '../../src/progressChannel.ts');
-    const script = `const { markExitOnProgressFile } = await import(${JSON.stringify(module)}); markExitOnProgressFile(${JSON.stringify(file)}); process.exitCode = 3;`;
+    const script = `const { markLifetimeOnProgressFile } = await import(${JSON.stringify(module)}); markLifetimeOnProgressFile(${JSON.stringify(file)}); process.exitCode = 3;`;
     const run = spawnSync(process.execPath, ['-e', script]);
     expect(run.status).toBe(3);
-    expect(await lines()).toEqual([{ kind: 'exit', code: 3 }]);
+    expect(await lines()).toEqual([{ kind: 'start', pid: run.pid }, { kind: 'exit', code: 3 }]);
   });
 });

@@ -15,8 +15,11 @@ export type ProgressEvent =
   | { kind: 'steps'; label: string; done: number; total: number; detail?: string }
   | { kind: 'download'; label: string; received: number; total: number | null };
 
-/** A line of the progress file: an event, or the exit marker written once at the end. */
-export type ProgressLine = ProgressEvent | { kind: 'exit'; code: number };
+/**
+ * A line of the progress file: an event, or one of the lifetime markers — the
+ * process id written first (so a host can cancel by killing it), the exit code last.
+ */
+export type ProgressLine = ProgressEvent | { kind: 'start'; pid: number } | { kind: 'exit'; code: number };
 
 export const PROGRESS_FILE_ENV = 'SHOOTS_PROGRESS_FILE';
 
@@ -70,14 +73,23 @@ export function emitProgress(event: ProgressEvent): void {
 }
 
 /**
- * Append `{ kind: 'exit', code }` to the progress file when the process ends.
+ * Bracket the progress file with the process's lifetime: `{ kind: 'start', pid }`
+ * now, `{ kind: 'exit', code }` when the process ends.
+ *
+ * The pid is how the Lightroom plug-in cancels a run: LrTasks.execute gives it
+ * no handle on the child, so it kills the process the file names.
  *
  * A host that outlives its own restart — the app server re-adopting a training
- * run after Lightroom closed it — cannot wait on the child, so this line is how
- * it learns the run finished, rather than guessing from a process id.
+ * run after Lightroom closed it — cannot wait on the child, so the exit line is
+ * how it learns the run finished, rather than guessing from a process id.
  */
-export function markExitOnProgressFile(file: string | undefined = process.env[PROGRESS_FILE_ENV]): void {
+export function markLifetimeOnProgressFile(file: string | undefined = process.env[PROGRESS_FILE_ENV]): void {
   if (!file) return;
+  try {
+    appendFileSync(file, JSON.stringify({ kind: 'start', pid: process.pid }) + '\n', 'utf8');
+  } catch {
+    // Advisory only.
+  }
   process.once('exit', (code) => {
     try {
       appendFileSync(file, JSON.stringify({ kind: 'exit', code: code ?? 0 }) + '\n', 'utf8');
