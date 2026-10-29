@@ -86,6 +86,7 @@ launch.
 - [x] **Cull Selection** works.
 - [ ] **Rate Selection fails**: a generic error with `0`. To investigate.
 - [x] **Open shoots** opens the app and it works.
+- [x] **Plug-in Manager panel** works.
 - [x] **Data flows both ways as agreed**: what Send to Lightroom sends lands in
       the catalog, and stars, flags and labels set in Lightroom show in the app.
 - [x] **Export only** produced a catalog export with the raw SDK settings
@@ -93,7 +94,7 @@ launch.
       engine's names before training from the catalog.
 
 **Not verified yet:** training from the catalog end to end in Lightroom,
-calibrate from the app, the Plug-in Manager panel, and the installer launched by
+calibrate from the app, and the installer launched by
 the plugin (needs a release carrying `--files-from`).
 
 **Next, in order:**
