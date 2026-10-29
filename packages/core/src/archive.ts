@@ -26,7 +26,7 @@ export async function extractTarGz(archivePath: string, destDir: string): Promis
   // and (unlike `-f`) `-C C:/...` is not misread as a remote host:path.
   const tarDest = process.platform === 'win32' ? destDir.replace(/\\/g, '/') : destDir;
   await new Promise<void>((resolve, reject) => {
-    const child = spawn('tar', ['-xzf', '-', '-C', tarDest], { stdio: ['pipe', 'ignore', 'pipe'] });
+    const child = spawn('tar', ['-xzf', '-', '-C', tarDest], { stdio: ['pipe', 'ignore', 'pipe'], windowsHide: true });
     const err: Buffer[] = [];
     child.stderr.on('data', (chunk: Buffer) => err.push(chunk));
     child.on('error', reject);

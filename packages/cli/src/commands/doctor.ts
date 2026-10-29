@@ -40,7 +40,7 @@ export function registerDoctorCommand(program: Command): void {
 /** Run a command and capture combined output; never throws. */
 function capture(cmd: string, args: string[]): Promise<{ ok: boolean; text: string }> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     const buf: Buffer[] = [];
     child.stdout.on('data', (c: Buffer) => buf.push(c));
     child.stderr.on('data', (c: Buffer) => buf.push(c));

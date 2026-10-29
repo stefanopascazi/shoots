@@ -90,7 +90,7 @@ async function refine(shoot: RefinableShoot, editorId: string, name: string): Pr
   ]);
 
   return new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
     let output = '';
     const collect = (chunk: Buffer): void => { output += chunk.toString('utf8'); };
     child.stdout.on('data', collect);

@@ -99,6 +99,7 @@ export class ExiftoolDaemon {
     if (this.child) return this.child;
     const child = spawn(this.command.command, [...this.command.prefixArgs, '-stay_open', 'True', '-@', '-'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     this.child = child;
     this.clearBuffers();

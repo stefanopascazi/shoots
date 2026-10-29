@@ -22,6 +22,7 @@ export async function run(
   return new Promise((resolve, reject) => {
     const child = spawn(command, [...args], {
       stdio: [stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     let stdout = '';
     let stderr = '';

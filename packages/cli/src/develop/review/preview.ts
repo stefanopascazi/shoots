@@ -95,6 +95,7 @@ export async function decode(rawPath: string, size: number): Promise<LinearImage
       // exposure slider exists to correct.
       const child = spawn(dev.command, ['-w', '-4', '-o', '1', '-h', '-Z', out, rawPath], {
         stdio: ['ignore', 'ignore', 'pipe'],
+        windowsHide: true,
       });
       const err: Buffer[] = [];
       child.stderr.on('data', (c: Buffer) => err.push(c));

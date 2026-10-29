@@ -70,6 +70,7 @@ function spawnExiftool(args: string[], options: RunExiftoolOptions = {}): Promis
     }
     const child = spawn(resolved.command, [...resolved.prefixArgs, '-@', '-'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
     });
     const out: Buffer[] = [];
     const err: Buffer[] = [];

@@ -72,6 +72,8 @@ function runDeveloper(dev: RawDeveloper, rawPath: string, outPath: string): Prom
   return new Promise((resolve, reject) => {
     const child = spawn(dev.command, buildArgs(dev.argsTemplate, rawPath, outPath), {
       stdio: ['ignore', 'ignore', 'pipe'],
+      // No console window per run: under the app the parent has none to lend.
+      windowsHide: true,
     });
     const err: Buffer[] = [];
     child.stderr.on('data', (c: Buffer) => err.push(c));
