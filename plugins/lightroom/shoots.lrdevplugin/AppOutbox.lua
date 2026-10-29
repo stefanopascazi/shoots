@@ -12,6 +12,7 @@ local LrTasks = import 'LrTasks'
 local AppSession = require 'AppSession'
 local CatalogFolders = require 'CatalogFolders'
 local Outbox = require 'Outbox'
+local RawMetadata = require 'RawMetadata'
 
 local AppOutbox = {}
 
@@ -54,7 +55,7 @@ function AppOutbox.apply(session)
         for _, entry in ipairs(found) do
           for field, value in pairs(Outbox.fields(entry.item)) do
             for _, photo in ipairs(entry.photos) do
-              photo:setRawMetadata(field, value)
+              photo:setRawMetadata(field, RawMetadata.value(field, value))
             end
           end
         end

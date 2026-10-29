@@ -199,6 +199,29 @@ describe('yielding inside Lightroom', () => {
   });
 });
 
+describe('RawMetadata.value', () => {
+  // Lightroom raised "Invalid rating 0" on Rate Selection: 0 stars is nil there.
+  test('a rating of 0 becomes nil, everything else passes through', () => {
+    expect(runLua(`return { require('RawMetadata').value('rating', 0) == nil }`)).toEqual([true]);
+    expect(runLua(`return require('RawMetadata').value('rating', 3)`)).toBe(3);
+    expect(runLua(`return require('RawMetadata').value('pickStatus', 0)`)).toBe(0);
+    expect(runLua(`return require('RawMetadata').value('colorNameForLabel', 'none')`)).toBe('none');
+  });
+
+  test('every setRawMetadata call goes through it', async () => {
+    const offenders: string[] = [];
+    for (const name of (await readdir(SOURCE_DIR)).filter((f) => f.endsWith('.lua'))) {
+      const lines = (await readFile(path.join(SOURCE_DIR, name), 'utf8')).split('\n');
+      lines.forEach((line, i) => {
+        if (/setRawMetadata\(/.test(line) && !/^\s*--/.test(line) && !/RawMetadata\.value\(/.test(line)) {
+          offenders.push(`${name}:${i + 1}: ${line.trim()}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('Paths', () => {
   const same = (a: string, b: string) => runLua(`return require('Paths').same(${JSON.stringify(a)}, ${JSON.stringify(b)})`);
   const within = (a: string, b: string) => runLua(`return require('Paths').within(${JSON.stringify(a)}, ${JSON.stringify(b)})`);

@@ -84,7 +84,9 @@ launch.
 **Field test in Lightroom (2026-10-29)**, network share on a NAS:
 
 - [x] **Cull Selection** works.
-- [ ] **Rate Selection fails**: a generic error with `0`. To investigate.
+- [ ] **Rate Selection fails**: "Invalid rating 0" — Lightroom refuses a rating
+      of 0 and clears stars with nil. Fixed in `RawMetadata.value` (Rate and Send
+      to Lightroom both route through it); to re-test in Lightroom.
 - [x] **Open shoots** opens the app and it works.
 - [x] **Plug-in Manager panel** works.
 - [x] **Data flows both ways as agreed**: what Send to Lightroom sends lands in
@@ -115,7 +117,7 @@ carrying `--files-from`).
 **Next, in order:**
 
 1. **Field test on the Lightroom PC** — passed, see above, except Rate
-   Selection: fix it. Copy `dist-bin/shoots.exe` (from
+   Selection: fix shipped, re-test it. Copy `dist-bin/shoots.exe` (from
    `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
    `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`), read-back of the open folder (`getFolderByPath`, `batchGetRawMetadata`) and a change made in Lightroom showing in the app, Training › **Export only** (no training: keeps the catalog export, raw SDK settings included, under `~/.shoots/app/exports/` and reports names not matched — bring that file back to fix L2),
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what

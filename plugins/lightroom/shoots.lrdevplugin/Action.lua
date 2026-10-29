@@ -9,6 +9,7 @@ local LrFunctionContext = import 'LrFunctionContext'
 local LrProgressScope = import 'LrProgressScope'
 
 local Installer = require 'Installer'
+local RawMetadata = require 'RawMetadata'
 local Results = require 'Results'
 local Runner = require 'Runner'
 
@@ -59,7 +60,7 @@ function Action.run(spec)
       for key, change in pairs(changes) do
         for _, photo in ipairs(byKey[key] or {}) do
           for field, value in pairs(change) do
-            photo:setRawMetadata(field, value)
+            photo:setRawMetadata(field, RawMetadata.value(field, value))
           end
         end
       end
