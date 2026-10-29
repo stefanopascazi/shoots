@@ -488,19 +488,6 @@ describe('Results', () => {
     expect(out).toEqual({ changes: { '/a.jpg': { rating: 5 }, '/b.jpg': { rating: 3 } }, counts: { rated: 2, failed: 0 } });
   });
 
-  test('rate keeps each rated photo keywords: trimmed, once, strings only', () => {
-    const out = runLua(`
-      local _, _, keywords = require('Results').rateChanges({
-        results = {
-          { file = '/a.jpg', stars = 3, keywords = { ' street ', 'candid', 'street', '', 7 } },
-          { file = '/b.jpg', stars = 1 },
-          { file = '/c.jpg', keywords = { 'lost' } },
-        },
-      }, 'posix')
-      return keywords`);
-    expect(out).toEqual({ '/a.jpg': ['street', 'candid'], '/b.jpg': [] });
-  });
-
   test('summary names failures only when there are some', () => {
     expect(runLua(`return require('Results').summary('cull', { rejected = 2, kept = 5, failed = 0 })`)).toBe('2 rejected as blurry, 5 kept.');
     expect(runLua(`return require('Results').summary('rate', { rated = 4, failed = 1 })`)).toBe('4 rated, 1 failed.');

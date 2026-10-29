@@ -113,8 +113,7 @@ launch.
 
 - [x] **Installer launched by the plugin**: downloads `0.7.4` and works.
 
-**To field-test next:** cancel from the progress bar (Cull, Rate) and `rate`
-keywords in the catalog.
+**To field-test next:** cancel from the progress bar (Cull, Rate).
 
 **Next, in order:**
 
@@ -126,10 +125,11 @@ keywords in the catalog.
 2. **Release `0.7.4`** — done; the plugin's install path passes. **The plugin
    is never a public release asset** — it is what the product sells; how paying
    users get it is still open (see Open decisions).
-3. **L1 leftovers**: `rate` keywords written under a `shoots` parent keyword
-   (re-rating replaces them, the user's own stay) and cancel (the CLI writes
-   its pid first; the plugin kills it) — both shipped, to field-test. Still
-   open: whether cull should also flag keepers.
+3. **L1 leftovers**: cancel (the CLI writes its pid first; the plugin kills
+   it) — shipped, to field-test. Decided: cull never flags keepers (sharp is
+   not picked). `rate` keywords stay out of the catalog: the zero-shot keyword
+   model is wrong too often (`indoor` and `outdoor` on one frame) and must be
+   reworked first.
 4. **L2 catalog export** — shipped; field-test it with step 1.
 5. **Track W** — Send to Lightroom and training from the catalog pass the field
    test; next: finish the calibration screen (still rough). Monetisation gate still to

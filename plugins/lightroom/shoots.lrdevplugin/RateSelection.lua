@@ -2,7 +2,6 @@
 local LrPrefs = import 'LrPrefs'
 
 local Action = require 'Action'
-local CatalogKeywords = require 'CatalogKeywords'
 local Command = require 'Command'
 local Results = require 'Results'
 
@@ -14,5 +13,4 @@ Action.run {
   command = 'rate',
   args = function(listPath) return Command.rateArgs(listPath, profile) end,
   changes = Results.rateChanges,
-  write = CatalogKeywords.write,
 }
