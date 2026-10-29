@@ -134,10 +134,20 @@ launch.
       Already edited photos: Replace / Skip / Cancel. Verified on real CR3 up to
       the JSON; Lightroom itself still to field-test.
 
-**To field-test next:** Develop Selection (apply, undo, history step, the
-Look, edited photos asked). **Calibration page never opens**: every run ends
-"nothing to calibrate", the controls keep their fitted gains — need the
-calibrate job's `stderr.log` from the Lightroom PC to tell which gate.
+- [x] **Develop Selection in Lightroom** works on real photos: one history
+      step "shoots: <profile>", Ctrl+Z and the History panel both undo, the
+      question on edited photos is right. **Calibrate from the app** works.
+- [x] **The loop, from the catalog**: `feedback`, `learn` and `refine` take
+      `--catalog`. Develop Selection folds each run into the shoot's record by
+      file (developing a folder in parts loses nothing); a shoot's working
+      folder carries a digest of its path. Training › **Improve profile** and
+      a list of shoots **waiting to improve your profile** run `refine
+      --catalog` detached, with the training settings; a refit keeps the
+      profile's name. Verified end to end on real CR3 in an isolated home
+      (4 observations journalled, refit on 1269 images, list empties).
+
+**To field-test next:** Improve profile from the app after a Develop Selection
+and some hand edits in Lightroom; the waiting list.
 
 **Next, in order:**
 
@@ -161,7 +171,7 @@ calibrate job's `stderr.log` from the Lightroom PC to tell which gate.
    app only frames it on the Training screen — to field-test. Monetisation gate still to
    decide: today only the hidden command and the lease keep the app plugin-only;
    a signed licence checked by the server is the real one.
-6. **L3** apply predictions via `applyDevelopSettings` — **first cut shipped**, to field-test; then in the app too. The engine
+6. **L3** apply predictions via `applyDevelopSettings` — **passes the field test**; the loop back (refine from the catalog) shipped, to field-test; Develop in the app later. The engine
    predicts per shoot (level head) and per frame, so the plug-in sends the
    shoot, the CLI returns settings as JSON (no sidecars, the inverse of the L2
    mapping: crs names, flat tone curve), and the plug-in applies them in one

@@ -20,6 +20,7 @@ import {
   type LibraryPhoto,
   type ColorLabel,
   type DevelopStatus,
+  type PendingShoot,
   type LightroomChange,
   type LightroomError,
   type LightroomState,
@@ -57,6 +58,8 @@ export interface AppServerOptions {
   durable: DurableJobs;
   store: AppStore;
   developStatus: () => Promise<DevelopStatus>;
+  /** Folders developed with shoots that the profile has not learned from yet. */
+  pendingShoots: () => Promise<PendingShoot[]>;
   /** Training output and the app's job history, removable from Setup. */
   cleanup: Cleanup;
   profiles: () => Promise<RatingProfile[]>;
@@ -271,6 +274,8 @@ export function createAppServer(opts: AppServerOptions): AppServer {
         return sendJson(res, 200, { job: opts.durable.latest() ?? null });
       case 'GET /api/develop/status':
         return withUserError(res, () => opts.developStatus());
+      case 'GET /api/develop/pending':
+        return withUserError(res, () => opts.pendingShoots());
       case 'GET /api/cleanup':
         return withUserError(res, async () => ({ items: await opts.cleanup.preview() }));
       case 'POST /api/cleanup':

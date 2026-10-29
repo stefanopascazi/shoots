@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { api } from '../api/client.js';
-import type { DevelopStatus, JobRequest } from '../contract.js';
+import type { DevelopStatus, JobRequest, PendingShoot } from '../contract.js';
 import { useJob, type JobHandle } from '../hooks/useJob.js';
 
 export interface TrainingHandle {
   job: JobHandle;
   status: DevelopStatus | undefined;
+  /** Folders developed with shoots that the profile has not learned from yet. */
+  pending: PendingShoot[];
   /** Starts a training or calibration and refreshes the profile when it ends. */
   run: (request: JobRequest) => Promise<void>;
 }
@@ -17,9 +19,11 @@ export interface TrainingHandle {
 export function useTraining(): TrainingHandle {
   const job = useJob();
   const [status, setStatus] = useState<DevelopStatus>();
+  const [pending, setPending] = useState<PendingShoot[]>([]);
 
   const refresh = useCallback(() => {
     api.developStatus().then(setStatus, () => {});
+    api.pendingShoots().then(setPending, () => {});
   }, []);
 
   useEffect(() => {
@@ -42,5 +46,5 @@ export function useTraining(): TrainingHandle {
     [job.start, refresh],
   );
 
-  return { job, status, run };
+  return { job, status, pending, run };
 }

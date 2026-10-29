@@ -52,6 +52,15 @@ export interface PhotoExif {
   location?: string;
 }
 
+/** A folder developed with shoots whose photos the profile has not learned from yet. */
+export interface PendingShoot {
+  folder: string;
+  /** Predicted photos not folded into the profile yet. */
+  pending: number;
+  /** When the latest of them was developed (ISO). */
+  developedAt: string;
+}
+
 /** Lightroom's flags: pick (P), reject (X), unflagged (U). */
 export type Flag = 'pick' | 'reject' | 'unflagged';
 

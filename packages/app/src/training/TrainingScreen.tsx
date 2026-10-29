@@ -6,6 +6,7 @@ import type { SettingsHandle } from '../hooks/useSettings.js';
 import { FolderPicker } from '../library/FolderPicker.js';
 import { CatalogReportCard } from './CatalogReportCard.js';
 import { outcome, profileSummary } from './model.js';
+import { PendingShootsCard } from './PendingShootsCard.js';
 import { ProfileCard } from './ProfileCard.js';
 import { TrainingJobCard } from './TrainingJobCard.js';
 import { useTraining } from './useTraining.js';
@@ -15,7 +16,7 @@ import { useTraining } from './useTraining.js';
  * Both run detached on the server: closing Lightroom does not stop them.
  */
 export function TrainingScreen({ prefs }: { prefs: SettingsHandle }) {
-  const { job, status, run } = useTraining();
+  const { job, status, pending, run } = useTraining();
   const [folder, setFolder] = useState<string | null>(prefs.settings.lastFolder);
   const [recursive, setRecursive] = useState(prefs.settings.recursive);
   const [picking, setPicking] = useState(false);
@@ -36,6 +37,7 @@ export function TrainingScreen({ prefs }: { prefs: SettingsHandle }) {
         </Alert>
       )}
       {report && <CatalogReportCard report={report} />}
+      <PendingShootsCard shoots={pending} disabled={!profile || running} onImprove={(f) => run({ kind: 'refine', folder: f })} />
       <div class="app-health">
         <div class="app-side">
           <Card

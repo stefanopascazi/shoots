@@ -64,6 +64,7 @@ async function start(overrides: { hostLeaseMs?: number; pageIdleMs?: number } = 
       preview: async () => [{ part: 'jobs', count: 2, bytes: 10 }],
       run: async (parts) => parts.map((part) => ({ part, count: 1, bytes: 1 })),
     },
+    pendingShoots: async () => [{ folder: '/shoot', pending: 3, developedAt: '2026-10-29T10:00:00Z' }],
     developStatus: async () => ({
       command: 'develop-status',
       dataset: { path: 'd', exists: false, bytes: 0 },
@@ -162,6 +163,15 @@ describe('app server lifetime', () => {
     expect((await fetch(`${base}/api/shutdown`, { method: 'POST', headers: auth })).status).toBe(200);
     await wait(30);
     expect(stops).toEqual(['shutdown']);
+  });
+});
+
+describe('pending shoots', () => {
+  test('the list the Training screen shows', async () => {
+    const { base } = await start();
+    expect(await (await fetch(`${base}/api/develop/pending`, { headers: auth })).json()).toEqual([
+      { folder: '/shoot', pending: 3, developedAt: '2026-10-29T10:00:00Z' },
+    ]);
   });
 });
 

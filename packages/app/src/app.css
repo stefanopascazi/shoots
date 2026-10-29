@@ -119,6 +119,7 @@
 .app-facts { display: grid; grid-template-columns: max-content 1fr; gap: 10px var(--sh-space-4); margin: 0; font-size: var(--sh-text-sm); }
 .app-facts dt { color: var(--sh-fg-muted); }
 .app-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.app-pending__path { font-size: var(--sh-text-xs); overflow-wrap: anywhere; }
 .app-exif { display: grid; gap: var(--sh-space-2); }
 .app-facts__tags { display: flex; flex-wrap: wrap; gap: 4px; }
 

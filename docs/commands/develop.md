@@ -166,8 +166,13 @@ curve as a flat list, the creative profile as a `Look` table. Nothing is
 written beside the photographs. Each result says whether the photo already
 carries an edit; the plug-in replaces those only on an explicit yes.
 
-The baseline defaults to the profile's own. The prediction is kept under
-`~/.shoots/develop/export/<shoot>/prediction.json`, as with `edit`.
+The baseline defaults to the profile's own. The prediction is kept in the
+shoot's working folder, as with `edit`; each run is folded in by file, so
+developing a folder in parts keeps every part for `refine`.
+
+`feedback`, `learn` and `refine` take `--catalog <export>` to read what you
+kept from the plug-in's export instead of the sidecars: the app's **Improve
+profile** runs `develop refine <folder> --catalog <export>`.
 
 ---
 

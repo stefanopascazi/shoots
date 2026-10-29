@@ -18,6 +18,7 @@ import { logError, makeIo, parsePositiveInt } from '../io.js';
 import { ensureExiftoolReady } from '../tools.js';
 import { selfInvocation } from '../selfInvoke.js';
 import { lastErrorLine } from '../app/jobs.js';
+import { pendingShoots } from '../develop/pending.js';
 import { BANNER, CONSOLE_TITLE, consoleWriter, jobLine } from '../app/consoleNote.js';
 import { VERSION } from '../version.js';
 import type { AppServer } from '../app/server.js';
@@ -88,6 +89,7 @@ async function runApp(options: AppOptions): Promise<void> {
     durable,
     store,
     developStatus: () => runSelfJson<DevelopStatus>(['develop', 'status', '--json']),
+    pendingShoots,
     cleanup: createCleanup(durable, developClean),
     profiles: async () => {
       const builtin = new Set(PROFILE_NAMES);

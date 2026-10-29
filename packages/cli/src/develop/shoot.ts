@@ -33,6 +33,8 @@ export interface PredictionRecord {
   command: string;
   at: string;
   profile: string;
+  /** The folder the shoot was developed from, as the plug-in named it. */
+  folder?: string;
   predictions: (Prediction & { predictedAt?: string })[];
   [key: string]: unknown;
 }
@@ -50,7 +52,7 @@ function sameSpace(a: DevelopDataset, b: DevelopDataset): boolean {
  * part's predictions: `feedback` and `learn` read them back. Each prediction
  * keeps the instant it was made, which decides whether it is still held out.
  */
-export async function foldRunIntoShoot(workDir: string, runDataset: string, runPrediction: string): Promise<void> {
+export async function foldRunIntoShoot(workDir: string, runDataset: string, runPrediction: string, folder?: string): Promise<void> {
   const datasetPath = path.join(workDir, 'export.jsonl');
   const predictionPath = path.join(workDir, 'prediction.json');
 
@@ -73,7 +75,7 @@ export async function foldRunIntoShoot(workDir: string, runDataset: string, runP
     for (const p of prior.predictions ?? []) byFile.set(p.file, stamp(p, prior.at));
   }
   for (const p of fresh.predictions) byFile.set(p.file, stamp(p, fresh.at));
-  const merged: PredictionRecord = { ...fresh, count: byFile.size, predictions: [...byFile.values()] };
+  const merged: PredictionRecord = { ...fresh, ...(folder ? { folder: path.resolve(folder) } : {}), count: byFile.size, predictions: [...byFile.values()] };
   await writeFile(`${predictionPath}.tmp`, JSON.stringify(merged, null, 2) + '\n', 'utf8');
   await rename(`${predictionPath}.tmp`, predictionPath);
 }

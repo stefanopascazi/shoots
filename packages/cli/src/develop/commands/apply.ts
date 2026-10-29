@@ -106,7 +106,7 @@ export async function runApply(args: ApplyArgs): Promise<void> {
 
   const { profile, predictions } = JSON.parse(await readFile(predictionPath, 'utf8')) as { profile: string; predictions: Prediction[] };
   const dataset = await loadDataset(datasetPath);
-  await foldRunIntoShoot(workDir, datasetPath, predictionPath);
+  await foldRunIntoShoot(workDir, datasetPath, predictionPath, shoot);
   await rm(datasetPath, { force: true });
   await rm(predictionPath, { force: true });
   const edited = new Map(dataset.results.map((r) => [r.file, r.edited === true]));

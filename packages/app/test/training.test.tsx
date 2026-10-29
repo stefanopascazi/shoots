@@ -6,6 +6,7 @@ import { duration, embeddableReviewUrl, outcome, profileSummary, stepLabel } fro
 import { ProfileCard } from '../src/training/ProfileCard.js';
 import { CatalogReportCard } from '../src/training/CatalogReportCard.js';
 import { TrainingJobCard } from '../src/training/TrainingJobCard.js';
+import { PendingShootsCard } from '../src/training/PendingShootsCard.js';
 
 const status = (profile: DevelopStatus['profile']): DevelopStatus => ({
   command: 'develop-status',
@@ -141,5 +142,15 @@ describe('export only', () => {
 
   test('warns when the plug-in sent no raw settings', () => {
     expect(render(<CatalogReportCard report={{ ...report, raw: false }} />)).toContain('No raw settings');
+  });
+});
+
+describe('PendingShootsCard', () => {
+  test('one row per waiting folder, nothing when none waits', () => {
+    const html = render(<PendingShootsCard shoots={[{ folder: '/p/rome', pending: 12, developedAt: '2026-10-29T10:00:00Z' }]} disabled={false} onImprove={() => {}} />);
+    expect(html).toContain('rome');
+    expect(html).toContain('12 photos');
+    expect(html).toContain('Improve');
+    expect(render(<PendingShootsCard shoots={[]} disabled={false} onImprove={() => {}} />)).toBe('');
   });
 });
