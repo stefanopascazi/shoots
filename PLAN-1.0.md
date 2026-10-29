@@ -26,7 +26,7 @@ The product is a **Lightroom Classic plugin** and a **local web app** it opens.
 The CLI stays as the free engine behind both. Everything else is paused until
 launch.
 
-## Status — where to pick up (2026-10-29)
+## Status — where to pick up (2026-10-29, evening)
 
 **Done** (all on `main`, pushed; released as `0.7.4`):
 
@@ -113,6 +113,18 @@ launch.
 
 - [x] **Installer launched by the plugin**: downloads `0.7.4` and works.
 
+- [x] **Open shoots on the folder in view**: the plug-in passes the folder
+      selected in the Folders panel (their shared parent when several are) on
+      the launch URL; collections fall back to the app's last folder.
+- [x] **Settings screen**: preferences, app memory and the clean-up moved out
+      of Setup, which keeps doctor and the installation facts.
+- [x] **Capture data in the viewer**: camera, lens, exposure, focal length,
+      mode, flash, white balance, size, GPS — read by exiftool on demand
+      (`GET /api/exif`, listed photos only). The keyboard legend is gone.
+- [x] **Publish service — tried and dropped**: an always-visible entry in the
+      Publish Services panel fixed some things and complicated others; the
+      plug-in keeps its Plug-in Extras menus.
+
 **To field-test next:** cancel from the progress bar (Cull, Rate).
 
 **Next, in order:**
@@ -137,7 +149,12 @@ launch.
    app only frames it on the Training screen — to field-test. Monetisation gate still to
    decide: today only the hidden command and the lease keep the app plugin-only;
    a signed licence checked by the server is the real one.
-6. **L3** apply predictions via `applyDevelopSettings`.
+6. **L3** apply predictions via `applyDevelopSettings` — **next**. The engine
+   predicts per shoot (level head) and per frame, so the plug-in sends the
+   shoot, the CLI returns settings as JSON (no sidecars, the inverse of the L2
+   mapping: crs names, flat tone curve), and the plug-in applies them in one
+   undo step with a named history step. Photos already edited are skipped
+   unless asked. A snapshot of the prior state, if the SDK allows it.
 7. Remove the Ink shell and the deprecated `--xmp` alias (B1). XMP itself stays.
 8. Beta data program (Track C) — legal pack first.
 
