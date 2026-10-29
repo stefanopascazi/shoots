@@ -123,8 +123,9 @@ carrying `--files-from`).
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
    breaks.
 2. **Release `0.7.4`** (features, no migration note → patch) once the field test
-   passes, so the plugin's own install/update path can be tested; add the plugin
-   zip to `release.yml`.
+   passes, so the plugin's own install/update path can be tested. **The plugin
+   is never a public release asset** — it is what the product sells; how paying
+   users get it is still open (see Open decisions).
 3. **L1 leftovers**: write `rate` keywords into the catalog; decide whether cull
    should also flag keepers; cancel support (kill the child process).
 4. **L2 catalog export** — shipped; field-test it with step 1.
@@ -226,6 +227,8 @@ into removing the `--xmp` alias. B5 is done by this update.
 
 ## Open decisions
 
+- **Plugin distribution.** Never on GitHub Releases or any public URL. To
+  decide: a gated download (licence key, account) and how updates reach it.
 - **Licence vs professional use.** PolyForm Noncommercial forbids commercial
   use, and a photographer editing for clients is commercial use — so the free
   CLI is, as licensed, unusable by the paying audience. Candidate model: CLI free
