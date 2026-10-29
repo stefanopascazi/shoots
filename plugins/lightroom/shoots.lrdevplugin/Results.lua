@@ -34,18 +34,36 @@ function Results.cullChanges(report, platform)
   return changes, { rejected = rejected, kept = kept, failed = #list(report.errors) }
 end
 
---- `rate` report -> { [key] = { rating = n } }, n clamped to Lightroom's 0..5.
+-- A result's keywords: trimmed, non-empty strings, each once, in the CLI's order.
+local function keywordList(value)
+  local out, seen = {}, {}
+  for _, k in ipairs(list(value)) do
+    if type(k) == 'string' then
+      k = string.match(k, '^%s*(.-)%s*$')
+      if k ~= '' and not seen[k] then
+        seen[k] = true
+        out[#out + 1] = k
+      end
+    end
+  end
+  return out
+end
+
+--- `rate` report -> { [key] = { rating = n } }, n clamped to Lightroom's 0..5,
+--- plus { [key] = { keyword, ... } } for every rated photo.
 function Results.rateChanges(report, platform)
-  local changes, rated = {}, 0
+  local changes, keywords, rated = {}, {}, 0
   for _, r in ipairs(list(report.results)) do
     local stars = tonumber(r.stars)
     if stars then
+      local key = Results.pathKey(r.file, platform)
       stars = math.max(0, math.min(5, math.floor(stars + 0.5)))
-      changes[Results.pathKey(r.file, platform)] = { rating = stars }
+      changes[key] = { rating = stars }
+      keywords[key] = keywordList(r.keywords)
       rated = rated + 1
     end
   end
-  return changes, { rated = rated, failed = #list(report.errors) }
+  return changes, { rated = rated, failed = #list(report.errors) }, keywords
 end
 
 --- One line for the end-of-run dialog.

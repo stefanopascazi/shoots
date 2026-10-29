@@ -15,7 +15,9 @@ local Runner = require 'Runner'
 
 local Action = {}
 
---- spec = { title, command, args = function(listPath), changes = function(report, platform) }
+--- spec = { title, command, args = function(listPath), changes = function(report, platform),
+---   write = optional function(catalog, photosByKey, extra) run in the same undo step,
+---   where `extra` is the third value `changes` returns }
 function Action.run(spec)
   LrFunctionContext.postAsyncTaskWithContext(spec.title, function(context)
     LrDialogs.attachErrorDialogToFunctionContext(context)
@@ -57,7 +59,7 @@ function Action.run(spec)
     end
 
     progress:setCaption('Writing to the catalog')
-    local changes, counts = spec.changes(report, platform)
+    local changes, counts, extra = spec.changes(report, platform)
     catalog:withWriteAccessDo(spec.title, function()
       for key, change in pairs(changes) do
         for _, photo in ipairs(byKey[key] or {}) do
@@ -66,6 +68,7 @@ function Action.run(spec)
           end
         end
       end
+      if spec.write then spec.write(catalog, byKey, extra) end
     end)
 
     progress:done()
