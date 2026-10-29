@@ -132,7 +132,9 @@ launch.
    reworked first.
 4. **L2 catalog export** — shipped; field-test it with step 1.
 5. **Track W** — Send to Lightroom and training from the catalog pass the field
-   test; next: finish the calibration screen (still rough). Monetisation gate still to
+   test. Calibration screen restyled with `@shoots/ui`; it **stays the CLI's
+   page** (`develop calibrate --review`, free, works without the app) and the
+   app only frames it on the Training screen — to field-test. Monetisation gate still to
    decide: today only the hidden command and the lease keep the app plugin-only;
    a signed licence checked by the server is the real one.
 6. **L3** apply predictions via `applyDevelopSettings`.
