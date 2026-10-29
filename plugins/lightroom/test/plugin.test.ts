@@ -463,6 +463,42 @@ describe('Version', () => {
   });
 });
 
+describe('Actions', () => {
+  test('a published collection rates unless set to cull', () => {
+    expect(runLua(`return require('Actions').forCollection(nil)`)).toBe('rate');
+    expect(runLua(`return require('Actions').forCollection({})`)).toBe('rate');
+    expect(runLua(`return require('Actions').forCollection({ action = 'bogus' })`)).toBe('rate');
+    expect(runLua(`return require('Actions').forCollection({ action = 'cull' })`)).toBe('cull');
+  });
+
+  test('every popup item is an action the collection can run', () => {
+    const items = runLua<{ title: string; value: string }[]>(`return require('Actions').ITEMS`);
+    expect(items.map((i) => i.value)).toEqual(['rate', 'cull']);
+    for (const i of items) expect(runLua(`return require('Actions').forCollection({ action = '${i.value}' })`)).toBe(i.value);
+  });
+
+  test('the cull spec runs cull and writes cull changes', () => {
+    expect(runLua(`local s = require('Actions').spec('cull') return { s.command, s.args('/l.txt') }`)).toEqual([
+      'cull',
+      ['cull', '--files-from', '/l.txt', '--json'],
+    ]);
+  });
+});
+
+describe('publish service', () => {
+  test('is registered and publish-only, with the callbacks Lightroom needs', async () => {
+    const info = await readFile(path.join(SOURCE_DIR, 'Info.lua'), 'utf8');
+    expect(info).toContain(`LrExportServiceProvider = { title = 'shoots', file = 'PublishServiceProvider.lua' }`);
+    const provider = await readFile(path.join(SOURCE_DIR, 'PublishServiceProvider.lua'), 'utf8');
+    expect(provider).toContain(`provider.supportsIncrementalPublish = 'only'`);
+    for (const fn of ['processRenderedPhotos', 'getCollectionBehaviorInfo', 'viewForCollectionSettings', 'goToPublishedCollection', 'deletePhotosFromPublishedCollection', 'metadataThatTriggersRepublish']) {
+      expect(provider).toContain(`function provider.${fn}(`);
+    }
+    // Nothing is rendered: every rendition is skipped before the CLI runs.
+    expect(provider).toContain('rendition:skipRender()');
+  });
+});
+
 describe('Results', () => {
   test('pathKey folds case and separators on windows only', () => {
     expect(runLua(`return require('Results').pathKey('C:/Shoot/A.CR3', 'windows')`)).toBe('c:\\shoot\\a.cr3');

@@ -1,64 +1,8 @@
--- Plug-in Manager panel: where the binary lives, install/update/setup buttons,
--- and which rating profile to use.
-local LrPrefs = import 'LrPrefs'
-local LrTasks = import 'LrTasks'
-local LrView = import 'LrView'
-
-local Installer = require 'Installer'
-local Runner = require 'Runner'
-
-local function sectionsForTopOfDialog(f, propertyTable)
-  local prefs = LrPrefs.prefsForPlugin()
-  local bind = LrView.bind
-
-  -- Filled in asynchronously: asking the binary its version runs a process.
-  propertyTable.status = 'Checking...'
-  local function refreshStatus()
-    LrTasks.startAsyncTask(function()
-      if not Runner.isInstalled() then
-        propertyTable.status = 'Not installed'
-      else
-        propertyTable.status = 'Installed: ' .. (Runner.installedVersion() or 'unknown version')
-      end
-    end)
-  end
-  refreshStatus()
-
-  return {
-    {
-      title = 'shoots',
-      f:row {
-        f:static_text { title = 'Status:', width_in_chars = 12 },
-        f:static_text { title = bind 'status', bind_to_object = propertyTable, fill_horizontal = 1 },
-      },
-      f:row {
-        f:static_text { title = '', width_in_chars = 12 },
-        f:push_button { title = 'Install or Update', action = function() Installer.installOrUpdate() end },
-        f:push_button { title = 'Download Dependencies', action = function() Installer.setupDependencies() end },
-        f:push_button { title = 'Refresh', action = refreshStatus },
-      },
-      f:row {
-        bind_to_object = prefs,
-        f:static_text { title = 'Binary path:', width_in_chars = 12 },
-        f:edit_field { value = bind 'binaryPath', width_in_chars = 40, immediate = true },
-      },
-      f:row {
-        f:static_text { title = '', width_in_chars = 12 },
-        f:static_text { title = 'Leave empty to use ~/.shoots/bin', fill_horizontal = 1 },
-      },
-      f:row {
-        bind_to_object = prefs,
-        f:static_text { title = 'Rating profile:', width_in_chars = 12 },
-        f:combo_box {
-          value = bind 'profile',
-          items = { 'street', 'generic', 'portrait', 'wildlife', 'wedding' },
-          width_in_chars = 20,
-        },
-      },
-    },
-  }
-end
+-- Plug-in Manager panel: the shared shoots settings section.
+local SettingsSection = require 'SettingsSection'
 
 return {
-  sectionsForTopOfDialog = sectionsForTopOfDialog,
+  sectionsForTopOfDialog = function(f, propertyTable)
+    return { SettingsSection.build(f, propertyTable) }
+  end,
 }

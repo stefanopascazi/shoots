@@ -10,6 +10,19 @@ writes the result straight into the catalog — no sidecars.
 | Install or Update shoots | installs the binary when missing, otherwise runs `shoots update` |
 | Download Dependencies | runs `shoots setup` (exiftool, raw decoder, inference model) |
 
+### Publish service
+
+The same actions live in **Library > Publish Services**, always visible in the
+left panel. Set it up once: click **Set Up...** next to *shoots*, then **Save**
+(the dialog carries the same status and buttons as the Plug-in Manager).
+
+- **Rate** and **Cull** collections are created with it. Drag photos in, click
+  **Publish**: the collection's action runs and they move to "Published
+  Photos". Nothing is rendered or uploaded. Rating or flagging does not mark
+  them for re-publish.
+- Any new published collection picks its action (Rate or Cull) in its settings.
+- Right-click a collection or a photo in it: **Open shoots**.
+
 Each run is one undo step (Edit > Undo). Virtual copies share their master's
 file, so all of them receive the same change. A progress bar follows the CLI
 through scanning, per-photo work and downloads.
