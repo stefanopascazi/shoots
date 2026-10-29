@@ -49,9 +49,7 @@ These are the constraints every feature is measured against.
 In order:
 
 - **Lightroom Classic plugin.** The fast operations first — culling, rating,
-  picks and labels written straight into the catalog, no sidecars. Also a
-  publish service, always visible in the Library's left panel: Rate and Cull
-  collections run on Publish, "Open shoots" on right-click.
+  picks and labels written straight into the catalog, no sidecars.
 - **A local app the plugin opens.** Training, calibration and review in the
   browser, served on your machine: opening it from Lightroom starts the server,
   closing it stops it. Built on `@shoots/ui`, a shared design system (tokens,

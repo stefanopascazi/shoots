@@ -1,2 +1,6 @@
 -- Menu: stop the shoots app server.
-require('AppEntry').close()
+local LrTasks = import 'LrTasks'
+
+local AppLauncher = require 'AppLauncher'
+
+LrTasks.startAsyncTask(function() AppLauncher.close() end)

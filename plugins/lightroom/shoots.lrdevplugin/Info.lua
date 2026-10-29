@@ -23,8 +23,5 @@ return {
   LrLibraryMenuItems = menu,
   LrExportMenuItems = menu,
 
-  -- Library > Publish Services: Rate and Cull collections, "Open shoots" on right-click.
-  LrExportServiceProvider = { title = 'shoots', file = 'PublishServiceProvider.lua' },
-
   VERSION = { major = 0, minor = 0, revision = 0, display = '0.0.0' },
 }
