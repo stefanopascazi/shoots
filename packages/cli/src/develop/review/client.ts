@@ -523,6 +523,13 @@ function fmt(step, value) {
   return value.toFixed(step.decimals) + step.unit;
 }
 
+// The design system's range draws its filled track from --sh-fill.
+function fillRange(range) {
+  var min = parseFloat(range.min), max = parseFloat(range.max);
+  var t = max > min ? Math.min(1, Math.max(0, (parseFloat(range.value) - min) / (max - min))) : 0;
+  range.style.setProperty('--sh-fill', Math.round(t * 1000) / 10 + '%');
+}
+
 function buildUI() {
   stagesEl.innerHTML = '';
   asideEl.innerHTML = '';
@@ -542,32 +549,35 @@ function buildUI() {
     panel.dataset.index = String(i);
     if (i !== 0) panel.hidden = true;
     panel.innerHTML =
-      (step.treatment ? '<p class="treatment">' + esc(step.treatment) + '</p>' : '') +
+      (step.treatment ? '<p class="treatment"><span class="sh-badge sh-badge--accent">' + esc(step.treatment) + '</span></p>' : '') +
       '<h2>' + esc(step.label) + '</h2>' +
       '<p class="why">' + esc(step.caption) + '</p>' +
       '<output>' + esc(fmt(step, step.fitted)) + '</output>' +
-      '<input type="range" min="' + step.min + '" max="' + step.max + '" step="' +
+      '<input class="sh-range" type="range" min="' + step.min + '" max="' + step.max + '" step="' +
         (step.decimals > 0 ? 0.01 : 1) + '" value="' + step.fitted + '">' +
-      '<div class="ends"><span>' + esc(fmt(step, step.min)) + '</span><span>' + esc(fmt(step, step.max)) + '</span></div>' +
+      '<div class="sh-slider__ends"><span>' + esc(fmt(step, step.min)) + '</span><span>' + esc(fmt(step, step.max)) + '</span></div>' +
       '<p class="hint">fitted <b>' + esc(fmt(step, step.fitted)) + '</b> · off <b>' + esc(fmt(step, step.zero)) + '</b></p>' +
       (frame.change < DATA.threshold
         ? '<p class="inert">Moving this slider changes the photograph by ' + (frame.change * 100).toFixed(1) +
           '% — too little to judge by eye. Its fitted gain is small, or this frame has nothing for it to act on.</p>'
         : '') +
-      '<button class="ghost">Reset to fitted</button>';
+      '<button class="sh-btn sh-btn--ghost sh-btn--sm reset">Reset to fitted</button>';
     asideEl.appendChild(panel);
 
     var range = panel.querySelector('input');
     var out = panel.querySelector('output');
     frame.range = range;
+    fillRange(range);
     range.addEventListener('input', function () {
       var value = parseFloat(range.value);
+      fillRange(range);
       out.textContent = fmt(step, value);
       chosen[step.family] = scaleForValue(frame.ramp, value);
       paint(i);
     });
     panel.querySelector('button').addEventListener('click', function () {
       range.value = String(step.fitted);
+      fillRange(range);
       out.textContent = fmt(step, step.fitted);
       chosen[step.family] = 1;
       paint(i);

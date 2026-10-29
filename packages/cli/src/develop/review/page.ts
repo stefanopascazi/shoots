@@ -5,6 +5,10 @@
  * runtime dependency has to be licence-checked, so a page that is a string in the
  * source costs nothing and can never drift from the server that serves it.
  *
+ * Served by the CLI itself (`develop calibrate --review`), never by the app:
+ * calibration is part of the free CLI and must work without the plug-in. Only
+ * the look comes from the design system, as inlined CSS (`UI_CSS`).
+ *
  * **One photograph, one control, and the whole photograph on screen.** Three
  * things this gets right that the first two attempts did not:
  *
@@ -27,6 +31,7 @@
  * because which controls are worth offering is a question about the rendered
  * picture and only the renderer can answer it.
  */
+import { UI_CSS } from '@shoots/ui';
 import { CLIENT_SCRIPT } from './client.js';
 
 export interface PageStep {
@@ -63,25 +68,15 @@ export function page(steps: readonly PageStep[], run: string): string {
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Calibrate your profile</title>
+<style>${UI_CSS}</style>
 <style>
-  :root {
-    color-scheme: light dark;
-    --bg:#0e0e0f; --fg:#ededed; --panel:#191a1b; --line:#2c2d2f; --accent:#5b9dd9; --muted:#8b8d90;
-  }
-  @media (prefers-color-scheme: light) {
-    :root { --bg:#f2f3f4; --fg:#17181a; --panel:#fff; --line:#dcdee0; --muted:#6b6d70; }
-  }
-  * { box-sizing:border-box; }
+  /* Layout of this screen only; colours, type and controls come from @shoots/ui. */
   html, body { height:100%; }
-  body {
-    margin:0; overflow:hidden;
-    font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
-    background:var(--bg); color:var(--fg);
-    display:grid; grid-template-rows:auto minmax(0,1fr) auto;
-  }
-  header { padding:12px 20px; border-bottom:1px solid var(--line); display:flex; align-items:baseline; gap:14px; }
-  header h1 { margin:0; font-size:15px; font-weight:600; }
-  header p { margin:0; color:var(--muted); font-size:12.5px; }
+  body { overflow:hidden; display:grid; grid-template-rows:auto minmax(0,1fr) auto; }
+  header { padding:var(--sh-space-3) var(--sh-space-5); border-bottom:1px solid var(--sh-border);
+           display:flex; align-items:baseline; gap:var(--sh-space-4); }
+  header h1 { font-size:var(--sh-text-md); }
+  header p { color:var(--sh-fg-muted); font-size:var(--sh-text-sm); }
 
   /* The middle row is the only thing allowed to take the leftover height, and
      minmax(0,1fr) is what lets it actually shrink instead of being sized by its
@@ -89,74 +84,69 @@ export function page(steps: readonly PageStep[], run: string): string {
   main { display:grid; grid-template-columns:minmax(0,1fr) 300px; min-height:0; }
   @media (max-width:820px) { main { grid-template-columns:1fr; } }
 
-  #boot { display:grid; place-items:center; padding:40px; color:var(--muted); text-align:center; max-width:52ch; margin:0 auto; }
+  #boot { display:grid; place-items:center; padding:var(--sh-space-10); color:var(--sh-fg-muted);
+          text-align:center; max-width:52ch; margin:0 auto; }
   /* An id beats [hidden]'s display:none on specificity, so without this the
      boot message never leaves — and it keeps a grid row, which is what made the
      stage measure a fraction of the height it actually had. */
   #boot[hidden] { display:none; }
 
-  .stages { position:relative; min-height:0; padding:16px; display:grid; place-items:center; overflow:hidden; }
-  .stage { margin:0; width:100%; height:100%; min-height:0; display:grid; place-items:center; }
+  .stages { position:relative; min-height:0; padding:var(--sh-space-4); display:grid; place-items:center; overflow:hidden; }
+  .stage { width:100%; height:100%; min-height:0; display:grid; place-items:center; }
   .stage[hidden] { display:none; }
   /* Contained, never enlarged — but sized by the renderer in JavaScript, not
      here: max-height:100% resolves against a grid item with height:auto, which
      is indefinite, so the browser drops the constraint and a portrait frame
-     keeps its full height. See fitCanvas(). */
-  #gl { display:block; border-radius:6px;
-        box-shadow:0 2px 18px rgb(0 0 0 / .35); cursor:crosshair; }
-  img { display:block; width:auto; height:auto; max-width:100%; max-height:100%;
-        border-radius:6px; box-shadow:0 2px 18px rgb(0 0 0 / .35); }
+     keeps its full height. See fitCanvas(). The design system's max-width on
+     canvas is lifted for the same reason. */
+  #gl { max-width:none; border-radius:var(--sh-radius-md); box-shadow:var(--sh-shadow-lg); cursor:crosshair; }
+  .stage img { width:auto; height:auto; max-height:100%; border-radius:var(--sh-radius-md); box-shadow:var(--sh-shadow-lg); }
 
   /* The loupe: rendered pixels at 1:1, parked in a corner so it never covers
      what is being examined. The box on the image marks what it is showing. */
-  .loupe { position:absolute; top:20px; right:20px; display:none; border-radius:6px;
-           overflow:hidden; border:1px solid var(--line); background:var(--panel);
-           box-shadow:0 4px 24px rgb(0 0 0 / .5); pointer-events:none; }
-  .loupe canvas { display:block; }
-  .loupe span { position:absolute; left:0; bottom:0; padding:2px 7px; font-size:11px;
+  .loupe { position:absolute; top:20px; right:20px; display:none; border-radius:var(--sh-radius-md);
+           overflow:hidden; border:1px solid var(--sh-border); background:var(--sh-surface);
+           box-shadow:var(--sh-shadow-lg); pointer-events:none; }
+  .loupe canvas { max-width:none; }
+  .loupe span { position:absolute; left:0; bottom:0; padding:2px 7px; font-size:var(--sh-text-xs);
                 font-variant-numeric:tabular-nums; color:#fff; background:rgb(0 0 0 / .55);
-                border-top-right-radius:5px; }
+                border-top-right-radius:var(--sh-radius-sm); }
   .loupe-box { position:fixed; display:none; pointer-events:none; z-index:5;
                border:1px solid rgb(255 255 255 / .9); box-shadow:0 0 0 1px rgb(0 0 0 / .55); }
 
-  aside { border-left:1px solid var(--line); padding:20px; overflow-y:auto; display:flex; flex-direction:column; }
-  @media (max-width:820px) { aside { border-left:0; border-top:1px solid var(--line); } }
+  aside { border-left:1px solid var(--sh-border); background:var(--sh-surface); padding:var(--sh-space-5);
+          overflow-y:auto; display:flex; flex-direction:column; }
+  @media (max-width:820px) { aside { border-left:0; border-top:1px solid var(--sh-border); } }
   #panels { display:contents; }
   .control[hidden] { display:none; }
-  .control h2 { margin:0 0 2px; font-size:19px; }
-  .treatment { margin:0 0 2px; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
-               color:var(--accent); font-weight:600; }
-  .why { margin:0 0 18px; color:var(--muted); font-size:12.5px; }
-  output { display:block; font:600 30px/1 ui-monospace,SFMono-Regular,Consolas,monospace;
-           font-variant-numeric:tabular-nums; margin-bottom:10px; }
-  input[type=range] { width:100%; accent-color:var(--accent); }
-  .ends { display:flex; justify-content:space-between; color:var(--muted); font-size:11px;
-          font-variant-numeric:tabular-nums; margin-top:2px; }
-  .hint { color:var(--muted); font-size:12px; margin:14px 0 0; }
+  .control h2 { margin-bottom:2px; font-size:var(--sh-text-xl); }
+  .treatment { margin-bottom:var(--sh-space-1); }
+  .why { margin-bottom:var(--sh-space-5); color:var(--sh-fg-muted); font-size:var(--sh-text-sm); }
+  .control output { display:block; margin-bottom:var(--sh-space-3); font:600 var(--sh-text-3xl)/1 var(--sh-font-mono);
+                    font-variant-numeric:tabular-nums; }
+  .hint { margin-top:var(--sh-space-3); color:var(--sh-fg-muted); font-size:var(--sh-text-xs); }
+  .hint b { color:var(--sh-fg); font-weight:600; }
   /* Shown on a control whose frame barely moves: offered anyway, but honest
      about it, rather than quietly missing from the screen. */
-  .inert { margin:12px 0 0; padding:9px 11px; border-radius:6px; font-size:12px;
-           background:rgb(190 140 40 / .12); border:1px solid rgb(190 140 40 / .35); color:var(--fg); }
-  button { font:inherit; padding:8px 14px; border-radius:6px; border:1px solid var(--line);
-           background:var(--panel); color:var(--fg); cursor:pointer; }
-  button.ghost { margin-top:16px; align-self:flex-start; }
-  .save { margin-top:auto; padding-top:18px; }
-  .save button { width:100%; background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
-  #status { color:var(--muted); font-size:12px; margin-top:10px; min-height:1.3em; }
+  .inert { margin-top:var(--sh-space-3); padding:var(--sh-space-3); border-radius:var(--sh-radius-md);
+           background:var(--sh-warning-soft); font-size:var(--sh-text-xs); }
+  .control .reset { margin-top:var(--sh-space-4); }
+  .save { margin-top:auto; padding-top:var(--sh-space-5); }
+  #status { color:var(--sh-fg-muted); font-size:var(--sh-text-xs); margin-top:var(--sh-space-2); min-height:1.3em; }
 
   /* The film strip: every control's photograph, always reachable. */
-  footer { border-top:1px solid var(--line); padding:10px 14px; display:flex; gap:10px;
-           overflow-x:auto; align-items:flex-end; }
+  footer { border-top:1px solid var(--sh-border); padding:var(--sh-space-2) var(--sh-space-3); display:flex;
+           gap:var(--sh-space-2); overflow-x:auto; align-items:flex-end; }
   footer[hidden] { display:none; }
-  .thumb { padding:4px; display:grid; gap:4px; justify-items:center; border-color:transparent;
-           background:none; flex:0 0 auto; }
-  .thumb img { width:82px; height:56px; object-fit:cover; border-radius:4px; opacity:.55;
-               box-shadow:none; transition:opacity .12s; }
-  .thumb span { font-size:11px; color:var(--muted); max-width:88px; overflow:hidden;
+  .thumb { padding:4px; display:grid; gap:4px; justify-items:center; flex:0 0 auto; cursor:pointer;
+           border:0; border-radius:var(--sh-radius-sm); background:none; }
+  .thumb img { width:82px; height:56px; object-fit:cover; border-radius:var(--sh-radius-sm); opacity:.55;
+               transition:opacity var(--sh-fast) var(--sh-ease); }
+  .thumb span { font-size:var(--sh-text-xs); color:var(--sh-fg-muted); max-width:88px; overflow:hidden;
                 text-overflow:ellipsis; white-space:nowrap; }
   .thumb:hover img { opacity:.85; }
-  .thumb.current img { opacity:1; outline:2px solid var(--accent); outline-offset:1px; }
-  .thumb.current span { color:var(--fg); }
+  .thumb.current img { opacity:1; outline:2px solid var(--sh-accent); outline-offset:1px; }
+  .thumb.current span { color:var(--sh-fg); }
 </style></head><body>
 <header>
   <h1>Calibrate your profile</h1>
@@ -169,7 +159,7 @@ export function page(steps: readonly PageStep[], run: string): string {
   <aside>
     <div id="panels"></div>
     <div class="save">
-      <button id="save">Save into the profile</button>
+      <button id="save" class="sh-btn sh-btn--primary sh-btn--block">Save into the profile</button>
       <div id="status"></div>
     </div>
   </aside>
