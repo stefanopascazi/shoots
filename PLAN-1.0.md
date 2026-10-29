@@ -26,7 +26,7 @@ The product is a **Lightroom Classic plugin** and a **local web app** it opens.
 The CLI stays as the free engine behind both. Everything else is paused until
 launch.
 
-## Status — where to pick up (2026-10-28)
+## Status — where to pick up (2026-10-29)
 
 **Done** (all on `main`, pushed; release still `0.7.3`):
 
@@ -81,14 +81,25 @@ launch.
       journal (never preselected), job history and catalog exports — through
       `develop clean --only`, refused while a job runs.
 
-**Not verified yet:** anything inside a real Lightroom (SDK calls, Plug-in Manager
-panel; for L2, that `getDevelopSettings()` keys match the crs names and how it
-returns the tone curve and Look), and the installer launched by the plugin
-(needs a release carrying `--files-from`).
+**Field test in Lightroom (2026-10-29)**, network share on a NAS:
+
+- [x] **Cull Selection** works.
+- [ ] **Rate Selection fails**: a generic error with `0`. To investigate.
+- [x] **Open shoots** opens the app and it works.
+- [x] **Data flows both ways as agreed**: what Send to Lightroom sends lands in
+      the catalog, and stars, flags and labels set in Lightroom show in the app.
+- [x] **Export only** produced a catalog export with the raw SDK settings
+      (`test/catalog-2026-10-28T19-28-16-219Z.json`): to analyse against the
+      engine's names before training from the catalog.
+
+**Not verified yet:** training from the catalog end to end in Lightroom,
+calibrate from the app, the Plug-in Manager panel, and the installer launched by
+the plugin (needs a release carrying `--files-from`).
 
 **Next, in order:**
 
-1. **Field test on the Lightroom PC.** Copy `dist-bin/shoots.exe` (from
+1. **Field test on the Lightroom PC** — in progress, see above. Left: fix Rate
+   Selection, analyse the export, then train from the catalog. Copy `dist-bin/shoots.exe` (from
    `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
    `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`), read-back of the open folder (`getFolderByPath`, `batchGetRawMetadata`) and a change made in Lightroom showing in the app, Training › **Export only** (no training: keeps the catalog export, raw SDK settings included, under `~/.shoots/app/exports/` and reports names not matched — bring that file back to fix L2),
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
