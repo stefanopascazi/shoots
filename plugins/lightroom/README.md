@@ -7,6 +7,7 @@ writes the result straight into the catalog — no sidecars.
 | --- | --- |
 | Cull Selection (flag blurry as rejected) | `pickStatus = -1` on every blurry frame; sharp frames keep their flag |
 | Rate Selection | a 0–5 star rating, using the profile set in the Plug-in Manager |
+| Develop Selection | develop settings predicted by the trained profile (`develop apply`), one history step per photo; already edited photos are replaced only on an explicit yes |
 | Install or Update shoots | installs the binary when missing, otherwise runs `shoots update` |
 | Download Dependencies | runs `shoots setup` (exiftool, raw decoder, inference model) |
 

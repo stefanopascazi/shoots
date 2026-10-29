@@ -491,6 +491,55 @@ describe('Version', () => {
   });
 });
 
+describe('Develop', () => {
+  const report = {
+    command: 'develop-apply',
+    profile: 'my-eye',
+    results: [
+      { file: 'C:/S/a.CR3', treatment: 'color', edited: false, settings: { Exposure2012: 0.3 }, look: 'Adobe Color' },
+      { file: 'C:/S/b.CR3', treatment: 'color', edited: true, settings: { Exposure2012: -0.2, Look: { Name: 'Own' } } },
+      { file: 'C:/S/c.CR3', treatment: 'bw', edited: false, settings: { ConvertToGrayscale: true }, look: 'Missing' },
+    ],
+    errors: [{ file: 'C:/S/d.CR3', error: 'offline' }],
+  };
+  const plan = (replace: boolean) =>
+    runLua<[Record<string, { Look?: { Name: string } }>, Record<string, number>]>(
+      `local r = require('Json').decode(${JSON.stringify(JSON.stringify(report))})
+       local changes, counts = require('Develop').plan(r, 'windows', ${replace}, { ['Adobe Color'] = { Name = 'Adobe Color', Amount = 1 } })
+       return { changes, counts }`,
+    );
+
+  test('counts the photos that already carry an edit', () => {
+    expect(runLua(`return require('Develop').editedCount(require('Json').decode(${JSON.stringify(JSON.stringify(report))}))`)).toBe(1);
+  });
+
+  test('edited photos are skipped unless replacing was agreed', () => {
+    const [skip, skipCounts] = plan(false);
+    expect(Object.keys(skip).sort()).toEqual(['c:\\s\\a.cr3', 'c:\\s\\c.cr3']);
+    expect(skipCounts).toEqual({ applied: 2, skipped: 1, noLook: 1, failed: 1 });
+    const [all, allCounts] = plan(true);
+    expect(Object.keys(all)).toContain('c:\\s\\b.cr3');
+    expect(allCounts.applied).toBe(3);
+  });
+
+  test('a Look named only is taken from the catalog; a Look sent whole is kept', () => {
+    const [changes] = plan(true);
+    expect(changes['c:\\s\\a.cr3']!.Look).toEqual({ Name: 'Adobe Color', Amount: 1 } as never);
+    expect(changes['c:\\s\\b.cr3']!.Look).toEqual({ Name: 'Own' });
+    expect(changes['c:\\s\\c.cr3']!.Look).toBeUndefined();
+  });
+
+  test('the summary says what was left alone and what lacks its look', () => {
+    const text = runLua<string>(`return require('Develop').summary({ applied = 2, skipped = 1, noLook = 1, failed = 1 }, 'my-eye')`);
+    expect(text).toContain('2 developed with profile my-eye, 1 already edited left as they were, 1 failed.');
+    expect(text).toContain('1 photos did not get their creative profile');
+  });
+
+  test('develop apply reads the catalog export and prints JSON', () => {
+    expect(runLua(`return require('Command').developArgs('/t/sel.json')`)).toEqual(['develop', 'apply', '--catalog', '/t/sel.json', '--json']);
+  });
+});
+
 describe('Results', () => {
   test('pathKey folds case and separators on windows only', () => {
     expect(runLua(`return require('Results').pathKey('C:/Shoot/A.CR3', 'windows')`)).toBe('c:\\shoot\\a.cr3');

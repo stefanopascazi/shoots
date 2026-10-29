@@ -48,6 +48,7 @@ import { runRefine } from '../develop/commands/refine.js';
 import { runDiagnose } from '../develop/commands/diagnose.js';
 import { runInit, runEdit } from '../develop/commands/pipeline.js';
 import { runClean } from '../develop/commands/clean.js';
+import { runApply } from '../develop/commands/apply.js';
 import { runStatus } from '../develop/commands/status.js';
 
 export function registerDevelopCommand(program: Command): void {
@@ -101,6 +102,19 @@ export function registerDevelopCommand(program: Command): void {
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runEdit);
+
+  develop
+    .command('apply')
+    .description('Predict develop settings for a Lightroom selection (catalog export from the plug-in) and print them for the plug-in to apply — no sidecars')
+    .requiredOption('--catalog <file>', 'the catalog export the plug-in wrote for the selection')
+    .option('--profile <file>', 'profile to apply (default: the one `develop init` wrote)')
+    .option('--treatment <t>', 'which branch to apply: auto | color | bw', 'auto')
+    .option('--baseline <mode>', `baseline render: ${BASELINES.join(' | ')} (default: the profile's)`)
+    .option('--model <kind>', 'inference backend', 'onnx')
+    .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runApply);
 
   develop
     .command('status')

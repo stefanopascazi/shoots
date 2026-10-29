@@ -152,6 +152,25 @@ settings are replaced — which is what the `--force` guard is about.
 
 ---
 
+## `shoots develop apply`
+
+```sh
+shoots develop apply --catalog <export.json> --json
+```
+
+The Lightroom plug-in's `develop edit` (**Develop Selection**). The plug-in
+writes the selection's current settings as a catalog export; the shoot is
+exported and predicted as usual, and the predictions are printed as the
+settings tables `photo:applyDevelopSettings()` takes — crs names, the tone
+curve as a flat list, the creative profile as a `Look` table. Nothing is
+written beside the photographs. Each result says whether the photo already
+carries an edit; the plug-in replaces those only on an explicit yes.
+
+The baseline defaults to the profile's own. The prediction is kept under
+`~/.shoots/develop/export/<shoot>/prediction.json`, as with `edit`.
+
+---
+
 ## `shoots develop status`
 
 What is on this machine: the dataset, the profile (name, age, skill, how many

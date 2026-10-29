@@ -84,6 +84,12 @@ function Command.rateArgs(listPath, profile)
   return { 'rate', '--files-from', listPath, '--profile', profile, '--dry-run', '--json' }
 end
 
+--- Arguments for `shoots develop apply` over a catalog export of the selection.
+--- Prints the predicted settings; the plugin applies them to the catalog.
+function Command.developArgs(catalogPath)
+  return { 'develop', 'apply', '--catalog', catalogPath, '--json' }
+end
+
 --- Arguments that start the local web app server. Hidden from the CLI's help:
 --- only this plug-in starts it.
 function Command.appArgs() return { 'app' } end

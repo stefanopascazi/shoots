@@ -29,7 +29,7 @@ import path from 'node:path';
 import { existsSync, createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { once } from 'node:events';
-import { defaultModelConcurrency, JobQueue, scanFiles } from '@shoots/core';
+import { defaultModelConcurrency, JobQueue, scanFileList, scanFiles } from '@shoots/core';
 import {
   extractColorFeatures,
   COLOR_FEATURE_NAMES,
@@ -92,6 +92,8 @@ export interface DevelopExportOptions {
   /** A Lightroom catalog export from the plug-in: edits are read from it instead of the editor's sidecars. */
   catalog?: string;
   editedOnly?: boolean;
+  /** Exactly these files instead of scanning the target path (a host editor's selection). */
+  files?: readonly string[];
   /** No human summary on stdout: a pipeline that owns the JSON envelope sets it. */
   quiet?: boolean;
   json?: boolean;
@@ -179,9 +181,11 @@ export async function runDevelopExport(targetPath: string, options: DevelopExpor
   // count yet. On a network catalog that is minutes of apparent silence, so each
   // step announces itself.
   const scanPhase = startPhase(io, 'Scanning');
-  const files = await scanFiles(targetPath, {
-    onProgress: (found) => scanPhase.update(`${found} files`),
-  });
+  const files = options.files
+    ? (await scanFileList(options.files)).files
+    : await scanFiles(targetPath, {
+        onProgress: (found) => scanPhase.update(`${found} files`),
+      });
   scanPhase.done(`${files.length} files`);
   if (files.length === 0) {
     say('No image files found.');

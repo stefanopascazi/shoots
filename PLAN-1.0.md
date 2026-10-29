@@ -125,7 +125,19 @@ launch.
       Publish Services panel fixed some things and complicated others; the
       plug-in keeps its Plug-in Extras menus.
 
-**To field-test next:** cancel from the progress bar (Cull, Rate).
+- [x] **Cancel from the progress bar** (Cull, Rate) works.
+- [x] **L3, first cut — Develop Selection** (plug-in menu): the selection's
+      settings go to `develop apply --catalog` as a catalog export, the
+      predictions come back as `applyDevelopSettings()` tables (crs names, flat
+      curve, `Look` table parsed from the profile, or copied from a selected
+      photo using it), one undo step, a history step "shoots: <profile>".
+      Already edited photos: Replace / Skip / Cancel. Verified on real CR3 up to
+      the JSON; Lightroom itself still to field-test.
+
+**To field-test next:** Develop Selection (apply, undo, history step, the
+Look, edited photos asked). **Calibration page never opens**: every run ends
+"nothing to calibrate", the controls keep their fitted gains — need the
+calibrate job's `stderr.log` from the Lightroom PC to tell which gate.
 
 **Next, in order:**
 
@@ -149,7 +161,7 @@ launch.
    app only frames it on the Training screen — to field-test. Monetisation gate still to
    decide: today only the hidden command and the lease keep the app plugin-only;
    a signed licence checked by the server is the real one.
-6. **L3** apply predictions via `applyDevelopSettings` — **next**. The engine
+6. **L3** apply predictions via `applyDevelopSettings` — **first cut shipped**, to field-test; then in the app too. The engine
    predicts per shoot (level head) and per frame, so the plug-in sends the
    shoot, the CLI returns settings as JSON (no sidecars, the inverse of the L2
    mapping: crs names, flat tone curve), and the plug-in applies them in one

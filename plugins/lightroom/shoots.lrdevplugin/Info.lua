@@ -4,6 +4,7 @@ local menu = {
   { title = 'Open shoots', file = 'OpenApp.lua' },
   { title = 'Cull Selection (flag blurry as rejected)', file = 'CullSelection.lua', enabledWhen = 'photosSelected' },
   { title = 'Rate Selection', file = 'RateSelection.lua', enabledWhen = 'photosSelected' },
+  { title = 'Develop Selection', file = 'DevelopSelection.lua', enabledWhen = 'photosSelected' },
   { title = 'Install or Update shoots', file = 'InstallOrUpdate.lua' },
   { title = 'Download Dependencies', file = 'SetupDependencies.lua' },
   { title = 'Close shoots', file = 'CloseApp.lua' },

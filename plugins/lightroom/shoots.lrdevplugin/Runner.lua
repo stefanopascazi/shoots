@@ -122,13 +122,18 @@ function Runner.run(args, scope)
   end, scope))
 end
 
+--- Run `shoots <makeArgs(inputPath)>` with `text` written to a temporary `name` file.
+function Runner.runOnInput(makeArgs, name, text, scope)
+  local inputPath = tempFile(name)
+  writeText(inputPath, text)
+  local report, err = Runner.run(makeArgs(inputPath), scope)
+  cleanup({ inputPath })
+  return report, err
+end
+
 --- Run `shoots <makeArgs(listPath)>` over a file listing `paths`.
 function Runner.runOnFiles(makeArgs, paths, scope)
-  local listPath = tempFile('shoots-selection.txt')
-  writeText(listPath, table.concat(paths, '\n') .. '\n')
-  local report, err = Runner.run(makeArgs(listPath), scope)
-  cleanup({ listPath })
-  return report, err
+  return Runner.runOnInput(makeArgs, 'shoots-selection.txt', table.concat(paths, '\n') .. '\n', scope)
 end
 
 --- The installed CLI's version string, or nil.
