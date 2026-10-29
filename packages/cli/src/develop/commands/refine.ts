@@ -24,7 +24,8 @@
  */
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import { developFeedbackPath, developProfilePath, developShootDir } from '@shoots/core';
+import { developFeedbackPath, developProfilePath } from '@shoots/core';
+import { shootWorkDir } from '../shoot.js';
 import { runFeedback } from './feedback.js';
 import { runLearn } from './learn.js';
 import { runCalibrate } from './calibrate.js';
@@ -38,6 +39,8 @@ export interface RefineArgs {
   profile?: string;
   journal?: string;
   editor?: string;
+  /** A Lightroom catalog export from the plug-in: what was kept is read from it instead of the sidecars. */
+  catalog?: string;
   name: string;
   lambda: string;
   folds: number;
@@ -69,7 +72,7 @@ export async function runRefine(targetPath: string, args: RefineArgs): Promise<v
   }
 
   const folder = path.basename(path.resolve(targetPath));
-  const workDir = args.shootDir ? path.resolve(args.shootDir) : developShootDir(folder);
+  const workDir = args.shootDir ? path.resolve(args.shootDir) : shootWorkDir(targetPath);
   const predictionPath = path.join(workDir, 'prediction.json');
   const profilePath = path.resolve(args.profile ?? developProfilePath());
   const journalPath = path.resolve(args.journal ?? developFeedbackPath());
@@ -121,6 +124,7 @@ export async function runRefine(targetPath: string, args: RefineArgs): Promise<v
   await runFeedback({
     predictions: predictionPath,
     editor: editorId,
+    catalog: args.catalog,
     journal: args.journal,
     verbose: args.verbose,
   });
@@ -141,6 +145,7 @@ export async function runRefine(targetPath: string, args: RefineArgs): Promise<v
     shootDir: args.shootDir,
     journal: args.journal,
     editor: editorId,
+    catalog: args.catalog,
     name: args.name,
     lambda: args.lambda,
     folds: args.folds,

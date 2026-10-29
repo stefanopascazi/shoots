@@ -13,6 +13,8 @@
  */
 import { startPhase } from '../../progress.js';
 import { DEFAULT_EDITOR, resolveAdapter } from '../adapters/registry.js';
+import { catalogAdapter } from '../adapters/lightroom/index.js';
+import type { CatalogExport } from '../adapters/lightroom/catalog.js';
 import type { makeIo } from '../../io.js';
 import type { DevelopDataset, DevelopExportResult } from '../types.js';
 
@@ -42,9 +44,9 @@ export interface RefreshedTargets {
 export async function refreshTargets(
   records: readonly DevelopExportResult[],
   io: ReturnType<typeof makeIo>,
-  options: { editor?: string; carryLooks?: Record<string, string> } = {},
+  options: { editor?: string; catalog?: CatalogExport; carryLooks?: Record<string, string> } = {},
 ): Promise<RefreshedTargets> {
-  const adapter = resolveAdapter(options.editor ?? DEFAULT_EDITOR);
+  const adapter = options.catalog ? catalogAdapter(options.catalog) : resolveAdapter(options.editor ?? DEFAULT_EDITOR);
   const files = records.map((r) => r.file);
 
   const editPhase = startPhase(io, 'Reading develop settings');

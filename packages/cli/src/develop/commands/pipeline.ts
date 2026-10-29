@@ -17,10 +17,10 @@ import { mkdir, readFile } from 'node:fs/promises';
 import {
   developExportPath,
   developProfilePath,
-  developShootDir,
 } from '@shoots/core';
 import { runDevelopExport, BASELINES, type DevelopExportOptions } from '../export.js';
 import { runTrain } from './train.js';
+import { shootWorkDir } from '../shoot.js';
 import { runPredict } from './predict.js';
 import { DEFAULT_EDITOR, EDITOR_IDS, resolveAdapter } from '../adapters/registry.js';
 import { logError, logWarn, makeIo, printHuman, printJson } from '../../io.js';
@@ -211,7 +211,7 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
   if (!validate(args)) return;
 
   const folder = path.basename(path.resolve(targetPath));
-  const workDir = developShootDir(folder);
+  const workDir = shootWorkDir(targetPath);
   const datasetPath = path.join(workDir, 'export.jsonl');
   const predictionPath = path.join(workDir, 'prediction.json');
   const profilePath = path.resolve(args.profile ?? developProfilePath());

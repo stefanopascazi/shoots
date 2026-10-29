@@ -43,6 +43,9 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { developFeedbackPath } from '@shoots/core';
 import { withCurveTargets } from '../develop/schema.js';
 import { DEFAULT_EDITOR, EDITOR_IDS, resolveAdapter } from '../adapters/registry.js';
+import { catalogAdapter } from '../adapters/lightroom/index.js';
+import { loadCatalogExport } from '../adapters/lightroom/catalog.js';
+import type { EditAdapter } from '../adapters/types.js';
 import { loadJournal, recordObservations, shootCount, type FeedbackObservation } from '../feedback/journal.js';
 import { RELIABLE_SAMPLE, buildObservation, minMovedFloor, summarize, type FeedbackSummary } from '../feedback/stats.js';
 import { startPhase } from '../../progress.js';
@@ -53,6 +56,8 @@ import type { Prediction } from '../predict.js';
 export interface FeedbackArgs {
   predictions: string;
   editor?: string;
+  /** A Lightroom catalog export from the plug-in: what was kept is read from it instead of the sidecars. */
+  catalog?: string;
   /** Write this run's (predicted, actual) pairs here for later use. */
   out?: string;
   /** Journal path, or `false` to measure this run without recording it. */
@@ -71,7 +76,14 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  const adapter = resolveAdapter(editorId);
+  let adapter: EditAdapter;
+  try {
+    adapter = args.catalog ? catalogAdapter(await loadCatalogExport(args.catalog)) : resolveAdapter(editorId);
+  } catch (err) {
+    logError(`could not read the catalog export: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 2;
+    return;
+  }
 
   const payload = JSON.parse(await readFile(args.predictions, 'utf8')) as {
     command?: string;
@@ -99,7 +111,8 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
   // itself fall back on the file's own mtime, which is the same instant to within
   // the time it took to serialize — and a great deal closer than assuming it was
   // made just now.
-  const predictedAt = payload.at ?? (await stat(args.predictions)).mtime.toISOString();
+  // A shoot developed in several runs keeps each prediction's own instant.
+  const runAt = payload.at ?? (await stat(args.predictions)).mtime.toISOString();
 
   // When each photograph entered the training set, if it ever did. A prediction
   // made *after* that came from a model that had already seen the answer, so the
@@ -116,6 +129,7 @@ export async function runFeedback(args: FeedbackArgs): Promise<void> {
   let missing = 0;
 
   for (const prediction of predictions) {
+    const predictedAt = (prediction as Prediction & { predictedAt?: string }).predictedAt ?? runAt;
     const edit = edits.get(prediction.file);
     if (!edit || Object.keys(edit.develop).length === 0) {
       missing++;

@@ -23,7 +23,7 @@ import path from 'node:path';
 import { createWriteStream, existsSync, readFileSync } from 'node:fs';
 import { once } from 'node:events';
 import { readFile } from 'node:fs/promises';
-import { developExportPath, developFeedbackPath, developProfilePath, developShootDir } from '@shoots/core';
+import { developExportPath, developFeedbackPath, developProfilePath } from '@shoots/core';
 import { markTrainedOn } from '../feedback/journal.js';
 import { loadDataset } from '../dataset/load.js';
 import { refreshTargets, refreshedMeta } from '../dataset/refresh.js';
@@ -40,6 +40,8 @@ import { logError, logWarn, makeIo, printHuman, printJson } from '../../io.js';
 import { ensureExiftoolReady } from '../../tools.js';
 import type { DevelopDataset, DevelopExportResult, DevelopProfile } from '../types.js';
 import type { Prediction } from '../predict.js';
+import { shootWorkDir } from '../shoot.js';
+import { loadCatalogExport, type CatalogExport } from '../adapters/lightroom/catalog.js';
 
 export interface LearnArgs {
   /** Training dataset to fold into (default: ~/.shoots/develop/export/export.jsonl). */
@@ -51,6 +53,8 @@ export interface LearnArgs {
   /** Journal to mark as trained-on (default: ~/.shoots/develop/feedback.jsonl). */
   journal?: string;
   editor?: string;
+  /** A Lightroom catalog export from the plug-in: the shoot's edits are read from it instead of the sidecars. */
+  catalog?: string;
   name: string;
   lambda: string;
   folds: number;
@@ -96,7 +100,7 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
   }
 
   const folder = path.basename(path.resolve(targetPath));
-  const workDir = args.shootDir ? path.resolve(args.shootDir) : developShootDir(folder);
+  const workDir = args.shootDir ? path.resolve(args.shootDir) : shootWorkDir(targetPath);
   const shootData = path.join(workDir, 'export.jsonl');
   const predictionPath = path.join(workDir, 'prediction.json');
   const dataPath = path.resolve(args.data ?? developExportPath());
@@ -146,7 +150,15 @@ export async function runLearn(targetPath: string, args: LearnArgs): Promise<voi
   // this whole command, and two unqualified counters nested inside each other
   // read as one that went backwards.
   printHuman(io, `learn [1/3] Re-reading ${shoot.results.length} files as they are now`);
-  const refreshed = await refreshTargets(shoot.results, io, { editor: editorId, carryLooks: shoot.looks });
+  let catalog: CatalogExport | undefined;
+  try {
+    catalog = args.catalog ? await loadCatalogExport(args.catalog) : undefined;
+  } catch (err) {
+    logError(`could not read the catalog export: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 2;
+    return;
+  }
+  const refreshed = await refreshTargets(shoot.results, io, { editor: editorId, catalog, carryLooks: shoot.looks });
   const nowEdited = refreshed.records.filter((r) => r.edited !== false);
   if (nowEdited.length === 0) {
     logError(
