@@ -89,9 +89,16 @@ launch.
 - [x] **Plug-in Manager panel** works.
 - [x] **Data flows both ways as agreed**: what Send to Lightroom sends lands in
       the catalog, and stars, flags and labels set in Lightroom show in the app.
-- [x] **Export only** produced a catalog export with the raw SDK settings
-      (`test/catalog-2026-10-28T19-28-16-219Z.json`): to analyse against the
-      engine's names before training from the catalog.
+- [x] **Export only — L2 validated** on `test/catalog-2026-10-28T19-28-16-219Z.json`
+      (667 CR3 on a UNC share, 187 edited, 2 B&W): `getDevelopSettings()` uses
+      the crs names, every target arrives as a number, the tone curve as a flat
+      `[x,y,…]` list, the Look as an object whose `Name` the plug-in keeps.
+      Nothing the engine reads is dropped. Two differences from sidecars, both
+      harmless: `Temperature`/`Tint` are absent when WB is "As Shot" (delta 0,
+      as intended; the as-shot anchor then comes from the RAW's EXIF), and the
+      4 targets never returned (`ColorGrade{Shadow,Highlight}{Hue,Sat}`) are
+      missing from sidecars too — Adobe stores them as `SplitToning*`, so the
+      schema carries 4 permanent constants (engine issue, not L2).
 
 **Not verified yet:** training from the catalog end to end in Lightroom,
 calibrate from the app, and the installer launched by
