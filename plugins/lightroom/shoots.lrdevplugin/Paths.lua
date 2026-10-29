@@ -18,7 +18,19 @@ end
 
 --- Whether two paths name the same file or folder.
 function Paths.same(a, b)
-  return Paths.key(a) == Paths.key(b)
+  --- The deepest folder holding every path in `list`, spelled as the first one; nil when none is shared.
+function Paths.common(list)
+  if #list == 0 then return nil end
+  local best = list[1]
+  for i = 2, #list do
+    while best and not Paths.within(best, list[i]) do best = Paths.parent(best) end
+  end
+  -- A bare drive (C:) means its current directory on Windows: name its root.
+  if best and best:match('^%a:$') then return best .. '/' end
+  return best
+end
+
+return Paths.key(a) == Paths.key(b)
 end
 
 --- Whether `p` is `root` or lies under it, whole components only (/a/bc is not under /a/b).
@@ -35,6 +47,18 @@ function Paths.parent(p)
   local dir = k:match('^(.*)/[^/]+$')
   if not dir or dir == '' then return nil end
   return dir
+end
+
+--- The deepest folder holding every path in `list`, spelled as the first one; nil when none is shared.
+function Paths.common(list)
+  if #list == 0 then return nil end
+  local best = list[1]
+  for i = 2, #list do
+    while best and not Paths.within(best, list[i]) do best = Paths.parent(best) end
+  end
+  -- A bare drive (C:) means its current directory on Windows: name its root.
+  if best and best:match('^%a:$') then return best .. '/' end
+  return best
 end
 
 return Paths

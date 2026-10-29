@@ -7,6 +7,7 @@ heartbeat while Lightroom runs. When Lightroom quits or crashes the lease
 lapses and the server stops itself.
 ]]
 
+local LrApplication = import 'LrApplication'
 local LrDialogs = import 'LrDialogs'
 local LrFileUtils = import 'LrFileUtils'
 local LrHttp = import 'LrHttp'
@@ -22,6 +23,7 @@ local Command = require 'Command'
 local HostError = require 'HostError'
 local Log = require 'Log'
 local Outbox = require 'Outbox'
+local Paths = require 'Paths'
 local Runner = require 'Runner'
 local Sync = require 'Sync'
 
@@ -109,6 +111,18 @@ local function startServer()
   return nil, logPath
 end
 
+-- The folder selected in Lightroom's Folders panel (their shared parent when
+-- several are); nil for collections and special sources, so the app reopens its last one.
+local function activeFolder()
+  local folders = {}
+  for _, source in ipairs(LrApplication.activeCatalog():getActiveSources()) do
+    if type(source) ~= 'string' and source.type and source:type() == 'LrFolder' then
+      folders[#folders + 1] = source:getPath()
+    end
+  end
+  return Paths.common(folders)
+end
+
 --- Open the app: reuse a running server, otherwise start one. Call inside an async task.
 function AppLauncher.open()
   local session = readSession()
@@ -121,7 +135,7 @@ function AppLauncher.open()
     end
   end
   holdLease()
-  LrHttp.openUrlInBrowser(session.url)
+  LrHttp.openUrlInBrowser(AppSession.launchUrl(session, activeFolder()))
 end
 
 --- Stop the server if one is running. Safe to call when none is.

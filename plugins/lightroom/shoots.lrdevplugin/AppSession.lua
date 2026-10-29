@@ -30,6 +30,13 @@ function AppSession.headers(session)
   }
 end
 
+--- The launch URL, naming the folder the app opens first when `folder` is given.
+function AppSession.launchUrl(session, folder)
+  if not folder or folder == '' then return session.url end
+  local encoded = folder:gsub('[^%w%-%._~]', function(c) return string.format('%%%02X', c:byte()) end)
+  return session.url .. '&folder=' .. encoded
+end
+
 --- Whether `current` is a different server from `previous` (a fresh start).
 function AppSession.isNew(previous, current)
   if not current then return false end

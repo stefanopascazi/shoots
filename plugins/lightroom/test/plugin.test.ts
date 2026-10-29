@@ -69,6 +69,15 @@ describe('the app server launch', () => {
 describe('AppSession', () => {
   const session = { pid: 7, port: 55552, token: 'tok', url: 'http://127.0.0.1:55552/?t=tok', startedAt: 'a' };
 
+  test('the launch URL names the active folder, encoded', () => {
+    const url = (folder: string | null) =>
+      runLua(`return require('AppSession').launchUrl({ url = '${session.url}' }, ${folder === null ? 'nil' : JSON.stringify(folder)})`);
+    expect(url(null)).toBe(session.url);
+    expect(url('')).toBe(session.url);
+    const folder = 'C:\\My Shoots\\Roma è & co';
+    expect(url(folder)).toBe(`${session.url}&folder=${encodeURIComponent(folder)}`);
+  });
+
   test('parses the file the server writes', () => {
     expect(runLua(`return require('AppSession').parse(${JSON.stringify(JSON.stringify(session, null, 2))})`)).toEqual(session);
   });
@@ -219,6 +228,25 @@ describe('RawMetadata.value', () => {
       });
     }
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('Paths.common', () => {
+  const common = (list: string[]) => runLua(`return require('Paths').common(${JSON.stringify(list).replace(/^\[/, '{').replace(/\]$/, '}')})`);
+
+  test('one folder is itself, unchanged', () => {
+    expect(common(['C:\\Shoots\\Rome'])).toBe('C:\\Shoots\\Rome');
+  });
+
+  test('several folders give their deepest shared parent', () => {
+    expect(common(['/shoots/rome/day1', '/shoots/rome/day2', '/shoots/rome'])).toBe('/shoots/rome');
+    expect(common(['C:\\Shoots\\Rome', 'c:/shoots/Paris'])).toBe('C:/Shoots');
+    expect(common(['C:\\A', 'C:\\B'])).toBe('C:/');
+  });
+
+  test('nothing shared, or nothing at all, is nil', () => {
+    expect(common([])).toBeNull();
+    expect(common(['C:\\A', 'D:\\B'])).toBeNull();
   });
 });
 

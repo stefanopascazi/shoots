@@ -22,6 +22,11 @@ binds 127.0.0.1, accepts only the session token from `~/.shoots/app.json`, and
 stops when the plug-in stops renewing its lease: when Lightroom quits, crashes,
 or "Close shoots" is chosen.
 
+**Open shoots** opens the app on the folder selected in Lightroom's Folders
+panel (their shared parent when several are selected); with a collection
+selected it reopens the app's last folder. **Change folder** in the app still
+picks any other.
+
 While the app is open, the plug-in checks it every few seconds. What you send
 from the app with **Send to Lightroom** (stars, flags, colour labels)
 is written into the catalog as one undo step, "shoots: Apply from the app" —
