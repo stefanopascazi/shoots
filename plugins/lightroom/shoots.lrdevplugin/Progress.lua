@@ -8,13 +8,32 @@ local Json = require 'Json'
 
 local Progress = {}
 
-local function lastEvent(text)
-  -- The last line may still be half-written: walk back to the newest one that parses.
+-- Lines that bracket the run (pid first, exit code last) rather than report on it.
+local LIFETIME = { start = true, exit = true }
+
+local function splitLines(text)
   local lines = {}
   for line in string.gmatch(text or '', '[^\n]+') do lines[#lines + 1] = line end
+  return lines
+end
+
+local function lastEvent(text)
+  -- The last line may still be half-written: walk back to the newest one that parses.
+  local lines = splitLines(text)
   for i = #lines, 1, -1 do
     local ok, event = pcall(Json.decode, lines[i])
-    if ok and type(event) == 'table' then return event end
+    if ok and type(event) == 'table' and not LIFETIME[event.kind] then return event end
+  end
+  return nil
+end
+
+--- The CLI's process id, from the `start` line it writes first; nil until then.
+function Progress.pid(text)
+  for _, line in ipairs(splitLines(text)) do
+    local ok, event = pcall(Json.decode, line)
+    if ok and type(event) == 'table' and event.kind == 'start' and type(event.pid) == 'number' then
+      return event.pid
+    end
   end
   return nil
 end

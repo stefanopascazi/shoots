@@ -43,13 +43,15 @@ function Action.run(spec)
     end
 
     local progress = LrProgressScope { title = spec.title, functionContext = context }
-    progress:setCancelable(false)
+    progress:setCancelable(true)
     progress:setIndeterminate()
     progress:setCaption(string.format('Starting on %d photos', #paths))
 
     local report, err = Runner.runOnFiles(spec.args, paths, progress)
     if not report then
       progress:done()
+      -- Cancelled: the CLI is gone and nothing reached the catalog.
+      if err == Runner.CANCELED then return end
       LrDialogs.message(spec.title .. ' failed', err, 'critical')
       return
     end

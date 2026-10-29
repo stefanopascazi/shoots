@@ -420,6 +420,26 @@ describe('Progress.parse', () => {
     });
     expect(parse('{"kind":"download","label":"model","received":2097152,"total":null}')).toEqual({ caption: 'model - 2.0 MB' });
   });
+
+  test('the lifetime markers are not shown', () => {
+    expect(parse('{"kind":"start","pid":42}\n')).toBeNull();
+    expect(parse('{"kind":"start","pid":42}\n{"kind":"phase","label":"Rating"}\n{"kind":"exit","code":0}\n')).toEqual({ caption: 'Rating' });
+  });
+});
+
+describe('cancel', () => {
+  const pid = (text: string) => runLua(`return require('Progress').pid(${JSON.stringify(text)})`);
+
+  test('the pid comes from the start line, nil before it is written', () => {
+    expect(pid('{"kind":"start","pid":4242}\n{"kind":"phase","label":"Rating"}\n')).toBe(4242);
+    expect(pid('')).toBeNull();
+    expect(pid('{"kind":"phase","label":"Rating"}\n')).toBeNull();
+  });
+
+  test('the kill line ends the process tree on windows', () => {
+    expect(runLua(`return require('Command').killLine('windows', 4242)`)).toBe('taskkill /PID 4242 /T /F');
+    expect(runLua(`return require('Command').killLine('posix', 4242)`)).toBe('kill 4242');
+  });
 });
 
 describe('Version', () => {

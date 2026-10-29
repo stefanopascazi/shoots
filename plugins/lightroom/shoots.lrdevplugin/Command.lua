@@ -105,6 +105,14 @@ function Command.detachedLine(platform, executable, args, logPath)
   return 'nohup ' .. line .. ' > ' .. log .. ' 2>&1 &'
 end
 
+--- The line that ends a running CLI by its pid (from the progress file), with
+--- any child it started. Used to cancel: LrTasks.execute gives no handle on it.
+function Command.killLine(platform, pid)
+  local n = string.format('%d', pid)
+  if platform == 'windows' then return 'taskkill /PID ' .. n .. ' /T /F' end
+  return 'kill ' .. n
+end
+
 function Command.updateArgs() return { 'update', '--json' } end
 function Command.setupArgs() return { 'setup', '--json' } end
 function Command.versionArgs() return { '--version' } end
