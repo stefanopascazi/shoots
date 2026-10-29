@@ -28,7 +28,7 @@ launch.
 
 ## Status — where to pick up (2026-10-29)
 
-**Done** (all on `main`, pushed; release still `0.7.3`):
+**Done** (all on `main`, pushed; released as `0.7.4`):
 
 - [x] Strategy recorded here and in `docs/roadmap.md` (public via the site sync).
 - [x] CLI: `cull` / `rate --files-from <list>` — explicit file list instead of a folder.
@@ -84,9 +84,9 @@ launch.
 **Field test in Lightroom (2026-10-29)**, network share on a NAS:
 
 - [x] **Cull Selection** works.
-- [ ] **Rate Selection fails**: "Invalid rating 0" — Lightroom refuses a rating
-      of 0 and clears stars with nil. Fixed in `RawMetadata.value` (Rate and Send
-      to Lightroom both route through it); to re-test in Lightroom.
+- [x] **Rate Selection** works. It first failed with "Invalid rating 0":
+      Lightroom clears stars with nil, not 0. `RawMetadata.value` maps it, for
+      Rate and Send to Lightroom alike.
 - [x] **Open shoots** opens the app and it works.
 - [x] **Plug-in Manager panel** works.
 - [x] **Data flows both ways as agreed**: what Send to Lightroom sends lands in
@@ -111,23 +111,25 @@ launch.
       closing it closes the app while a started training keeps running —
       verified by closing it mid-export.
 
-**Not verified yet:** the installer launched by the plugin (needs a release
-carrying `--files-from`).
+- [x] **Installer launched by the plugin**: downloads `0.7.4` and works.
+
+**To field-test next:** cancel from the progress bar (Cull, Rate) and `rate`
+keywords in the catalog.
 
 **Next, in order:**
 
-1. **Field test on the Lightroom PC** — passed, see above, except Rate
-   Selection: fix shipped, re-test it. Copy `dist-bin/shoots.exe` (from
+1. **Field test on the Lightroom PC** — passed, see above. Copy `dist-bin/shoots.exe` (from
    `npm run build:binary`) to `%USERPROFILE%\.shoots\bin\` and add
    `dist-plugin/shoots.lrplugin` in the Plug-in Manager. Check: every menu item (Open/Close shoots too), Send to Lightroom with labels (`colorNameForLabel`), read-back of the open folder (`getFolderByPath`, `batchGetRawMetadata`) and a change made in Lightroom showing in the app, Training › **Export only** (no training: keeps the catalog export, raw SDK settings included, under `~/.shoots/app/exports/` and reports names not matched — bring that file back to fix L2),
    progress bar, undo, virtual copies, offline files, the panel buttons. Fix what
    breaks.
-2. **Release `0.7.4`** (features, no migration note → patch) once the field test
-   passes, so the plugin's own install/update path can be tested. **The plugin
+2. **Release `0.7.4`** — done; the plugin's install path passes. **The plugin
    is never a public release asset** — it is what the product sells; how paying
    users get it is still open (see Open decisions).
-3. **L1 leftovers**: write `rate` keywords into the catalog; decide whether cull
-   should also flag keepers; cancel support (kill the child process).
+3. **L1 leftovers**: `rate` keywords written under a `shoots` parent keyword
+   (re-rating replaces them, the user's own stay) and cancel (the CLI writes
+   its pid first; the plugin kills it) — both shipped, to field-test. Still
+   open: whether cull should also flag keepers.
 4. **L2 catalog export** — shipped; field-test it with step 1.
 5. **Track W** — Send to Lightroom and training from the catalog pass the field
    test; next: finish the calibration screen (still rough). Monetisation gate still to
