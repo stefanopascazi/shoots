@@ -21,10 +21,11 @@ import { useLightroomError } from './hooks/useLightroomError.js';
 import { LightroomErrorAlert } from './LightroomErrorAlert.js';
 import { useSettings } from './hooks/useSettings.js';
 import { LibraryScreen } from './library/LibraryScreen.js';
+import { SettingsScreen } from './settings/SettingsScreen.js';
 import { TrainingScreen } from './training/TrainingScreen.js';
 
-const ROUTES = ['library', 'training', 'setup'] as const;
-const TITLES: Record<(typeof ROUTES)[number], string> = { library: 'Library', training: 'Training', setup: 'Setup' };
+const ROUTES = ['library', 'training', 'settings', 'setup'] as const;
+const TITLES: Record<(typeof ROUTES)[number], string> = { library: 'Library', training: 'Training', settings: 'Settings', setup: 'Setup' };
 
 /** Loads what the server remembers, then shows the app as it was left. */
 export function App() {
@@ -89,6 +90,9 @@ function Shell({ start }: { start: StartState }) {
           <NavItem icon="sparkle" href="#training" active={route === 'training'}>
             Training
           </NavItem>
+          <NavItem icon="sliders" href="#settings" active={route === 'settings'}>
+            Settings
+          </NavItem>
           <NavItem icon="settings" href="#setup" active={route === 'setup'}>
             Setup
           </NavItem>
@@ -123,8 +127,10 @@ function Shell({ start }: { start: StartState }) {
             />
           ) : route === 'training' ? (
             <TrainingScreen prefs={prefs} />
+          ) : route === 'settings' ? (
+            <SettingsScreen prefs={prefs} />
           ) : (
-            <HealthScreen info={info} prefs={prefs} />
+            <HealthScreen info={info} />
           )}
         </div>
       </Content>

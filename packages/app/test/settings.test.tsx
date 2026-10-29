@@ -1,8 +1,12 @@
 /** @jsxImportSource preact */
 import { describe, expect, test } from 'bun:test';
 import { render } from 'preact-render-to-string';
-import { initialSelection, itemFor, PARTS, size } from '../src/health/cleanup.js';
-import { CleanupCard } from '../src/health/CleanupCard.js';
+import { initialSelection, itemFor, PARTS, size } from '../src/settings/cleanup.js';
+import { CleanupCard } from '../src/settings/CleanupCard.js';
+import { SettingsScreen } from '../src/settings/SettingsScreen.js';
+import { HealthScreen } from '../src/health/HealthScreen.js';
+import type { AppInfo } from '../src/contract.js';
+import type { SettingsHandle } from '../src/hooks/useSettings.js';
 
 describe('clean-up parts', () => {
   test('the journal is never preselected and says it cannot be rebuilt', () => {
@@ -34,5 +38,23 @@ describe('CleanupCard', () => {
     const html = render(<CleanupCard />);
     for (const p of PARTS) expect(html).toContain(p.label);
     expect(html).toContain('Remove selected');
+  });
+});
+
+describe('SettingsScreen', () => {
+  test('holds preferences, app memory and the clean-up', () => {
+    const prefs = { settings: { reopenLastFolder: true }, update: () => {} } as unknown as SettingsHandle;
+    const html = render(<SettingsScreen prefs={prefs} />);
+    for (const title of ['Settings', 'Preferences', 'App memory', 'Remove selected']) expect(html).toContain(title);
+  });
+});
+
+describe('HealthScreen', () => {
+  test('keeps only the checks and the installation facts', () => {
+    const html = render(<HealthScreen info={{ version: '1.2.3', platform: 'win32', home: 'C:\h' } as AppInfo} />);
+    expect(html).toContain('Checks');
+    expect(html).toContain('This installation');
+    expect(html).not.toContain('Preferences');
+    expect(html).not.toContain('App memory');
   });
 });

@@ -1,6 +1,6 @@
 /** @jsxImportSource preact */
 import { useEffect, useState } from 'preact/hooks';
-import { Badge, Button, IconButton, Kbd } from '@shoots/ui';
+import { Badge, Button, IconButton } from '@shoots/ui';
 import { thumbUrl } from '../api/client.js';
 import type { MarksPatch, ResetPart } from '../contract.js';
 import { FocusHeatmap, HeatLegend } from './FocusHeatmap.js';
@@ -156,10 +156,6 @@ export function PhotoViewer({ photos, index, onIndex, onClose, onMark, onReset, 
         <div class="app-viewer__nav">
           <IconButton icon="chevron-left" label="Previous" variant="secondary" disabled={index === 0} onClick={() => onIndex(index - 1)} />
           <IconButton icon="chevron-right" label="Next" variant="secondary" disabled={last} onClick={() => onIndex(index + 1)} />
-          <span class="sh-subtle app-viewer__keys">
-            <Kbd>P</Kbd> <Kbd>X</Kbd> <Kbd>U</Kbd> flag · <Kbd>1</Kbd>–<Kbd>5</Kbd> stars, <Kbd>0</Kbd> none · <Kbd>6</Kbd>–<Kbd>9</Kbd> label · <Kbd>S</Kbd> skip ·{' '}
-            <Kbd>H</Kbd> focus map · <Kbd>Esc</Kbd> close
-          </span>
         </div>
       </aside>
       <ResetDialog open={resetting} scope={photo.name} onClose={() => setResetting(false)} onReset={(parts) => onReset(photo.path, parts)} />

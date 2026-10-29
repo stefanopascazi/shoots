@@ -111,7 +111,6 @@
 .app-viewer__name { font-weight: 600; overflow-wrap: anywhere; }
 .app-viewer__meta { font-size: var(--sh-text-xs); margin-top: 2px; }
 .app-viewer__nav { display: flex; align-items: center; gap: var(--sh-space-2); margin-top: auto; flex-wrap: wrap; }
-.app-viewer__keys { font-size: var(--sh-text-xs); margin-left: auto; }
 @media (max-width: 760px) {
   .app-viewer { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
   .app-viewer__panel { border-left: 0; border-top: 1px solid var(--sh-border); max-height: 45vh; }

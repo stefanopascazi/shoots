@@ -292,7 +292,7 @@ the latest change wins.
 **Reset folder…** (and **Reset this photo…** in the viewer) forgets any of: the
 blur check, shoots' ratings, your marks, the send history. A reset happens in the
 app only — photos and Lightroom are not touched, and anything already sent stays
-in the catalog. **Setup › Clear app memory** forgets everything at once.
+in the catalog. **Settings › Clear app memory** forgets everything at once.
 
 > **`--review` in the shell is deprecated.** It still works inside the
 > interactive shell (`/cull <path> --review --mark`), and is removed together

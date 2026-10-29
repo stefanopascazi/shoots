@@ -3,16 +3,12 @@ import { useEffect, useState } from 'preact/hooks';
 import { Alert, Badge, Button, Card, PageHeader, Spinner, type Tone } from '@shoots/ui';
 import type { AppInfo, CheckStatus, DoctorReport } from '../contract.js';
 import { useJob } from '../hooks/useJob.js';
-import type { SettingsHandle } from '../hooks/useSettings.js';
-import { CleanupCard } from './CleanupCard.js';
-import { MemoryCard } from './MemoryCard.js';
-import { PreferencesCard } from './PreferencesCard.js';
 
 const TONE: Record<CheckStatus, Tone> = { ok: 'success', warn: 'warning', fail: 'danger' };
 const LABEL: Record<CheckStatus, string> = { ok: 'OK', warn: 'Warning', fail: 'Failed' };
 
-/** Preferences, what `shoots doctor` finds, and where shoots keeps its data. */
-export function HealthScreen({ info, prefs }: { info: AppInfo | undefined; prefs: SettingsHandle }) {
+/** What `shoots doctor` finds, and where shoots keeps its data. */
+export function HealthScreen({ info }: { info: AppInfo | undefined }) {
   const job = useJob();
   const [report, setReport] = useState<DoctorReport>();
 
@@ -29,7 +25,7 @@ export function HealthScreen({ info, prefs }: { info: AppInfo | undefined; prefs
     <>
       <PageHeader
         title="Setup"
-        description="Your preferences, and the tools shoots relies on, checked on this computer."
+        description="The tools shoots relies on, checked on this computer."
         actions={
           <Button icon="refresh" onClick={check} loading={job.running}>
             Check again
@@ -64,10 +60,6 @@ export function HealthScreen({ info, prefs }: { info: AppInfo | undefined; prefs
             </div>
           )}
         </Card>
-        <div class="app-side">
-        <PreferencesCard prefs={prefs} />
-        <MemoryCard />
-        <CleanupCard />
         <Card title="This installation">
           <dl class="app-facts">
             <dt>Version</dt>
@@ -80,7 +72,6 @@ export function HealthScreen({ info, prefs }: { info: AppInfo | undefined; prefs
             </dd>
           </dl>
         </Card>
-        </div>
       </div>
     </>
   );
