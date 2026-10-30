@@ -19,10 +19,10 @@
  * Text embeddings come from the same CLIP text tower `scripts/prepare-model-mirror.ts`
  * uses, computed once and cached next to the histogram cache.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { AutoTokenizer, CLIPTextModelWithProjection } from '@huggingface/transformers';
 import { lookOf, NEUTRAL_TONE, TONE_KEYS, type LumaHistogram } from '../../packages/cli/src/develop/look/tone.js';
+import { readings, textEmbeddings } from '../lib/clipText.js';
 import { fitRidgeCV, foldsByGroup, mean, shuffled } from '../lib/fit.js';
 
 const arg = (name: string, fallback: string): string => {
@@ -69,30 +69,6 @@ const SCENES: Record<string, string> = {
 };
 const NAMES = Object.keys(SCENES);
 
-async function textEmbeddings(): Promise<number[][]> {
-  if (existsSync(TEXT_CACHE)) {
-    const cached = JSON.parse(readFileSync(TEXT_CACHE, 'utf8'));
-    if (JSON.stringify(cached.prompts) === JSON.stringify(SCENES)) return cached.embeddings;
-  }
-  const id = 'Xenova/clip-vit-base-patch32';
-  const tokenizer = await AutoTokenizer.from_pretrained(id);
-  const model = await CLIPTextModelWithProjection.from_pretrained(id, { dtype: 'int8' });
-  const prompts = NAMES.map((n) => `a photo of ${SCENES[n]}`);
-  const { text_embeds } = (await model(tokenizer(prompts, { padding: true, truncation: true }))) as {
-    text_embeds: { data: ArrayLike<number>; dims: number[] };
-  };
-  const dim = text_embeds.dims[1]!;
-  const data = Array.from(text_embeds.data);
-  const embeddings = prompts.map((_, i) => data.slice(i * dim, (i + 1) * dim));
-  writeFileSync(TEXT_CACHE, JSON.stringify({ prompts: SCENES, embeddings }));
-  return embeddings;
-}
-
-const unit = (v: number[]): number[] => {
-  const n = Math.hypot(...v) || 1;
-  return v.map((x) => x / n);
-};
-
 interface Row {
   file: string;
   session: string;
@@ -111,15 +87,11 @@ const rows: Row[] = readFileSync(DATA, 'utf8')
   .map((r) => ({ ...r, session: path.dirname(r.file) }));
 const hist = (r: Row): LumaHistogram => ({ counts: Float64Array.from(cache[r.file]!.counts), anchor: cache[r.file]!.anchor });
 
-const text = (await textEmbeddings()).map(unit);
+const text = await textEmbeddings(SCENES, TEXT_CACHE);
 const scoreCache = new Map<Row, number[]>();
 const scene = (r: Row): number[] => {
   let s = scoreCache.get(r);
-  if (!s) {
-    const e = unit(r.embedding);
-    s = text.map((t) => 100 * t.reduce((a, v, i) => a + v * e[i]!, 0));
-    scoreCache.set(r, s);
-  }
+  if (!s) scoreCache.set(r, (s = readings(r.embedding, text)));
   return s;
 };
 const histogram = (r: Row): number[] => [...lookOf(hist(r), NEUTRAL_TONE), hist(r).anchor, ...r.features];
