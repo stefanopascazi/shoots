@@ -7,6 +7,9 @@
  * installed, checksum-verified dependencies are left untouched. Commands also
  * provision lazily on first use, so `setup` is an explicit, up-front alternative
  * (e.g. from an installer or CI image).
+ *
+ * The vision model (Florence-2, 630 MB) is opt-in with `--vision`: only
+ * keywords and region intents need it, and they fetch it on first use anyway.
  */
 import type { Command } from 'commander';
 import {
@@ -17,12 +20,13 @@ import {
   librawManifest,
   LibrawMirrorNotConfiguredError,
 } from '@shoots/imaging';
-import { ensureClipModel, ModelMirrorNotConfiguredError } from '@shoots/inference';
+import { ensureClipModel, ensureFlorenceModel, ModelMirrorNotConfiguredError } from '@shoots/inference';
 import { shootsHome } from '@shoots/core';
 import { logError, logWarn, makeIo, printHuman, printJson } from '../io.js';
 import { mirrorProgress } from '../tools.js';
 
 interface SetupOptions {
+  vision?: boolean;
   json?: boolean;
   verbose?: boolean;
 }
@@ -39,6 +43,7 @@ export function registerSetupCommand(program: Command): void {
   program
     .command('setup')
     .description('Download and verify external tools (exiftool, libraw) and the inference model into ~/.shoots')
+    .option('--vision', 'also fetch the vision model behind keywords and region intents (630 MB)')
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runSetup);
@@ -95,6 +100,21 @@ async function provisionModel(io: ReturnType<typeof makeIo>): Promise<Dependency
   }
 }
 
+async function provisionVision(io: ReturnType<typeof makeIo>): Promise<DependencyReport> {
+  try {
+    const m = await ensureFlorenceModel(mirrorProgress(io));
+    return { name: 'vision model', version: m.version, path: m.installDir, ok: true };
+  } catch (err) {
+    if (err instanceof ModelMirrorNotConfiguredError) {
+      logWarn(err.message);
+      return { name: 'vision model', version: null, path: null, ok: false, detail: 'mirror not configured' };
+    }
+    logError(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+    return { name: 'vision model', version: null, path: null, ok: false, detail: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 async function runSetup(options: SetupOptions): Promise<void> {
   const io = makeIo(options);
 
@@ -102,6 +122,7 @@ async function runSetup(options: SetupOptions): Promise<void> {
   deps.push(await provisionExiftool(options, io));
   deps.push(await provisionLibraw(io));
   deps.push(await provisionModel(io));
+  if (options.vision) deps.push(await provisionVision(io));
 
   if (io.json) {
     printJson({ command: 'setup', home: shootsHome(), tools: deps });

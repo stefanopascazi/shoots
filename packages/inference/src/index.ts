@@ -24,6 +24,18 @@ export {
   type EnsureModelOptions,
 } from './models/clipManifest.js';
 
+export {
+  florenceManifest,
+  ensureFlorenceModel,
+  resolveFlorenceModel,
+  FLORENCE_MODEL_VERSION,
+  type ResolvedFlorenceManifest,
+} from './models/florenceManifest.js';
+
+// Florence-2: captions, objects and region masks, for keywords and region intents.
+export { loadFlorence, type Florence, type FlorenceImage } from './florence/model.js';
+export { rasterisePolygons, type Boxes } from './florence/parse.js';
+
 import { LocalOnnxModel } from './LocalOnnxModel.js';
 import type { QualityModel } from './QualityModel.js';
 import type { EnsureModelOptions } from './models/clipManifest.js';
