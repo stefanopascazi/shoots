@@ -26,7 +26,7 @@ The product is a **Lightroom Classic plugin** and a **local web app** it opens.
 The CLI stays as the free engine behind both. Everything else is paused until
 launch.
 
-## Status — where to pick up (2026-10-29, evening)
+## Status — where to pick up (2026-10-30)
 
 **Done** (all on `main`, pushed; released as `0.7.4`):
 
@@ -146,8 +146,18 @@ launch.
       profile's name. Verified end to end on real CR3 in an isolated home
       (4 observations journalled, refit on 1269 images, list empties).
 
-**To field-test next:** Improve profile from the app after a Develop Selection
-and some hand edits in Lightroom; the waiting list.
+**To field-test next** (needs the Lightroom PC: rebuild `shoots.exe`, copy it to
+`~/.shoots/bin`, reload the plug-in):
+
+- [ ] Develop Selection on a folder in two parts: both parts stay in the shoot's
+      record (the waiting list counts every photo).
+- [ ] The folder shows in Training › **Waiting to improve your profile**.
+- [ ] Hand-edit some of those photos in Lightroom, then **Improve** (or
+      **Improve profile** on the folder): the job exports from the plug-in,
+      runs detached (minutes), the profile keeps its name, the folder leaves the list.
+- [ ] Improve on a folder never developed with shoots fails at once with a clear message.
+- [ ] Develop Selection again after the refit: predictions follow the hand edits.
+- [ ] Calibrate stays silent until 4 shoots — expected, not a bug.
 
 **Next, in order:**
 
