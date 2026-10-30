@@ -15,6 +15,8 @@ shoots develop <subcommand> [options]
 | --- | --- |
 | [`init`](#shoots-develop-init) | Learn your style from an edited catalog (`export` + `train`) |
 | [`edit`](#shoots-develop-edit) | Develop a shoot with it (`export` + `predict`) |
+| [`apply`](#shoots-develop-apply) | The Lightroom plug-in's `edit`: predictions for a catalog selection, no sidecars |
+| [`style`](#shoots-develop-style) | Detail profiles (B&W, warm, …) applied on top of the general one |
 | [`feedback`](#shoots-develop-feedback) | How much of that prediction you kept |
 | [`refine`](#shoots-develop-refine) | Close the loop on a developed shoot: `feedback` + `learn` + `calibrate` |
 | [`calibrate`](#shoots-develop-calibrate) | Fix what it is wrong by on average (a constant offset) |
@@ -120,6 +122,8 @@ shoots develop edit <path> [options]
 | `--camera-profile <name>` | catalog's own | Base rendering to assume and write out |
 | `--baseline <mode>` | `external` | Must match the profile's, or `predict` refuses |
 | `--force` | off | Overwrite sidecars that already carry a real edit |
+| `--style <name>` | — | Detail profile to apply on top of the general one ([`style`](#shoots-develop-style)) |
+| `--style-strength <n>` | `1` | How much of the style to apply, 0..1 |
 | `--no-apply-marks` | apply on | Leave pending `cull`/`rate` marks in the store instead of writing them out |
 | `--dry-run` | off | Print the steps and the paths, write nothing |
 
@@ -155,7 +159,7 @@ settings are replaced — which is what the `--force` guard is about.
 ## `shoots develop apply`
 
 ```sh
-shoots develop apply --catalog <export.json> --json
+shoots develop apply --catalog <export.json> [--style <name>] --json
 ```
 
 The Lightroom plug-in's `develop edit` (**Develop Selection**). The plug-in
@@ -170,9 +174,44 @@ The baseline defaults to the profile's own. The prediction is kept in the
 shoot's working folder, as with `edit`; each run is folded in by file, so
 developing a folder in parts keeps every part for `refine`.
 
+`--profile`, `--treatment`, `--baseline`, `--style` and `--style-strength` work as in `edit`.
+
 `feedback`, `learn` and `refine` take `--catalog <export>` to read what you
 kept from the plug-in's export instead of the sidecars: the app's **Improve
 profile** runs `develop refine <folder> --catalog <export>`.
+
+---
+
+## `shoots develop style`
+
+Detail profiles. A style is **never a model of its own**: it is how a subset of
+your edits — the black-and-white work, the warm weddings — departs from what the
+general profile predicts for the same photographs, and it is applied as that
+departure on top of the general prediction. A style made from twenty photographs
+moves only what those twenty consistently do differently and inherits the rest.
+
+```sh
+shoots develop style train --name <name> --data <export.jsonl> [--profile <file>] [--description <text>] [--json]
+shoots develop style list [--json]
+```
+
+| Option (`train`) | Default | Description |
+| --- | --- | --- |
+| `--name <name>` | **required** | Saved as `~/.shoots/develop/styles/<name>.json` |
+| `--data <file>` | **required** | Dataset from `develop export` holding only the edits in this style |
+| `--profile <file>` | the one `init` wrote | General profile to measure against |
+| `--out <file>` | styles directory | Write the style elsewhere |
+| `--description <text>` | — | One line saying what the style is |
+
+Each parameter's departure is averaged **one shoot, one vote**, and kept only in
+proportion to how consistent it is (`1 − se²/mean²`, zero when the departure is
+within its own standard error). With fewer than three shoots the frame spread
+stands in for the shoot spread, so only departures that hold across every frame
+survive. Apply with `--style <name>` on `edit`, `apply` or `predict`;
+`--style-strength` scales it from 0 (the general profile) to 1.
+
+A style records which training of the general profile it was measured against;
+after a retrain it still applies, with a warning to re-run `style train`.
 
 ---
 
@@ -670,6 +709,8 @@ shoots develop predict --data <file> --profile <file> [options]
 | `--camera-profile <name>` | catalog's own | Base rendering to assume and write out |
 | `--out <file>` | stdout | Write predictions JSON here |
 | `--sidecars <dir>` | — | Also write an editor-readable sidecar per image into this dir (`.xmp` for `acr`, `.rrdata` for `rapidraw`) |
+| `--style <name>` | — | Detail profile to apply on top of the general one ([`style`](#shoots-develop-style)) |
+| `--style-strength <n>` | `1` | How much of the style to apply, 0..1 |
 
 `--treatment` is a genuine creative choice at inference time — at train time it is
 read off the edit, but for a new frame nobody has decided colour vs B&W yet.
