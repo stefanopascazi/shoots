@@ -76,6 +76,8 @@ In order:
   the sky and the subject with a local vision model
   (Florence-2, MIT). Semantic features did not beat the histogram as predictor
   inputs on one photographer's catalog; they are re-measured on beta data first.
+  Keywords come from the same optional vision pass; the CLI side is built, the
+  app screens and the Lightroom field test of intent strength are next.
 - **A closed beta that shares data.** Testers who opt in share derived
   measurements, never images, so the develop predictor can learn from many
   photographers instead of one. After the beta, sharing becomes an explicit
