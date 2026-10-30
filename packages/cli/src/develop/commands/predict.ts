@@ -19,6 +19,11 @@ import { makeIo } from '../../io.js';
 import type { DevelopProfile, ParamState } from '../types.js';
 import { countStates, stateMap, summariseStates } from '../develop/paramState.js';
 import { applyStyle, loadStyle } from '../style/style.js';
+import { applyIntents, resolveIntents, type IntentDef } from '../intents/intents.js';
+import { frameHistogram } from '../intents/frame.js';
+import { resolveRawDeveloper } from '../../rawDeveloper.js';
+import type { Prediction } from '../predict.js';
+import type { AsShotMeta } from '../develop/schema.js';
 
 export interface PredictArgs {
   data: string;
@@ -60,6 +65,8 @@ export interface PredictArgs {
   style?: string;
   /** 0..1: how much of the style to apply (default 1). */
   styleStrength?: number;
+  /** Global develop intents (ids from intents/intents.ts), met after profile and style. */
+  intents?: string[];
 }
 
 export async function runPredict(args: PredictArgs): Promise<void> {
@@ -100,6 +107,9 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     );
   }
 
+  // Validated before any work: an unknown or contradictory intent is a typo, and
+  // finding it after the predictions would waste the run.
+  const intents = resolveIntents(args.intents ?? []);
   const style = args.style ? await loadStyle(args.style, profile, (m) => process.stderr.write(`${m}\n`)) : undefined;
   const strength = args.styleStrength ?? 1;
   if (!(strength >= 0 && strength <= 1)) throw new Error(`invalid --style-strength ${args.styleStrength} (use 0..1)`);
@@ -113,6 +123,7 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     );
     return style ? applyStyle(p, style, strength) : p;
   });
+  const adjusted = intents.length ? await meetIntents(predictions, intents, new Map(usable.map((r) => [r.file, r.asShot]))) : 0;
 
   // Which rendering the values are meant to sit on decides what every slider
   // means, and it is invisible in the numbers — so say it out loud rather than
@@ -221,6 +232,7 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     at: new Date().toISOString(),
     profile: profile.name,
     ...(style ? { style: style.name, styleStrength: strength } : {}),
+    ...(intents.length ? { intents: intents.map((i) => i.id), adjusted } : {}),
     count: predictions.length,
     /** Per branch, what each parameter did: predicted | leveled | constant. */
     parameters,
@@ -232,4 +244,41 @@ export async function runPredict(args: PredictArgs): Promise<void> {
   } else {
     process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
   }
+}
+
+/**
+ * Meet the intents on every prediction, in place; returns how many frames moved.
+ *
+ * Each frame needs its RAW decoded for the histogram the intents are judged on,
+ * so a few run at once. A frame that cannot be decoded keeps its prediction and
+ * is reported, rather than failing the whole shoot.
+ */
+async function meetIntents(predictions: Prediction[], intents: readonly IntentDef[], asShot: Map<string, AsShotMeta>): Promise<number> {
+  // Every frame needs the same decoder; without it the intents cannot be judged
+  // at all, and silently skipping them would hand back a prediction that ignores
+  // what was asked.
+  if (!resolveRawDeveloper()) throw new Error('intents need the RAW developer to read each photograph — run `shoots setup`');
+  process.stderr.write(`Meeting ${intents.length} intent(s): ${intents.map((i) => i.id).join(', ')}\n`);
+  let adjusted = 0;
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < predictions.length) {
+      const p = predictions[next++]!;
+      try {
+        const meta = asShot.get(p.file);
+        if (!meta) throw new Error('no capture metadata in the dataset');
+        const hist = await frameHistogram(p.file, p.develop, meta);
+        const develop = applyIntents(p.develop, hist, intents);
+        if (develop !== p.develop) {
+          p.develop = develop;
+          adjusted++;
+        }
+      } catch (err) {
+        process.stderr.write(`warn: ${p.file}: intents not applied — ${err instanceof Error ? err.message : String(err)}\n`);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
+  process.stderr.write(`Intents moved ${adjusted}/${predictions.length} frame(s); the rest already met them\n`);
+  return adjusted;
 }

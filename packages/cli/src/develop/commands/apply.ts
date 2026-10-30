@@ -34,6 +34,8 @@ export interface ApplyArgs {
   style?: string;
   /** 0..1: how much of the style to apply. */
   styleStrength?: number;
+  /** Global develop intents, repeatable (`--intent preserve-highlights`). */
+  intent?: string[];
   json?: boolean;
   verbose?: boolean;
 }
@@ -106,7 +108,7 @@ export async function runApply(args: ApplyArgs): Promise<void> {
   if (failed()) return;
 
   await runPredict({ data: datasetPath, profile: profilePath, treatment: args.treatment, out: predictionPath, applyMarks: false,
-    style: args.style, styleStrength: args.styleStrength });
+    style: args.style, styleStrength: args.styleStrength, intents: args.intent });
   if (failed()) return;
 
   const { profile, predictions } = JSON.parse(await readFile(predictionPath, 'utf8')) as { profile: string; predictions: Prediction[] };

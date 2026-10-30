@@ -52,6 +52,7 @@ import { runClean } from '../develop/commands/clean.js';
 import { runApply } from '../develop/commands/apply.js';
 import { runStatus } from '../develop/commands/status.js';
 import { runStyleList, runStyleTrain } from '../develop/commands/style.js';
+import { INTENT_IDS } from '../develop/intents/intents.js';
 
 export function registerDevelopCommand(program: Command): void {
   const develop = program
@@ -101,6 +102,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--force', 'overwrite sidecars that already carry a real edit')
     .option('--style <name>', 'detail profile to apply on top of the general one (`develop style list`)')
     .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
+    .option('--intent <id>', `global develop intent, repeatable: ${INTENT_IDS.join(' | ')}`, (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option('--no-apply-marks', 'leave pending cull/rate marks in the store instead of writing them into the sidecars')
     .option('--dry-run', 'print the steps and the paths, write nothing')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -116,6 +118,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--baseline <mode>', `baseline render: ${BASELINES.join(' | ')} (default: the profile's)`)
     .option('--style <name>', 'detail profile to apply on top of the general one (`develop style list`)')
     .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
+    .option('--intent <id>', `global develop intent, repeatable: ${INTENT_IDS.join(' | ')}`, (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option('--model <kind>', 'inference backend', 'onnx')
     .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
     .option('--json', 'machine-readable JSON output on stdout')
@@ -200,6 +203,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--sidecars <dir>', 'also write an editor-readable sidecar per image into this dir')
     .option('--style <name>', 'detail profile to apply on top of the general one (`develop style list`)')
     .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
+    .option('--intent <id>', `global develop intent, repeatable: ${INTENT_IDS.join(' | ')}`, (v: string, prev: string[]) => [...prev, v], [] as string[])
     // `--xmp` named the ACR adapter's file extension, which stopped being true
     // the moment a second adapter wrote `.rrdata`. Kept as an alias rather than
     // removed: it is in people's scripts, and a flag that vanishes costs more
@@ -216,7 +220,7 @@ export function registerDevelopCommand(program: Command): void {
         data: opts.data, profile: opts.profile, treatment: opts.treatment,
         editor: opts.editor, cameraProfile: opts.cameraProfile, out: opts.out,
         sidecars: opts.sidecars ?? opts.xmp,
-        style: opts.style, styleStrength: opts.styleStrength,
+        style: opts.style, styleStrength: opts.styleStrength, intents: opts.intent,
       });
     });
 

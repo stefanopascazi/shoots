@@ -124,6 +124,7 @@ shoots develop edit <path> [options]
 | `--force` | off | Overwrite sidecars that already carry a real edit |
 | `--style <name>` | — | Detail profile to apply on top of the general one ([`style`](#shoots-develop-style)) |
 | `--style-strength <n>` | `1` | How much of the style to apply, 0..1 |
+| `--intent <id>` | — | Global develop intent, repeatable ([intents](#develop-intents)) |
 | `--no-apply-marks` | apply on | Leave pending `cull`/`rate` marks in the store instead of writing them out |
 | `--dry-run` | off | Print the steps and the paths, write nothing |
 
@@ -174,7 +175,7 @@ The baseline defaults to the profile's own. The prediction is kept in the
 shoot's working folder, as with `edit`; each run is folded in by file, so
 developing a folder in parts keeps every part for `refine`.
 
-`--profile`, `--treatment`, `--baseline`, `--style` and `--style-strength` work as in `edit`.
+`--profile`, `--treatment`, `--baseline`, `--style`, `--style-strength` and `--intent` work as in `edit`.
 
 `feedback`, `learn` and `refine` take `--catalog <export>` to read what you
 kept from the plug-in's export instead of the sidecars: the app's **Improve
@@ -212,6 +213,33 @@ survive. Apply with `--style <name>` on `edit`, `apply` or `predict`;
 
 A style records which training of the general profile it was measured against;
 after a retrain it still applies, with a warning to re-run `style train`.
+
+### Develop intents
+
+What you ask of a shoot before applying, met **after** the general profile and
+any style — an intent is an explicit instruction and outranks what was learned.
+
+| Intent | Bound | Sliders it may move |
+| --- | --- | --- |
+| `expose-correctly` | median display value between 0.38 and 0.55 | Exposure |
+| `preserve-highlights` | 99th percentile at most 0.93 | Highlights, Whites |
+| `open-shadows` | 5th percentile at least 0.10 | Shadows, Blacks |
+| `keep-shadows-deep` | 5th percentile at most 0.045 | Shadows, Blacks |
+| `soft-contrast` | 10–90 spread 15 % narrower than predicted | Contrast |
+| `punchy-contrast` | 10–90 spread 15 % wider than predicted | Contrast |
+
+Each bound is read on the look the prediction produces for that photograph, and
+relative to it: a frame that already meets an intent is left alone, one that
+does not moves only as far as the bound needs, and only with the sliders listed.
+A bound those sliders cannot reach is approached as far as they go. Colour,
+curve and white balance are never touched. Contradictory pairs
+(`open-shadows` + `keep-shadows-deep`, `soft-contrast` + `punchy-contrast`)
+are refused.
+
+Each photograph's RAW is decoded to judge it (about a quarter of a second per
+frame, four at a time), so intents need the RAW developer `shoots setup`
+installs. The bounds are measured in the review screen's rendering, which
+approximates Lightroom's; the thresholds are a first setting, to be judged by eye.
 
 ---
 
@@ -711,6 +739,7 @@ shoots develop predict --data <file> --profile <file> [options]
 | `--sidecars <dir>` | — | Also write an editor-readable sidecar per image into this dir (`.xmp` for `acr`, `.rrdata` for `rapidraw`) |
 | `--style <name>` | — | Detail profile to apply on top of the general one ([`style`](#shoots-develop-style)) |
 | `--style-strength <n>` | `1` | How much of the style to apply, 0..1 |
+| `--intent <id>` | — | Global develop intent, repeatable ([intents](#develop-intents)) |
 
 `--treatment` is a genuine creative choice at inference time — at train time it is
 read off the edit, but for a new frame nobody has decided colour vs B&W yet.

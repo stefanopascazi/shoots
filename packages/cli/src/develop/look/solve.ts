@@ -7,9 +7,10 @@
  * where the photographer usually leaves it instead of being spent to shave a
  * code value.
  */
-import { lookDistance, lookOf, NEUTRAL_TONE, type LumaHistogram, type Tone } from './tone.js';
+import { LOOK_PERCENTILES, lookDistance, lookOf, NEUTRAL_TONE, type LumaHistogram, type Tone } from './tone.js';
 
 const KEYS = ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks'] as const;
+export type ToneControl = (typeof KEYS)[number];
 /** Search bounds: Exposure in stops, the rest in shader units. */
 const LIMIT: Record<(typeof KEYS)[number], number> = {
   exposure: 3,
@@ -52,32 +53,101 @@ export function solveTone(h: LumaHistogram, target: readonly number[], opts: Sol
     } else {
       d2 = lookDistance(look, target) ** 2;
     }
-    let pen = 0;
-    for (const k of KEYS) pen += ((t[k] - prior[k]) / LIMIT[k]) ** 2;
-    return d2 + stiffness * pen;
+    return d2 + stiffness * penalty(t, prior);
   };
-  // Exposure moves everything, so a local search started at the wrong
-  // brightness lets the regional controls fake it and stops in a local minimum
-  // (a darker frame "solved" with Blacks and Shadows). Every exposure on a
-  // coarse grid gets its own rough solve; only the winner is refined.
+  return minimise(cost, prior);
+}
+
+/**
+ * A bound on the look: one display percentile (its index in LOOK_PERCENTILES),
+ * or the spread between the 10th and 90th — the contrast a photographer sees.
+ */
+export interface LookConstraint {
+  at: number | 'spread';
+  min?: number;
+  max?: number;
+}
+
+const P10 = LOOK_PERCENTILES.indexOf(0.1);
+const P90 = LOOK_PERCENTILES.indexOf(0.9);
+
+/** The value a constraint bounds, read off a look. */
+export function constrained(look: readonly number[], at: LookConstraint['at']): number {
+  return at === 'spread' ? look[P90]! - look[P10]! : look[at]!;
+}
+
+/** How far a look is outside its bounds, in squared code values (0 when inside). */
+export function violation(look: readonly number[], constraints: readonly LookConstraint[]): number {
+  let v = 0;
+  for (const c of constraints) {
+    const x = constrained(look, c.at);
+    if (c.max !== undefined && x > c.max) v += ((x - c.max) * 255) ** 2;
+    if (c.min !== undefined && x < c.min) v += ((c.min - x) * 255) ** 2;
+  }
+  return v;
+}
+
+/**
+ * The controls nearest the prior that keep the look inside its bounds.
+ *
+ * Inequalities, not targets: a bound already met costs nothing, so the prior —
+ * the photographer's own prediction — comes back untouched unless a bound asks
+ * for a change, and then only as much change as that bound needs.
+ *
+ * `free` names the controls allowed to move; the rest stay at the prior. Left
+ * open, the cheapest route to a bound is often one no photographer would take —
+ * "open the shadows" met by raising Exposure and cutting Contrast, with Shadows
+ * itself going down.
+ */
+export function meetConstraints(
+  h: LumaHistogram,
+  constraints: readonly LookConstraint[],
+  prior: Tone,
+  free: readonly ToneControl[] = KEYS,
+  stiffness = 25,
+): Tone {
+  if (!constraints.length || !free.length || violation(lookOf(h, prior), constraints) === 0) return prior;
+  // A full-range slider move costs as much as a 5-code-value miss: bounds win,
+  // but a bound that cannot be met does not drag every slider to its end stop.
+  const cost = (t: Tone): number => violation(lookOf(h, t), constraints) + stiffness * penalty(t, prior);
+  return minimise(cost, prior, free);
+}
+
+const penalty = (t: Tone, prior: Tone): number => {
+  let pen = 0;
+  for (const k of KEYS) pen += ((t[k] - prior[k]) / LIMIT[k]) ** 2;
+  return pen;
+};
+
+function minimise(cost: (t: Tone) => number, prior: Tone, free: readonly ToneControl[] = KEYS): Tone {
+  // A local search alone stalls in two places: started at the wrong exposure,
+  // the regional controls fake brightness and stop in a local minimum (a darker
+  // frame "solved" with Blacks and Shadows); and on a clipped plateau, where a
+  // small step changes nothing because the pixels are still past white. So
+  // every free control is first swept on a coarse grid from the prior, each
+  // point gets a rough solve, and only the winner is refined.
   let best: Tone = { ...prior };
   let bestCost = cost(best);
-  for (let e = -LIMIT.exposure; e <= LIMIT.exposure + 1e-9; e += 0.25) {
-    const [t, c] = compass({ ...prior, exposure: e }, cost, 0.25, 0.03);
-    if (c < bestCost) [best, bestCost] = [t, c];
+  for (const k of free) {
+    for (let i = -4; i <= 4; i++) {
+      const v = (i / 4) * LIMIT[k];
+      if (v === prior[k]) continue;
+      const [t, c] = compass({ ...prior, [k]: v }, cost, 0.25, 0.03, free);
+      if (c < bestCost) [best, bestCost] = [t, c];
+    }
   }
-  return compass(best, cost, 0.03, 1e-3)[0];
+  return compass(best, cost, 0.03, 1e-3, free)[0];
 }
 
 /** Coordinate pattern search, halving the step from `from` down to `to`. */
-function compass(start: Tone, cost: (t: Tone) => number, from: number, to: number): [Tone, number] {
+function compass(start: Tone, cost: (t: Tone) => number, from: number, to: number, free: readonly ToneControl[] = KEYS): [Tone, number] {
   let best = start;
   let bestCost = cost(best);
   for (let step = from; step > to; step /= 2) {
     let improved = true;
     while (improved) {
       improved = false;
-      for (const k of KEYS) {
+      for (const k of free) {
         for (const dir of [1, -1]) {
           const v = Math.min(LIMIT[k], Math.max(-LIMIT[k], best[k] + dir * step * LIMIT[k]));
           if (v === best[k]) continue;

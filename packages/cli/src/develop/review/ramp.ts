@@ -81,7 +81,7 @@ function toMono(develop: Record<string, number>): number[] | null {
 }
 
 /** White balance as the per-channel linear gain from as-shot to chosen. */
-function toWb(develop: Record<string, number>, meta: AsShotMeta): [number, number, number] {
+export function toWb(develop: Record<string, number>, meta: AsShotMeta): [number, number, number] {
   const asShot = meta.tempAsShot && meta.tempAsShot > 0 ? meta.tempAsShot : DEFAULT_KELVIN;
   const chosen = develop.Temperature && develop.Temperature > 0 ? develop.Temperature : asShot;
   const tintAsShot = meta.tintAsShot ?? 0;
