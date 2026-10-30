@@ -113,5 +113,8 @@ for (const v of VARIANTS.slice(1)) {
   const mask = avg(a.flatMap((x, i) => Object.keys(ref[i]!.masks).filter((l) => x.masks[l]).map((l) => maskIou(x.masks[l]!, ref[i]!.masks[l]!))));
   console.log(`${v.padEnd(10)} caption words ${cap.toFixed(2)}  found-labels ${lab.toFixed(2)}  box IoU ${box.toFixed(2)}  mask IoU ${mask.toFixed(2)}`);
 }
-console.log('\nsample captions (fp32 | q4):');
-ref.slice(0, 3).forEach((r, i) => console.log(`- ${r.caption.slice(0, 160)}\n  ${answers.get('q4')![i]!.caption.slice(0, 160)}`));
+const q4 = answers.get('q4@cpu');
+if (q4) {
+  console.log('\nsample captions (reference | q4):');
+  ref.slice(0, 3).forEach((r, i) => console.log(`- ${r.caption.slice(0, 160)}\n  ${q4[i]!.caption.slice(0, 160)}`));
+}
