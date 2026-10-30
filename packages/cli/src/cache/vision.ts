@@ -23,3 +23,8 @@ export async function visionCached(
   await cache.flushIfDue();
   return { record, cached: false };
 }
+
+/** The cached record if a run already read this file version; never runs the model. */
+export function visionLookup(cache: DerivedCache, file: string, identity: FileIdentity): VisionRecord | null {
+  return readRecord(cache.get<unknown>(file, visionProducer(FLORENCE_MODEL_VERSION), identity));
+}

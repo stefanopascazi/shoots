@@ -39,6 +39,8 @@ import {
 } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
 import { DerivedCache } from '../cache/store.js';
+import { visionLookup } from '../cache/vision.js';
+import { keywordsFromVision } from '../vision/keywords.js';
 import { assessCached } from '../cache/quality.js';
 import { ensureClipModelReady, ensureExiftoolReady } from '../tools.js';
 import { TriageStore } from '../triage/store.js';
@@ -169,6 +171,11 @@ async function runRate(targetPath: string | undefined, options: RateOptions): Pr
     async (file): Promise<RatingResult> => {
       const assessment = await assessCached(cache, model, file);
       const stars = toStarRating(assessment, profile);
+      // Keywords come only from the vision pass, and only where `shoots vision`
+      // (or a region intent) already read this frame: the vision model stays
+      // optional, and the zero-shot CLIP keywords were wrong about two words in five.
+      const vision = visionLookup(cache, file.path, { size: file.size, mtimeMs: file.mtime.getTime() });
+      const keywords = vision ? keywordsFromVision(vision) : [];
 
       let sidecar: string | null = null;
       // --mark writes nothing here: the marking pass runs once, after the queue.
@@ -181,7 +188,7 @@ async function runRate(targetPath: string | undefined, options: RateOptions): Pr
           }
           await writeXmpSidecar(file.path, xmpPath, {
             'XMP:Rating': stars,
-            'XMP:Subject': assessment.keywords,
+            ...(keywords.length ? { 'XMP:Subject': keywords } : {}),
           });
           sidecar = xmpPath;
         } else {
@@ -196,7 +203,7 @@ async function runRate(targetPath: string | undefined, options: RateOptions): Pr
                 stars,
                 scores: { focus: assessment.focus, aesthetic: assessment.aesthetic },
                 aspects: assessment.aspects,
-                keywords: assessment.keywords,
+                keywords,
                 generatedAt: new Date().toISOString(),
               },
               null,
@@ -214,7 +221,7 @@ async function runRate(targetPath: string | undefined, options: RateOptions): Pr
         focus: Math.round(assessment.focus * 1000) / 1000,
         aesthetic: Math.round(assessment.aesthetic * 1000) / 1000,
         aspects: assessment.aspects,
-        keywords: assessment.keywords,
+        keywords,
         sidecar,
         model: model.name,
       };
@@ -252,7 +259,7 @@ async function runRate(targetPath: string | undefined, options: RateOptions): Pr
     for (const r of rated) {
       await store.mark(
         r.file,
-        { stars: r.stars, keywords: r.keywords },
+        { stars: r.stars, ...(r.keywords.length ? { keywords: r.keywords } : {}) },
         'rate',
         { tool, profile: profile.name, model: model.name, focus: r.focus, aesthetic: r.aesthetic, aspects: r.aspects },
         statsByFile.get(r.file),
@@ -280,6 +287,10 @@ async function runRate(targetPath: string | undefined, options: RateOptions): Pr
       printHuman(io, `${starsBar}  ${path.basename(r.file)}  focus=${r.focus} aesthetic=${r.aesthetic}  [${r.keywords.join(', ')}]`);
     }
     printHuman(io, `\n${rated.length}/${files.length} rated with ${model.name} (profile: ${profile.name})${options.dryRun ? ' (dry run, no sidecars written)' : ''}`);
+    const withKeywords = rated.filter((r) => r.keywords.length).length;
+    if (withKeywords < rated.length) {
+      printHuman(io, `keywords on ${withKeywords}/${rated.length}: they come from \`shoots vision\`, which reads the rest (the vision model is an optional download)`);
+    }
     if (options.mark) {
       printHuman(
         io,

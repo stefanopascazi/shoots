@@ -76,9 +76,11 @@ nailing exposure and sharpness. Same photo, legitimately different stars. See
 
 ### Keywords
 
-Zero-shot keywording against a vocabulary whose text embeddings ship precomputed
-inside the model archive — the runtime only needs the image encoder plus a cosine
-similarity, so no text encoder or tokenizer is loaded.
+Keywords come from the vision pass, not from the rating model: a photograph that
+[`shoots vision`](./vision.md) has read gets its keywords from that cached
+record; one it has not read gets none. `rate` never runs the vision model, which
+stays an optional download. The zero-shot CLIP keywords it used to write were
+wrong about two words in five on a real catalog (8 % for the vision keywords).
 
 ---
 
