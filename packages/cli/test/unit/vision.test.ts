@@ -23,7 +23,7 @@ describe('vision records', () => {
   });
 
   test('the producer key is versioned and prunable', () => {
-    expect(visionProducer('base-ft-fp32-1')).toBe('vision@1:base-ft-fp32-1');
+    expect(visionProducer('base-ft-fp32-1')).toBe('vision@2:base-ft-fp32-1');
     expect(PRODUCER_PREFIXES).toContain('vision@');
   });
 });

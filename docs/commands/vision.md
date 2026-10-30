@@ -13,7 +13,7 @@ shoots vision <path> [--no-cache] [--json]
 | Option | Description |
 | --- | --- |
 | `--no-cache` | Read every frame again instead of reusing what a previous run found |
-| `--json` | Every record on stdout: `caption`, `objects` (label + box as fractions of the frame), `regions` |
+| `--json` | Every record on stdout: `keywords`, `caption`, `objects` (label + box as fractions of the frame), `regions` |
 | `--verbose` | Verbose logging on stderr |
 
 The model is Florence-2-base-ft (Microsoft, MIT), run locally on the CPU. It is
@@ -30,6 +30,18 @@ second run over the same shoot is near-instant.
   grid. A region is recorded only when the photograph contains it, judged from
   the caption and the detected objects. The model will draw a mask for any
   phrase you ask for, present or not, so it is never asked for one blind.
+
+## Keywords
+
+Derived from the record, not scored against a list: scene words (portrait,
+beach, wedding, street, indoor or outdoor…) only when the caption says them,
+and the detector's objects that cover at least 2 % of the frame and are not worn
+by someone in it (a floral print on a dress is not a flower photograph). Indoor
+and outdoor are decided between, never both.
+
+Judged by eye on 20 frames of a real catalog that played no part in writing the
+rules: 8 % of these keywords were wrong, against 39 % for the CLIP keywords
+`rate` writes today. They are fewer (about three per photograph, against six).
 
 Pixels come from the RAW's embedded preview, turned upright, the same source
 `cull` and `rate` read.

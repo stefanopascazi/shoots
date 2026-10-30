@@ -16,6 +16,7 @@ import { DerivedCache } from '../cache/store.js';
 import { visionCached } from '../cache/vision.js';
 import { analyzePhotograph } from '../vision/analyze.js';
 import { maskShare, type VisionRecord } from '../vision/record.js';
+import { keywordsFromVision } from '../vision/keywords.js';
 import { ensureExiftoolReady, ensureVisionModelReady } from '../tools.js';
 import { logError, logVerbose, makeIo, printHuman, printJson } from '../io.js';
 import { startPhase, startProgress } from '../progress.js';
@@ -77,7 +78,7 @@ async function runVision(targetPath: string, options: VisionOptions): Promise<vo
   if (io.json) {
     printJson({
       command: 'vision',
-      results: results.map(({ file, record }) => ({ file, ...record })),
+      results: results.map(({ file, record }) => ({ file, keywords: keywordsFromVision(record), ...record })),
       errors,
       summary: { total: files.length, read: results.length, reused, failed: errors.length },
     });
@@ -88,7 +89,7 @@ async function runVision(targetPath: string, options: VisionOptions): Promise<vo
   printHuman(io, `Read ${results.length} photographs (${reused} from cache): sky in ${withSky}, a person in ${withSubject}.`);
   for (const { file, record } of results.slice(0, 3)) {
     const regions = Object.entries(record.regions).map(([k, v]) => `${k} ${Math.round(maskShare(v!) * 100)}%`).join(', ');
-    printHuman(io, `  ${file.split(/[\\/]/).pop()}: ${record.caption.slice(0, 90)}${record.caption.length > 90 ? '…' : ''}${regions ? `  [${regions}]` : ''}`);
+    printHuman(io, `  ${file.split(/[\\/]/).pop()}: ${keywordsFromVision(record).join(', ') || '(no keywords)'}${regions ? `  [${regions}]` : ''}`);
   }
   for (const e of errors) logError(`${e.file}: ${e.error}`);
 }
