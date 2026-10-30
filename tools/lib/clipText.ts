@@ -39,3 +39,20 @@ export function readings(image: readonly number[], text: readonly number[][]): n
   const e = unit(image);
   return text.map((t) => 100 * t.reduce((a, v, i) => a + v * e[i]!, 0));
 }
+
+/** Unit CLIP text vectors for free text (no prompt template), in batches. */
+export async function embedTexts(texts: string[], batch = 32): Promise<number[][]> {
+  const tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID);
+  const model = await CLIPTextModelWithProjection.from_pretrained(MODEL_ID, { dtype: 'int8' });
+  const out: number[][] = [];
+  for (let i = 0; i < texts.length; i += batch) {
+    const chunk = texts.slice(i, i + batch);
+    const { text_embeds } = (await model(tokenizer(chunk, { padding: true, truncation: true }))) as {
+      text_embeds: { data: ArrayLike<number>; dims: number[] };
+    };
+    const dim = text_embeds.dims[1]!;
+    const data = Array.from(text_embeds.data);
+    for (let j = 0; j < chunk.length; j++) out.push(unit(data.slice(j * dim, (j + 1) * dim)));
+  }
+  return out;
+}

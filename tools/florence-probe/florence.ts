@@ -30,14 +30,22 @@ export interface Florence {
   segment(image: RawImage, phrase: string): Promise<number[][]>;
 }
 
+/** The Florence-specific processor methods the library ships untyped. */
+interface Florence2Processor {
+  (image: RawImage, prompts: string[]): Promise<Record<string, unknown>>;
+  construct_prompts(text: string): string[];
+  batch_decode(ids: unknown, opts: { skip_special_tokens: boolean }): string[];
+  post_process_generation(text: string, task: string, size: [number, number]): Record<string, unknown>;
+}
+
 export async function loadFlorence(dtype: DtypeMap, device: DeviceMap = 'cpu', sessionOptions?: Record<string, unknown>): Promise<Florence> {
   env.localModelPath = path.join(os.homedir(), '.shoots', 'models');
   env.allowRemoteModels = false;
   const model = await Florence2ForConditionalGeneration.from_pretrained(MODEL_ID, { dtype, device, ...(sessionOptions ? { session_options: sessionOptions } : {}) });
-  const processor = await AutoProcessor.from_pretrained(MODEL_ID);
+  const processor = (await AutoProcessor.from_pretrained(MODEL_ID)) as unknown as Florence2Processor;
   const generate = async (image: RawImage, task: string, text = ''): Promise<string> => {
     const inputs = await processor(image, processor.construct_prompts(task + text));
-    const ids = await model.generate({ ...inputs, max_new_tokens: 256 });
+    const ids = await model.generate({ ...inputs, max_new_tokens: 256 } as never);
     return processor.batch_decode(ids, { skip_special_tokens: false })[0] as string;
   };
   return {
