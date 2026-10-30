@@ -65,7 +65,6 @@ interface EmbeddingResult {
   embedding: number[];
   /** Profile-independent per-aspect CLIP scores (composition, exposure, …). */
   aspects: AestheticAspectScore[];
-  keywords: string[];
   focus: number;
   /**
    * Neutral aesthetic seed: unweighted mean of {@link aspects}, NOT a profile
@@ -199,7 +198,6 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
         file: file.path,
         embedding: assessment.embedding,
         aspects: assessment.aspects,
-        keywords: assessment.keywords,
         focus: Math.round(assessment.focus * 1000) / 1000,
         aestheticSeed: assessment.aspects.length ? Math.round(mean(aspectScores) * 1000) / 1000 : null,
         ...(preview ? { preview } : {}),
@@ -244,7 +242,7 @@ async function runEmbeddings(targetPath: string, options: EmbeddingsOptions): Pr
     printJson(dataset);
   } else {
     for (const r of embedded) {
-      printHuman(io, `${path.basename(r.file)}  dim=${r.embedding.length}  aspects=${r.aspects.length}  seed=${r.aestheticSeed ?? 'n/a'}  [${r.keywords.join(', ')}]`);
+      printHuman(io, `${path.basename(r.file)}  dim=${r.embedding.length}  aspects=${r.aspects.length}  seed=${r.aestheticSeed ?? 'n/a'}`);
     }
     printHuman(io, `\n${embedded.length}/${files.length} embedded with ${model.name} (dim ${dim})`);
   }

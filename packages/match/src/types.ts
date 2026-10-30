@@ -11,7 +11,6 @@ export interface DatasetResult {
   file: string;
   embedding: number[];
   aspects: { name: string; score: number }[];
-  keywords: string[];
   focus: number;
   /** Neutral aesthetic seed (unweighted mean of aspects); may be null. */
   aestheticSeed: number | null;

@@ -154,7 +154,6 @@ Full walkthrough: [Preference learning](../preference-learning.md).
         { "name": "overall", "score": 0.612 },
         { "name": "composition", "score": 0.554 }
       ],
-      "keywords": ["street", "urban", "candid"],
       "focus": 0.812,
       "aestheticSeed": 0.573,
       "preview": "previews/000_IMG_0001.jpg"
