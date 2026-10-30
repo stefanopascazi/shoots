@@ -174,3 +174,31 @@ export function lookDistance(a: readonly number[], b: readonly number[]): number
   for (let i = 0; i < a.length; i++) s += Math.abs(a[i]! - b[i]!);
   return (s / a.length) * 255;
 }
+
+/**
+ * A whole frame through the six tone controls, as 8-bit sRGB.
+ *
+ * The same shaping `lookOf` applies to histogram bins, applied per pixel as a
+ * single gain on the three channels (luminance moves, hue and saturation do
+ * not), then the display transform. For looking at what a set of controls does;
+ * the local controls, saturation and curves are left out, as everywhere here.
+ */
+export function renderTone(img: LinearImage, wb: readonly [number, number, number], t: Tone, anchor: number): Uint8Array {
+  const n = img.width * img.height;
+  const out = new Uint8Array(n * 3);
+  const shade = (v: number): number => {
+    const e = encode(v);
+    return Math.round(Math.min(1, Math.max(0, e + (e * e * (3 - 2 * e) - e) * BASE_CONTRAST)) * 255);
+  };
+  for (let i = 0; i < n; i++) {
+    const r = (img.data[i * 3]! / 65535) * wb[0];
+    const g = (img.data[i * 3 + 1]! / 65535) * wb[1];
+    const b = (img.data[i * 3 + 2]! / 65535) * wb[2];
+    const l = Math.log2(Math.max(LUMA[0] * r + LUMA[1] * g + LUMA[2] * b, 1e-7));
+    const gain = 2 ** (shapeLog(l, anchor, t) - l);
+    out[i * 3] = shade(r * gain);
+    out[i * 3 + 1] = shade(g * gain);
+    out[i * 3 + 2] = shade(b * gain);
+  }
+  return out;
+}

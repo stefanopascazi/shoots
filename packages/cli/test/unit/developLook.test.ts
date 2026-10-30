@@ -6,6 +6,7 @@ import {
   lookDistance,
   lookOf,
   lumaHistogram,
+  renderTone,
   NEUTRAL_TONE,
   shapeLog,
   toneFromDevelop,
@@ -108,5 +109,22 @@ describe('solveTone', () => {
     const target = lookOf(spread(-10, -1), NEUTRAL_TONE);
     const dark = solveTone(spread(-11.5, -2.5), target, { stiffness: 0.01 });
     expect(dark.exposure).toBeGreaterThan(1);
+  });
+});
+
+describe('renderTone', () => {
+  const grey = (v: number, n = 4) => ({ data: new Uint16Array(n * 3).fill(v), width: n, height: 1 });
+
+  test('neutral controls give the plain display transform of each pixel', () => {
+    const out = renderTone(grey(65535 * 0.18), [1, 1, 1], NEUTRAL_TONE, Math.log2(0.18));
+    expect(out[0]).toBe(Math.round(displayValue(Math.log2(0.18)) * 255));
+    expect(out[0]).toBe(out[1]);
+  });
+
+  test('exposure brightens, and a channel past white clips at 255', () => {
+    const img = grey(65535 * 0.18);
+    const base = renderTone(img, [1, 1, 1], NEUTRAL_TONE, Math.log2(0.18))[0]!;
+    expect(renderTone(img, [1, 1, 1], { ...NEUTRAL_TONE, exposure: 1 }, Math.log2(0.18))[0]!).toBeGreaterThan(base);
+    expect(renderTone(img, [1, 1, 1], { ...NEUTRAL_TONE, exposure: 4 }, Math.log2(0.18))[0]).toBe(255);
   });
 });
