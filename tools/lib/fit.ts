@@ -112,3 +112,28 @@ export function correlation(a: readonly number[], b: readonly number[]): number 
   }
   return da > 0 && db > 0 ? num / Math.sqrt(da * db) : 0;
 }
+
+/** Ridge with λ chosen by a group-held-out inner split: no λ ever sees its own test group. */
+export function fitRidgeCV(
+  X: number[][],
+  y: number[],
+  groups: readonly string[],
+  lambdas: readonly number[] = [0.1, 1, 10, 100],
+  inner = 3,
+): Fitted {
+  const folds = foldsByGroup(groups, inner, 11);
+  let best = lambdas[0]!;
+  let bestErr = Infinity;
+  for (const l of lambdas) {
+    let err = 0;
+    for (let g = 0; g < inner; g++) {
+      const tr = groups.flatMap((s, i) => (folds.get(s) !== g ? [i] : []));
+      const te = groups.flatMap((s, i) => (folds.get(s) === g ? [i] : []));
+      if (!tr.length || !te.length) continue;
+      const m = fitRidge(tr.map((i) => X[i]!), tr.map((i) => y[i]!), l);
+      for (const i of te) err += (m.predict(X[i]!) - y[i]!) ** 2;
+    }
+    if (err < bestErr) [bestErr, best] = [err, l];
+  }
+  return fitRidge(X, y, best);
+}

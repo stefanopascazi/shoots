@@ -29,7 +29,7 @@ import {
   toneToDevelop,
   type LumaHistogram,
 } from '../../packages/cli/src/develop/look/tone.js';
-import { fitRidge, foldsByGroup, mean, sd, shuffled, type Fitted } from '../lib/fit.js';
+import { fitRidgeCV, foldsByGroup, mean, sd, shuffled, type Fitted } from '../lib/fit.js';
 
 const arg = (name: string, fallback: string): string => {
   const i = process.argv.indexOf(`--${name}`);
@@ -97,24 +97,8 @@ const SETS: Record<string, (r: Row) => number[]> = {
   both: (r) => [...lookOf(hist(r), NEUTRAL_TONE), hist(r).anchor, ...r.features, ...r.embedding],
 };
 
-/** Ridge with λ picked by an inner shoot-held-out split of the training rows. */
-function fitCV(train: Row[], X: number[][], y: number[]): Fitted {
-  const inner = foldsByGroup(train.map((r) => r.session), 3, 11);
-  let bestL = LAMBDAS[0]!;
-  let bestE = Infinity;
-  for (const l of LAMBDAS) {
-    let e = 0;
-    for (let g = 0; g < 3; g++) {
-      const tr = train.flatMap((r, i) => (inner.get(r.session) !== g ? [i] : []));
-      const te = train.flatMap((r, i) => (inner.get(r.session) === g ? [i] : []));
-      if (!tr.length || !te.length) continue;
-      const m = fitRidge(tr.map((i) => X[i]!), tr.map((i) => y[i]!), l);
-      for (const i of te) e += (m.predict(X[i]!) - y[i]!) ** 2;
-    }
-    if (e < bestE) [bestE, bestL] = [e, l];
-  }
-  return fitRidge(X, y, bestL);
-}
+const fitCV = (train: Row[], X: number[][], y: number[]): Fitted =>
+  fitRidgeCV(X, y, train.map((r) => r.session), LAMBDAS);
 
 type Method = { name: string; predict: (train: Row[], test: Row[]) => number[][] };
 const constOf = (train: Row[], get: (r: Row) => number[]): number[] =>
