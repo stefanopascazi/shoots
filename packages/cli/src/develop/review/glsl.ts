@@ -246,7 +246,7 @@ void main() {
   // instead of translating the whole upper range down. That is what makes it
   // read as recovery rather than as a darker picture.
   dl += uHighlights * HIGHLIGHT_RANGE * min(max(l - (white + HIGHLIGHT_PIVOT), 0.0), 4.0);
-  dl -= uShadows * SHADOW_RANGE * min(max((white + SHADOW_PIVOT) - l, 0.0), 4.0);
+  dl += uShadows * SHADOW_RANGE * min(max((white + SHADOW_PIVOT) - l, 0.0), 4.0);
 
   // Whites and Blacks: move an endpoint, weighted by a smooth mask so neither
   // has a visible boundary where it stops acting.

@@ -37,6 +37,13 @@ describe('tone', () => {
     expect(shapeLog(-9, -1, t)).toBeCloseTo(-9, 9);
   });
 
+  test('positive shadows opens the deep tones, leaves the highlights', () => {
+    // Camera Raw's sign: +Shadows lifts the dark end toward the pivot.
+    const t = { ...NEUTRAL_TONE, shadows: 1 };
+    expect(shapeLog(-9, -1, t)).toBeGreaterThan(-9);
+    expect(shapeLog(-1, -1, t)).toBeCloseTo(-1, 9);
+  });
+
   test('display value is monotone and bounded', () => {
     let prev = -1;
     for (let l = -12; l <= 1; l += 0.5) {

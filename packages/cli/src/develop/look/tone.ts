@@ -90,7 +90,7 @@ export function shapeLog(l: number, anchor: number, t: Tone): number {
   const grey = white + GREY_BELOW_WHITE;
   let dl = 0;
   dl += t.highlights * HIGHLIGHT_RANGE * Math.min(Math.max(ll - (white + HIGHLIGHT_PIVOT), 0), 4);
-  dl -= t.shadows * SHADOW_RANGE * Math.min(Math.max(white + SHADOW_PIVOT - ll, 0), 4);
+  dl += t.shadows * SHADOW_RANGE * Math.min(Math.max(white + SHADOW_PIVOT - ll, 0), 4);
   dl += t.whites * WHITE_STOPS * smoothstep(white - 2.6, white + 0.2, ll);
   dl += t.blacks * BLACK_STOPS * (1 - smoothstep(white - 7.5, white - 3.2, ll));
   return grey + (ll + dl - grey) * (1 + t.contrast * CONTRAST_RANGE);
