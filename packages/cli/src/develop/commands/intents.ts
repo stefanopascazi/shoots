@@ -15,7 +15,8 @@ import { loadDataset } from '../dataset/load.js';
 import { sessionKey } from '../develop/session.js';
 import { frameHistogram } from '../intents/frame.js';
 import { DEFAULT_THRESHOLDS, MIN_LOOKS, thresholdsFromLooks, type IntentCalibration, type IntentThresholds } from '../intents/calibrate.js';
-import { INTENTS } from '../intents/intents.js';
+import { INTENTS, resolveIntents } from '../intents/intents.js';
+import { parseIntentText } from '../intents/text.js';
 import { lookOf, toneFromDevelop } from '../look/tone.js';
 import { resolveRawDeveloper } from '../../rawDeveloper.js';
 import { logError, logWarn, makeIo, printHuman, printJson } from '../../io.js';
@@ -147,6 +148,36 @@ export async function runIntentsSet(args: IntentsSetArgs): Promise<void> {
   await writeFile(file, JSON.stringify(current, null, 2) + '\n', 'utf8');
   if (io.json) printJson({ command: 'develop-intents-set', file, strength: args.strength });
   else printHuman(io, `Intents now apply at strength ${args.strength} by default (${file})`);
+}
+
+export interface IntentsParseArgs {
+  json?: boolean;
+  verbose?: boolean;
+}
+
+/**
+ * Show what a piece of free text asks for, before anything is applied: the
+ * webapp renders this as chips the photographer confirms.
+ */
+export async function runIntentsParse(text: string, args: IntentsParseArgs): Promise<void> {
+  const io = makeIo(args);
+  const parsed = parseIntentText(text);
+  let conflict: string | undefined;
+  try {
+    resolveIntents(parsed.intents);
+  } catch (err) {
+    conflict = err instanceof Error ? err.message : String(err);
+  }
+  const labels = new Map(INTENTS.map((i) => [i.id, i.label]));
+  if (io.json) {
+    printJson({ command: 'develop-intents-parse', text, ...parsed, labels: parsed.intents.map((i) => labels.get(i)), ...(conflict ? { conflict } : {}) });
+    return;
+  }
+  if (!parsed.intents.length) printHuman(io, 'Nothing understood.');
+  for (const m of parsed.matched) printHuman(io, `  ${labels.get(m.intent)!.padEnd(22)} ← "${m.clause}"`);
+  for (const c of parsed.unmatched) printHuman(io, `  (not understood)       "${c}"`);
+  if (conflict) logError(conflict);
+  else if (parsed.intents.length) printHuman(io, `\nApply with: ${parsed.intents.map((i) => `--intent ${i}`).join(' ')}`);
 }
 
 export interface IntentsListArgs {

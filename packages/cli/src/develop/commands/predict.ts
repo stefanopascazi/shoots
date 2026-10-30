@@ -21,6 +21,9 @@ import { countStates, stateMap, summariseStates } from '../develop/paramState.js
 import { applyStyle, loadStyle } from '../style/style.js';
 import { applyIntents, resolveIntents, type IntentDef } from '../intents/intents.js';
 import { frameHistograms } from '../intents/frame.js';
+import { parseIntentText } from '../intents/text.js';
+
+const NEWLINE = '\n';
 import { readVision } from '../../vision/read.js';
 import type { VisionRecord, VisionRegion } from '../../vision/record.js';
 import { loadIntentThresholds } from './intents.js';
@@ -73,6 +76,8 @@ export interface PredictArgs {
   intents?: string[];
   /** 0..1: how far the intents move the prediction (default: the saved one, else 1). */
   intentStrength?: number;
+  /** What the photographer wrote; read into intents (intents/text.ts) and merged with `intents`. */
+  intentText?: string;
 }
 
 export async function runPredict(args: PredictArgs): Promise<void> {
@@ -115,7 +120,12 @@ export async function runPredict(args: PredictArgs): Promise<void> {
 
   // Validated before any work: an unknown or contradictory intent is a typo, and
   // finding it after the predictions would waste the run.
-  const intents = resolveIntents(args.intents ?? []);
+  const fromText = args.intentText ? parseIntentText(args.intentText) : undefined;
+  if (fromText) {
+    process.stderr.write(`Understood: ${fromText.intents.length ? fromText.intents.join(', ') : 'nothing'}` + NEWLINE);
+    for (const c of fromText.unmatched) process.stderr.write(`warn: not understood, ignored: "${c}"` + NEWLINE);
+  }
+  const intents = resolveIntents([...(args.intents ?? []), ...(fromText?.intents ?? [])]);
   const style = args.style ? await loadStyle(args.style, profile, (m) => process.stderr.write(`${m}\n`)) : undefined;
   const strength = args.styleStrength ?? 1;
   if (!(strength >= 0 && strength <= 1)) throw new Error(`invalid --style-strength ${args.styleStrength} (use 0..1)`);

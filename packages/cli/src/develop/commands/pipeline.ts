@@ -80,6 +80,8 @@ export interface EditArgs extends CommonArgs {
   intent?: string[];
   /** 0..1: how far the intents move the prediction. */
   intentStrength?: number;
+  /** Free-text intents, read and merged with `intent`. */
+  intentText?: string;
 }
 
 function validate(args: CommonArgs): boolean {
@@ -312,6 +314,7 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
     styleStrength: args.styleStrength,
     intents: args.intent,
     intentStrength: args.intentStrength,
+    intentText: args.intentText,
   });
   if (failed()) return;
 

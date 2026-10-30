@@ -54,7 +54,7 @@ import { runApply } from '../develop/commands/apply.js';
 import { runStatus } from '../develop/commands/status.js';
 import { runStyleList, runStyleTrain } from '../develop/commands/style.js';
 import { INTENT_IDS } from '../develop/intents/intents.js';
-import { runIntentsCalibrate, runIntentsList, runIntentsSet } from '../develop/commands/intents.js';
+import { runIntentsCalibrate, runIntentsList, runIntentsParse, runIntentsSet } from '../develop/commands/intents.js';
 
 export function registerDevelopCommand(program: Command): void {
   const develop = program
@@ -106,6 +106,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
     .option('--intent <id>', `global develop intent, repeatable: ${INTENT_IDS.join(' | ')}`, (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option('--intent-strength <n>', 'how far the intents move the prediction, 0..1 (default: `develop intents set`, else 1)', (v) => parseFloat(v))
+    .option('--intent-text <text>', 'what you want, in your words (Italian or English), read into intents')
     .option('--no-apply-marks', 'leave pending cull/rate marks in the store instead of writing them into the sidecars')
     .option('--dry-run', 'print the steps and the paths, write nothing')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -123,6 +124,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
     .option('--intent <id>', `global develop intent, repeatable: ${INTENT_IDS.join(' | ')}`, (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option('--intent-strength <n>', 'how far the intents move the prediction, 0..1 (default: `develop intents set`, else 1)', (v) => parseFloat(v))
+    .option('--intent-text <text>', 'what you want, in your words (Italian or English), read into intents')
     .option('--model <kind>', 'inference backend', 'onnx')
     .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
     .option('--json', 'machine-readable JSON output on stdout')
@@ -209,6 +211,7 @@ export function registerDevelopCommand(program: Command): void {
     .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
     .option('--intent <id>', `global develop intent, repeatable: ${INTENT_IDS.join(' | ')}`, (v: string, prev: string[]) => [...prev, v], [] as string[])
     .option('--intent-strength <n>', 'how far the intents move the prediction, 0..1 (default: `develop intents set`, else 1)', (v) => parseFloat(v))
+    .option('--intent-text <text>', 'what you want, in your words (Italian or English), read into intents')
     // `--xmp` named the ACR adapter's file extension, which stopped being true
     // the moment a second adapter wrote `.rrdata`. Kept as an alias rather than
     // removed: it is in people's scripts, and a flag that vanishes costs more
@@ -225,7 +228,7 @@ export function registerDevelopCommand(program: Command): void {
         data: opts.data, profile: opts.profile, treatment: opts.treatment,
         editor: opts.editor, cameraProfile: opts.cameraProfile, out: opts.out,
         sidecars: opts.sidecars ?? opts.xmp,
-        style: opts.style, styleStrength: opts.styleStrength, intents: opts.intent, intentStrength: opts.intentStrength,
+        style: opts.style, styleStrength: opts.styleStrength, intents: opts.intent, intentStrength: opts.intentStrength, intentText: opts.intentText,
       });
     });
 
@@ -273,6 +276,14 @@ export function registerDevelopCommand(program: Command): void {
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runIntentsSet);
+
+  intents
+    .command('parse')
+    .description('Show which intents a sentence asks for (Italian or English), before applying anything')
+    .argument('<text>', 'what you want, in your words')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runIntentsParse);
 
   intents
     .command('list')
