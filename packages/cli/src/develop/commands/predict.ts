@@ -18,6 +18,7 @@ import { applyMarks, countPending } from '../../triage/apply.js';
 import { makeIo } from '../../io.js';
 import type { DevelopProfile, ParamState } from '../types.js';
 import { countStates, stateMap, summariseStates } from '../develop/paramState.js';
+import { applyStyle, loadStyle } from '../style/style.js';
 
 export interface PredictArgs {
   data: string;
@@ -55,6 +56,10 @@ export interface PredictArgs {
    * the marks have no other way out.
    */
   applyMarks?: boolean;
+  /** A detail profile (name or path) applied on top of the general prediction. */
+  style?: string;
+  /** 0..1: how much of the style to apply (default 1). */
+  styleStrength?: number;
 }
 
 export async function runPredict(args: PredictArgs): Promise<void> {
@@ -95,15 +100,19 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     );
   }
 
-  const predictions = usable.map((r) =>
-    predictOne(
+  const style = args.style ? await loadStyle(args.style, profile, (m) => process.stderr.write(`${m}\n`)) : undefined;
+  const strength = args.styleStrength ?? 1;
+  if (!(strength >= 0 && strength <= 1)) throw new Error(`invalid --style-strength ${args.styleStrength} (use 0..1)`);
+  const predictions = usable.map((r) => {
+    const p = predictOne(
       profile,
       r,
       resolveTreatment(profile, r, requested),
       contextFor(context, r.file, base.get(r.file)!),
       args.cameraProfile,
-    ),
-  );
+    );
+    return style ? applyStyle(p, style, strength) : p;
+  });
 
   // Which rendering the values are meant to sit on decides what every slider
   // means, and it is invisible in the numbers — so say it out loud rather than
@@ -211,6 +220,7 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     command: 'develop-predict' as const,
     at: new Date().toISOString(),
     profile: profile.name,
+    ...(style ? { style: style.name, styleStrength: strength } : {}),
     count: predictions.length,
     /** Per branch, what each parameter did: predicted | leveled | constant. */
     parameters,

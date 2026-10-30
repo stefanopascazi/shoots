@@ -27,6 +27,7 @@
  *   train    fit a per-catalog develop profile (multi-output ridge over deltas).
  *   predict  apply a profile to a new set → predicted crs vector / XMP sidecar.
  *   diagnose style-clustering diagnostic (pooled vs per-style skill).
+ *   style    detail profiles: departures from the general profile, applied on top of it.
  *
  * The heavy feature extraction lives in `export` (reusing the same seams as
  * `shoots embeddings`); train/predict/diagnose are pure maths over the exported
@@ -50,6 +51,7 @@ import { runInit, runEdit } from '../develop/commands/pipeline.js';
 import { runClean } from '../develop/commands/clean.js';
 import { runApply } from '../develop/commands/apply.js';
 import { runStatus } from '../develop/commands/status.js';
+import { runStyleList, runStyleTrain } from '../develop/commands/style.js';
 
 export function registerDevelopCommand(program: Command): void {
   const develop = program
@@ -97,6 +99,8 @@ export function registerDevelopCommand(program: Command): void {
     .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
     .option('--editor <id>', `which editor's format to read/write: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--force', 'overwrite sidecars that already carry a real edit')
+    .option('--style <name>', 'detail profile to apply on top of the general one (`develop style list`)')
+    .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
     .option('--no-apply-marks', 'leave pending cull/rate marks in the store instead of writing them into the sidecars')
     .option('--dry-run', 'print the steps and the paths, write nothing')
     .option('--json', 'machine-readable JSON output on stdout')
@@ -110,6 +114,8 @@ export function registerDevelopCommand(program: Command): void {
     .option('--profile <file>', 'profile to apply (default: the one `develop init` wrote)')
     .option('--treatment <t>', 'which branch to apply: auto | color | bw', 'auto')
     .option('--baseline <mode>', `baseline render: ${BASELINES.join(' | ')} (default: the profile's)`)
+    .option('--style <name>', 'detail profile to apply on top of the general one (`develop style list`)')
+    .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
     .option('--model <kind>', 'inference backend', 'onnx')
     .option('--concurrency <n>', 'max parallel jobs', String(defaultModelConcurrency()))
     .option('--json', 'machine-readable JSON output on stdout')
@@ -192,6 +198,8 @@ export function registerDevelopCommand(program: Command): void {
     .option('--editor <id>', `which editor's format to write predictions in: ${EDITOR_IDS.join(' | ')}`, DEFAULT_EDITOR)
     .option('--camera-profile <name>', "base rendering to assume and write out, overriding the catalog's own")
     .option('--sidecars <dir>', 'also write an editor-readable sidecar per image into this dir')
+    .option('--style <name>', 'detail profile to apply on top of the general one (`develop style list`)')
+    .option('--style-strength <n>', 'how much of the style to apply, 0..1', (v) => parseFloat(v), 1)
     // `--xmp` named the ACR adapter's file extension, which stopped being true
     // the moment a second adapter wrote `.rrdata`. Kept as an alias rather than
     // removed: it is in people's scripts, and a flag that vanishes costs more
@@ -208,8 +216,32 @@ export function registerDevelopCommand(program: Command): void {
         data: opts.data, profile: opts.profile, treatment: opts.treatment,
         editor: opts.editor, cameraProfile: opts.cameraProfile, out: opts.out,
         sidecars: opts.sidecars ?? opts.xmp,
+        style: opts.style, styleStrength: opts.styleStrength,
       });
     });
+
+  const style = develop
+    .command('style')
+    .description('Detail profiles (B&W, warm, …): how a subset of your edits departs from the general profile');
+
+  style
+    .command('train')
+    .description('Measure a style from a dataset of edits that share it, against the general profile')
+    .requiredOption('--name <name>', 'style name (saved under ~/.shoots/develop/styles)')
+    .requiredOption('--data <file>', 'dataset from `shoots develop export` holding only the edits in this style')
+    .option('--profile <file>', 'general profile to measure against (default: the one `develop init` wrote)')
+    .option('--out <file>', 'write the style here instead of the styles directory')
+    .option('--description <text>', 'one line saying what the style is')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runStyleTrain);
+
+  style
+    .command('list')
+    .description('List the saved styles')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runStyleList);
 
   develop
     .command('feedback')

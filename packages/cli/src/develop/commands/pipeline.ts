@@ -72,6 +72,10 @@ export interface EditArgs extends CommonArgs {
   force?: boolean;
   /** Merge pending `cull` / `rate` marks into the sidecars written (default on). */
   applyMarks?: boolean;
+  /** Detail profile (name or path) applied on top of the general one. */
+  style?: string;
+  /** 0..1: how much of the style to apply. */
+  styleStrength?: number;
 }
 
 function validate(args: CommonArgs): boolean {
@@ -300,6 +304,8 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
     besideSource: true,
     out: predictionPath,
     applyMarks: args.applyMarks,
+    style: args.style,
+    styleStrength: args.styleStrength,
   });
   if (failed()) return;
 

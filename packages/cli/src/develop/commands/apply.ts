@@ -30,6 +30,10 @@ export interface ApplyArgs {
   baseline?: string;
   model: string;
   concurrency: string;
+  /** Detail profile (name or path) applied on top of the general one. */
+  style?: string;
+  /** 0..1: how much of the style to apply. */
+  styleStrength?: number;
   json?: boolean;
   verbose?: boolean;
 }
@@ -101,7 +105,8 @@ export async function runApply(args: ApplyArgs): Promise<void> {
   });
   if (failed()) return;
 
-  await runPredict({ data: datasetPath, profile: profilePath, treatment: args.treatment, out: predictionPath, applyMarks: false });
+  await runPredict({ data: datasetPath, profile: profilePath, treatment: args.treatment, out: predictionPath, applyMarks: false,
+    style: args.style, styleStrength: args.styleStrength });
   if (failed()) return;
 
   const { profile, predictions } = JSON.parse(await readFile(predictionPath, 'utf8')) as { profile: string; predictions: Prediction[] };

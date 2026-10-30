@@ -83,7 +83,7 @@ export interface CalibrationEstimate {
  * — the constant a photographer actually applies there is a ratio. Getting this
  * wrong would put the biggest accuracy lever in the schema on the wrong scale.
  */
-function toCorrectionSpace(param: DevelopParam, value: number): number {
+export function toCorrectionSpace(param: DevelopParam, value: number): number {
   return param.transform === 'logK' ? Math.log(Math.max(value, 1)) : value;
 }
 

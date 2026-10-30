@@ -85,6 +85,15 @@ export function developProfilePath(): string {
 }
 
 /**
+ * Detail profiles (`develop style train`): each one a correction on top of the
+ * general profile, never a model of its own. Outside `export/` so `develop
+ * clean` keeps them.
+ */
+export function developStylesDir(): string {
+  return path.join(developHome(), 'styles');
+}
+
+/**
  * Every (predicted, kept) observation `develop feedback` has ever recorded.
  *
  * Deliberately outside `export/`: everything under there is cache that `develop

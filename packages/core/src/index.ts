@@ -25,6 +25,7 @@ export {
   developHome,
   developExportPath,
   developProfilePath,
+  developStylesDir,
   developFeedbackPath,
   developShootsDir,
   developShootDir,
