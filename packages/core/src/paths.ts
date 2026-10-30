@@ -94,6 +94,15 @@ export function developStylesDir(): string {
 }
 
 /**
+ * Intent thresholds measured on the photographer's finished edits (`develop
+ * intents calibrate`). Outside `export/`: it describes the photographer, not a
+ * cache.
+ */
+export function developIntentsPath(): string {
+  return path.join(developHome(), 'intents.json');
+}
+
+/**
  * Every (predicted, kept) observation `develop feedback` has ever recorded.
  *
  * Deliberately outside `export/`: everything under there is cache that `develop

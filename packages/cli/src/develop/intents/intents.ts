@@ -13,6 +13,7 @@
  */
 import { meetConstraints, constrained, type LookConstraint, type ToneControl } from '../look/solve.js';
 import { LOOK_PERCENTILES, lookOf, TONE_KEYS, toneFromDevelop, toneToDevelop, type LumaHistogram } from '../look/tone.js';
+import { DEFAULT_THRESHOLDS, type IntentThresholds } from './calibrate.js';
 
 const at = (p: number): number => LOOK_PERCENTILES.indexOf(p as (typeof LOOK_PERCENTILES)[number]);
 
@@ -21,17 +22,12 @@ export interface IntentDef {
   label: string;
   /** The sliders a photographer reaches for to do this — the only ones it may move. */
   controls: ToneControl[];
-  /** Bounds given the look the prediction produces on this frame. */
-  constraints(look: readonly number[]): LookConstraint[];
+  /** Bounds given the look the prediction produces on this frame, in the photographer's thresholds. */
+  constraints(look: readonly number[], t: IntentThresholds): LookConstraint[];
 }
 
-/** Display-value bounds, 0..1. Chosen numbers, to be judged by eye on real shoots. */
-const HIGHLIGHT_CAP = 0.93;
-const SHADOW_FLOOR = 0.1;
-const DEEP_SHADOW_CAP = 0.045;
-const MID_LOW = 0.38;
-const MID_HIGH = 0.55;
-const CONTRAST_STEP = 0.15;
+/** How much softer or punchier the contrast intents make the 10–90 spread. */
+const CONTRAST_STEP = 0.1;
 
 export const INTENTS: readonly IntentDef[] = [
   {
@@ -39,25 +35,25 @@ export const INTENTS: readonly IntentDef[] = [
     label: 'Expose correctly',
     controls: ['exposure'],
     // A band, not a target: a frame whose midtones sit anywhere reasonable is left alone.
-    constraints: () => [{ at: at(0.5), min: MID_LOW, max: MID_HIGH }],
+    constraints: (_, t) => [{ at: at(0.5), min: t.midLow, max: t.midHigh }],
   },
   {
     id: 'preserve-highlights',
     label: 'Preserve highlights',
     controls: ['highlights', 'whites'],
-    constraints: (look) => [{ at: at(0.99), max: Math.min(look[at(0.99)]!, HIGHLIGHT_CAP) }],
+    constraints: (look, t) => [{ at: at(0.99), max: Math.min(look[at(0.99)]!, t.highlightCap) }],
   },
   {
     id: 'open-shadows',
     label: 'Open shadows',
     controls: ['shadows', 'blacks'],
-    constraints: (look) => [{ at: at(0.05), min: Math.max(look[at(0.05)]!, SHADOW_FLOOR) }],
+    constraints: (look, t) => [{ at: at(0.05), min: Math.max(look[at(0.05)]!, t.shadowFloor) }],
   },
   {
     id: 'keep-shadows-deep',
     label: 'Keep shadows deep',
     controls: ['shadows', 'blacks'],
-    constraints: (look) => [{ at: at(0.05), max: Math.min(look[at(0.05)]!, DEEP_SHADOW_CAP) }],
+    constraints: (look, t) => [{ at: at(0.05), max: Math.min(look[at(0.05)]!, t.deepShadowCap) }],
   },
   {
     id: 'soft-contrast',
@@ -103,11 +99,12 @@ export function applyIntents(
   develop: Record<string, number>,
   hist: LumaHistogram,
   intents: readonly IntentDef[],
+  thresholds: IntentThresholds = DEFAULT_THRESHOLDS,
 ): Record<string, number> {
   if (!intents.length) return develop;
   const prior = toneFromDevelop(develop);
   const look = lookOf(hist, prior);
-  const constraints = intents.flatMap((i) => i.constraints(look));
+  const constraints = intents.flatMap((i) => i.constraints(look, thresholds));
   const free = [...new Set(intents.flatMap((i) => i.controls))];
   const solved = meetConstraints(hist, constraints, prior, free);
   if (solved === prior) return develop;

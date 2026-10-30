@@ -219,14 +219,14 @@ after a retrain it still applies, with a warning to re-run `style train`.
 What you ask of a shoot before applying, met **after** the general profile and
 any style — an intent is an explicit instruction and outranks what was learned.
 
-| Intent | Bound | Sliders it may move |
+| Intent | Bound (measured on your own edits) | Sliders it may move |
 | --- | --- | --- |
-| `expose-correctly` | median display value between 0.38 and 0.55 | Exposure |
-| `preserve-highlights` | 99th percentile at most 0.93 | Highlights, Whites |
-| `open-shadows` | 5th percentile at least 0.10 | Shadows, Blacks |
-| `keep-shadows-deep` | 5th percentile at most 0.045 | Shadows, Blacks |
-| `soft-contrast` | 10–90 spread 15 % narrower than predicted | Contrast |
-| `punchy-contrast` | 10–90 spread 15 % wider than predicted | Contrast |
+| `expose-correctly` | median within the middle half of yours | Exposure |
+| `preserve-highlights` | 99th percentile no brighter than your typical | Highlights, Whites |
+| `open-shadows` | 5th percentile as open as your more open third | Shadows, Blacks |
+| `keep-shadows-deep` | 5th percentile as deep as your deeper third | Shadows, Blacks |
+| `soft-contrast` | 10–90 spread 10 % narrower than predicted | Contrast |
+| `punchy-contrast` | 10–90 spread 10 % wider than predicted | Contrast |
 
 Each bound is read on the look the prediction produces for that photograph, and
 relative to it: a frame that already meets an intent is left alone, one that
@@ -238,8 +238,19 @@ are refused.
 
 Each photograph's RAW is decoded to judge it (about a quarter of a second per
 frame, four at a time), so intents need the RAW developer `shoots setup`
-installs. The bounds are measured in the review screen's rendering, which
-approximates Lightroom's; the thresholds are a first setting, to be judged by eye.
+installs.
+
+```sh
+shoots develop intents calibrate [--data <export.jsonl>] [--sample 150]   # measure your thresholds
+shoots develop intents list [--json]                                       # the intents and the thresholds in force
+```
+
+`calibrate` decodes a sample of your colour edits, spread over shoots, renders
+each with your own settings in the tone model the intents are judged in, and
+saves the thresholds to `~/.shoots/develop/intents.json`. Measuring both sides
+in one rendering is the point: whatever it gets wrong about Lightroom's, it gets
+wrong on both, so it cancels. Until you calibrate, fixed defaults apply and
+`predict` says so.
 
 ---
 

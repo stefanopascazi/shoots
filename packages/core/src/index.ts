@@ -26,6 +26,7 @@ export {
   developExportPath,
   developProfilePath,
   developStylesDir,
+  developIntentsPath,
   developFeedbackPath,
   developShootsDir,
   developShootDir,

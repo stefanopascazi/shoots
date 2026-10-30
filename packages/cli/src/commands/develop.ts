@@ -28,6 +28,7 @@
  *   predict  apply a profile to a new set → predicted crs vector / XMP sidecar.
  *   diagnose style-clustering diagnostic (pooled vs per-style skill).
  *   style    detail profiles: departures from the general profile, applied on top of it.
+ *   intents  global develop intents and their thresholds, measured on your edits.
  *
  * The heavy feature extraction lives in `export` (reusing the same seams as
  * `shoots embeddings`); train/predict/diagnose are pure maths over the exported
@@ -53,6 +54,7 @@ import { runApply } from '../develop/commands/apply.js';
 import { runStatus } from '../develop/commands/status.js';
 import { runStyleList, runStyleTrain } from '../develop/commands/style.js';
 import { INTENT_IDS } from '../develop/intents/intents.js';
+import { runIntentsCalibrate, runIntentsList } from '../develop/commands/intents.js';
 
 export function registerDevelopCommand(program: Command): void {
   const develop = program
@@ -246,6 +248,27 @@ export function registerDevelopCommand(program: Command): void {
     .option('--json', 'machine-readable JSON output on stdout')
     .option('--verbose', 'verbose logging on stderr')
     .action(runStyleList);
+
+  const intents = develop
+    .command('intents')
+    .description('Global develop intents (--intent on edit/apply/predict) and their thresholds');
+
+  intents
+    .command('calibrate')
+    .description('Measure the intent thresholds on your own finished edits')
+    .option('--data <file>', 'training dataset (default: ~/.shoots/develop/export/export.jsonl)')
+    .option('--sample <n>', 'edited photographs to read, spread over shoots', (v) => parseInt(v, 10), 150)
+    .option('--out <file>', 'write the calibration here (default: ~/.shoots/develop/intents.json)')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runIntentsCalibrate);
+
+  intents
+    .command('list')
+    .description('List the intents and the thresholds in force')
+    .option('--json', 'machine-readable JSON output on stdout')
+    .option('--verbose', 'verbose logging on stderr')
+    .action(runIntentsList);
 
   develop
     .command('feedback')

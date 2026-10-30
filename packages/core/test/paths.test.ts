@@ -19,6 +19,7 @@ import {
   developShootDir,
   developShootsDir,
   developStylesDir,
+  developIntentsPath,
   labelSetsDir,
   logsDir,
   matchDbPath,
@@ -85,6 +86,7 @@ describe('the well-known subfolders', () => {
     expect(developProfilePath()).toBe(path.join(HOME, 'develop', 'profile', 'export.json'));
     expect(developShootsDir()).toBe(path.join(HOME, 'develop', 'export', 'shooting'));
     expect(developStylesDir()).toBe(path.join(HOME, 'develop', 'styles'));
+    expect(developIntentsPath()).toBe(path.join(HOME, 'develop', 'intents.json'));
     expect(developStylesDir().startsWith(path.join(HOME, 'develop', 'export'))).toBe(false);
     expect(developShootDir('2026-08-02')).toBe(path.join(HOME, 'develop', 'export', 'shooting', '2026-08-02'));
 

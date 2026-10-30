@@ -21,6 +21,8 @@ import { countStates, stateMap, summariseStates } from '../develop/paramState.js
 import { applyStyle, loadStyle } from '../style/style.js';
 import { applyIntents, resolveIntents, type IntentDef } from '../intents/intents.js';
 import { frameHistogram } from '../intents/frame.js';
+import { loadIntentThresholds } from './intents.js';
+import type { IntentThresholds } from '../intents/calibrate.js';
 import { resolveRawDeveloper } from '../../rawDeveloper.js';
 import type { Prediction } from '../predict.js';
 import type { AsShotMeta } from '../develop/schema.js';
@@ -123,7 +125,12 @@ export async function runPredict(args: PredictArgs): Promise<void> {
     );
     return style ? applyStyle(p, style, strength) : p;
   });
-  const adjusted = intents.length ? await meetIntents(predictions, intents, new Map(usable.map((r) => [r.file, r.asShot]))) : 0;
+  let adjusted = 0;
+  if (intents.length) {
+    const { thresholds, calibrated } = await loadIntentThresholds();
+    if (!calibrated) process.stderr.write('Intents use default thresholds — `shoots develop intents calibrate` measures yours\n');
+    adjusted = await meetIntents(predictions, intents, new Map(usable.map((r) => [r.file, r.asShot])), thresholds);
+  }
 
   // Which rendering the values are meant to sit on decides what every slider
   // means, and it is invisible in the numbers — so say it out loud rather than
@@ -253,7 +260,12 @@ export async function runPredict(args: PredictArgs): Promise<void> {
  * so a few run at once. A frame that cannot be decoded keeps its prediction and
  * is reported, rather than failing the whole shoot.
  */
-async function meetIntents(predictions: Prediction[], intents: readonly IntentDef[], asShot: Map<string, AsShotMeta>): Promise<number> {
+async function meetIntents(
+  predictions: Prediction[],
+  intents: readonly IntentDef[],
+  asShot: Map<string, AsShotMeta>,
+  thresholds: IntentThresholds,
+): Promise<number> {
   // Every frame needs the same decoder; without it the intents cannot be judged
   // at all, and silently skipping them would hand back a prediction that ignores
   // what was asked.
@@ -268,7 +280,7 @@ async function meetIntents(predictions: Prediction[], intents: readonly IntentDe
         const meta = asShot.get(p.file);
         if (!meta) throw new Error('no capture metadata in the dataset');
         const hist = await frameHistogram(p.file, p.develop, meta);
-        const develop = applyIntents(p.develop, hist, intents);
+        const develop = applyIntents(p.develop, hist, intents, thresholds);
         if (develop !== p.develop) {
           p.develop = develop;
           adjusted++;

@@ -78,12 +78,12 @@ describe('applyIntents', () => {
     expect(out.Contrast2012).toBe(develop.Contrast2012);
   });
 
-  test('soft contrast narrows the spread by about the step', () => {
+  test('soft contrast narrows the spread by about the step (10 %)', () => {
     const h = spread(-10, -1);
     const before = constrained(look(h, develop), 'spread');
     const after = constrained(look(h, applyIntents(develop, h, resolveIntents(['soft-contrast']))), 'spread');
-    expect(after).toBeLessThanOrEqual(before * 0.86);
-    expect(after).toBeGreaterThan(before * 0.7);
+    expect(after).toBeLessThanOrEqual(before * 0.91);
+    expect(after).toBeGreaterThan(before * 0.8);
   });
 
   test('expose correctly brings a dark frame into the midtone band', () => {
