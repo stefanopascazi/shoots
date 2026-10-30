@@ -86,6 +86,17 @@ describe('solveTone', () => {
     expect(got).toEqual(prior);
   });
 
+  test('weights leave unweighted percentiles free', () => {
+    const h = spread(-11, -2);
+    const target = lookOf(h, { ...NEUTRAL_TONE, exposure: 1 });
+    // Ask only for the median; a wildly wrong value elsewhere must not matter.
+    const partial = target.map((v, i) => (i === 4 ? v : 0));
+    const weights = target.map((_, i) => (i === 4 ? 1 : 0));
+    const got = solveTone(h, partial, { weights });
+    expect(Math.abs(lookOf(h, got)[4]! - target[4]!) * 255).toBeLessThan(1.5);
+    expect(got.exposure).toBeGreaterThan(0.5);
+  });
+
   test('a darker frame needs more exposure for the same look', () => {
     const target = lookOf(spread(-10, -1), NEUTRAL_TONE);
     const dark = solveTone(spread(-11.5, -2.5), target, { stiffness: 0.01 });

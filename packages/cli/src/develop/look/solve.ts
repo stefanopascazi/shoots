@@ -25,6 +25,12 @@ export interface SolveOptions {
   prior?: Tone;
   /** Cost of one unit of control away from the prior, in squared code values. */
   stiffness?: number;
+  /**
+   * Weight per look percentile; 0 leaves that percentile free. Lets a target
+   * say only what it means — "keep the highlights below 240" — without
+   * pinning the rest of the histogram.
+   */
+  weights?: readonly number[];
 }
 
 /**
@@ -37,11 +43,18 @@ export interface SolveOptions {
 export function solveTone(h: LumaHistogram, target: readonly number[], opts: SolveOptions = {}): Tone {
   const prior = opts.prior ?? NEUTRAL_TONE;
   const stiffness = opts.stiffness ?? 4;
+  const weights = opts.weights;
   const cost = (t: Tone): number => {
-    const d = lookDistance(lookOf(h, t), target);
+    const look = lookOf(h, t);
+    let d2 = 0;
+    if (weights) {
+      for (let i = 0; i < look.length; i++) d2 += weights[i]! * ((look[i]! - target[i]!) * 255) ** 2;
+    } else {
+      d2 = lookDistance(look, target) ** 2;
+    }
     let pen = 0;
     for (const k of KEYS) pen += ((t[k] - prior[k]) / LIMIT[k]) ** 2;
-    return d * d + stiffness * pen;
+    return d2 + stiffness * pen;
   };
   // Exposure moves everything, so a local search started at the wrong
   // brightness lets the regional controls fake it and stops in a local minimum
