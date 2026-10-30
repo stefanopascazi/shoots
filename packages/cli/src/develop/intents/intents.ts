@@ -94,22 +94,28 @@ export function resolveIntents(ids: readonly string[]): IntentDef[] {
  * Only the six tone controls the solver models move; everything else — colour,
  * curve, white balance — is the prediction's. Returns the input object when no
  * intent asked for a change.
+ *
+ * `strength` scales the solver's move: 1 meets the bounds, 0.5 goes halfway,
+ * 0 leaves the prediction alone. It is the dial for tuning intents by eye in the
+ * editor, where the thresholds alone cannot be judged.
  */
 export function applyIntents(
   develop: Record<string, number>,
   hist: LumaHistogram,
   intents: readonly IntentDef[],
   thresholds: IntentThresholds = DEFAULT_THRESHOLDS,
+  strength = 1,
 ): Record<string, number> {
-  if (!intents.length) return develop;
+  if (!intents.length || strength <= 0) return develop;
   const prior = toneFromDevelop(develop);
   const look = lookOf(hist, prior);
   const constraints = intents.flatMap((i) => i.constraints(look, thresholds));
   const free = [...new Set(intents.flatMap((i) => i.controls))];
   const solved = meetConstraints(hist, constraints, prior, free);
   if (solved === prior) return develop;
-  const tone = toneToDevelop(solved);
   const before = toneToDevelop(prior);
+  const full = toneToDevelop(solved);
+  const tone = Object.fromEntries(TONE_KEYS.map((k) => [k, before[k] + strength * (full[k] - before[k])])) as typeof full;
   const out = { ...develop };
   // Only what the solver moved is written, rounded to the editor's own steps
   // (hundredths of EV, whole slider units); the rest keeps the prediction's value.

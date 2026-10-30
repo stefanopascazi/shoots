@@ -78,6 +78,8 @@ export interface EditArgs extends CommonArgs {
   styleStrength?: number;
   /** Global develop intents, repeatable (`--intent preserve-highlights`). */
   intent?: string[];
+  /** 0..1: how far the intents move the prediction. */
+  intentStrength?: number;
 }
 
 function validate(args: CommonArgs): boolean {
@@ -309,6 +311,7 @@ export async function runEdit(targetPath: string, args: EditArgs): Promise<void>
     style: args.style,
     styleStrength: args.styleStrength,
     intents: args.intent,
+    intentStrength: args.intentStrength,
   });
   if (failed()) return;
 

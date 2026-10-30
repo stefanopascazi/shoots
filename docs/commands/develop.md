@@ -125,6 +125,7 @@ shoots develop edit <path> [options]
 | `--style <name>` | — | Detail profile to apply on top of the general one ([`style`](#shoots-develop-style)) |
 | `--style-strength <n>` | `1` | How much of the style to apply, 0..1 |
 | `--intent <id>` | — | Global develop intent, repeatable ([intents](#develop-intents)) |
+| `--intent-strength <n>` | saved, else `1` | How far the intents move the prediction, 0..1 |
 | `--no-apply-marks` | apply on | Leave pending `cull`/`rate` marks in the store instead of writing them out |
 | `--dry-run` | off | Print the steps and the paths, write nothing |
 
@@ -243,6 +244,7 @@ installs.
 ```sh
 shoots develop intents calibrate [--data <export.jsonl>] [--sample 150]   # measure your thresholds
 shoots develop intents list [--json]                                       # the intents and the thresholds in force
+shoots develop intents set --strength <n>                                  # default intent strength, once tuned by eye
 ```
 
 `calibrate` decodes a sample of your colour edits, spread over shoots, renders
@@ -251,6 +253,10 @@ saves the thresholds to `~/.shoots/develop/intents.json`. Measuring both sides
 in one rendering is the point: whatever it gets wrong about Lightroom's, it gets
 wrong on both, so it cancels. Until you calibrate, fixed defaults apply and
 `predict` says so.
+
+`--intent-strength` scales how far the intents move each prediction (1 meets
+the bounds, 0.5 goes halfway). Tune it on a real shoot in your editor, then
+save it with `intents set --strength`; a later `calibrate` keeps it.
 
 ---
 
@@ -751,6 +757,7 @@ shoots develop predict --data <file> --profile <file> [options]
 | `--style <name>` | — | Detail profile to apply on top of the general one ([`style`](#shoots-develop-style)) |
 | `--style-strength <n>` | `1` | How much of the style to apply, 0..1 |
 | `--intent <id>` | — | Global develop intent, repeatable ([intents](#develop-intents)) |
+| `--intent-strength <n>` | saved, else `1` | How far the intents move the prediction, 0..1 |
 
 `--treatment` is a genuine creative choice at inference time — at train time it is
 read off the edit, but for a new frame nobody has decided colour vs B&W yet.

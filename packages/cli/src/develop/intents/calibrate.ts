@@ -39,6 +39,8 @@ export interface IntentCalibration {
   frames: number;
   shoots: number;
   thresholds: IntentThresholds;
+  /** Default intent strength, 0..1, set by `develop intents set --strength` once tuned by eye. */
+  strength?: number;
 }
 
 const at = (p: number): number => LOOK_PERCENTILES.indexOf(p as (typeof LOOK_PERCENTILES)[number]);

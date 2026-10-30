@@ -110,3 +110,20 @@ describe('applyIntents keeps what it did not move', () => {
     expect(out.Shadows2012).toBe(5.5);
   });
 });
+
+describe('intent strength', () => {
+  const h = spread(-10, -1);
+  const develop = { Exposure2012: 0.3, Contrast2012: 10, Highlights2012: 0, Shadows2012: 0, Whites2012: 0, Blacks2012: 0 };
+  const intents = resolveIntents(['soft-contrast']);
+
+  test('half strength moves about half as far', () => {
+    const full = applyIntents(develop, h, intents).Contrast2012! - develop.Contrast2012;
+    const half = applyIntents(develop, h, intents, undefined, 0.5).Contrast2012! - develop.Contrast2012;
+    expect(full).toBeLessThan(-5);
+    expect(Math.abs(half - full / 2)).toBeLessThanOrEqual(1);
+  });
+
+  test('zero strength is the prediction', () => {
+    expect(applyIntents(develop, h, intents, undefined, 0)).toBe(develop);
+  });
+});

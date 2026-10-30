@@ -69,6 +69,8 @@ export interface PredictArgs {
   styleStrength?: number;
   /** Global develop intents (ids from intents/intents.ts), met after profile and style. */
   intents?: string[];
+  /** 0..1: how far the intents move the prediction (default: the saved one, else 1). */
+  intentStrength?: number;
 }
 
 export async function runPredict(args: PredictArgs): Promise<void> {
@@ -127,9 +129,11 @@ export async function runPredict(args: PredictArgs): Promise<void> {
   });
   let adjusted = 0;
   if (intents.length) {
-    const { thresholds, calibrated } = await loadIntentThresholds();
+    const { thresholds, calibrated, strength: saved } = await loadIntentThresholds();
+    const intentStrength = args.intentStrength ?? saved;
+    if (!(intentStrength >= 0 && intentStrength <= 1)) throw new Error(`invalid --intent-strength ${args.intentStrength} (use 0..1)`);
     if (!calibrated) process.stderr.write('Intents use default thresholds — `shoots develop intents calibrate` measures yours\n');
-    adjusted = await meetIntents(predictions, intents, new Map(usable.map((r) => [r.file, r.asShot])), thresholds);
+    adjusted = await meetIntents(predictions, intents, new Map(usable.map((r) => [r.file, r.asShot])), thresholds, intentStrength);
   }
 
   // Which rendering the values are meant to sit on decides what every slider
@@ -265,6 +269,7 @@ async function meetIntents(
   intents: readonly IntentDef[],
   asShot: Map<string, AsShotMeta>,
   thresholds: IntentThresholds,
+  strength: number,
 ): Promise<number> {
   // Every frame needs the same decoder; without it the intents cannot be judged
   // at all, and silently skipping them would hand back a prediction that ignores
@@ -280,7 +285,7 @@ async function meetIntents(
         const meta = asShot.get(p.file);
         if (!meta) throw new Error('no capture metadata in the dataset');
         const hist = await frameHistogram(p.file, p.develop, meta);
-        const develop = applyIntents(p.develop, hist, intents, thresholds);
+        const develop = applyIntents(p.develop, hist, intents, thresholds, strength);
         if (develop !== p.develop) {
           p.develop = develop;
           adjusted++;

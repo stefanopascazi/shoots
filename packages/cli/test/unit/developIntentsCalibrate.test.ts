@@ -56,9 +56,10 @@ describe('sampleByShoot', () => {
 describe('loadIntentThresholds', () => {
   test('defaults when nothing was calibrated, the file when it was', async () => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'intents-'));
-    expect(await loadIntentThresholds(path.join(dir, 'none.json'))).toEqual({ thresholds: DEFAULT_THRESHOLDS, calibrated: false });
+    expect(await loadIntentThresholds(path.join(dir, 'none.json'))).toEqual({ thresholds: DEFAULT_THRESHOLDS, calibrated: false, strength: 1 });
     const file = path.join(dir, 'intents.json');
-    writeFileSync(file, JSON.stringify({ type: 'develop-intents', at: 'x', frames: 30, shoots: 3, thresholds: { ...DEFAULT_THRESHOLDS, highlightCap: 0.8 } }));
+    writeFileSync(file, JSON.stringify({ type: 'develop-intents', at: 'x', frames: 30, shoots: 3, thresholds: { ...DEFAULT_THRESHOLDS, highlightCap: 0.8 }, strength: 0.6 }));
+    expect((await loadIntentThresholds(file)).strength).toBe(0.6);
     expect((await loadIntentThresholds(file)).thresholds.highlightCap).toBe(0.8);
   });
 });

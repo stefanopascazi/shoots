@@ -21,11 +21,13 @@ import { resolveRawDeveloper } from '../../rawDeveloper.js';
 import { logError, logWarn, makeIo, printHuman, printJson } from '../../io.js';
 
 /** The thresholds in force: the calibration on disk, or the defaults. */
-export async function loadIntentThresholds(file = developIntentsPath()): Promise<{ thresholds: IntentThresholds; calibrated: boolean }> {
-  if (!existsSync(file)) return { thresholds: DEFAULT_THRESHOLDS, calibrated: false };
+export async function loadIntentThresholds(
+  file = developIntentsPath(),
+): Promise<{ thresholds: IntentThresholds; calibrated: boolean; strength: number }> {
+  if (!existsSync(file)) return { thresholds: DEFAULT_THRESHOLDS, calibrated: false, strength: 1 };
   const cal = JSON.parse(await readFile(file, 'utf8')) as IntentCalibration;
   if (cal.type !== 'develop-intents') throw new Error(`${file} is not an intents calibration`);
-  return { thresholds: { ...DEFAULT_THRESHOLDS, ...cal.thresholds }, calibrated: true };
+  return { thresholds: { ...DEFAULT_THRESHOLDS, ...cal.thresholds }, calibrated: true, strength: cal.strength ?? 1 };
 }
 
 /** Up to `n` frames, round-robin over shoots so one big wedding does not set every bound. */
@@ -99,6 +101,8 @@ export async function runIntentsCalibrate(args: IntentsCalibrateArgs): Promise<v
     frames: looks.length,
     shoots: shoots.size,
     thresholds: thresholdsFromLooks(looks),
+    // A recalibration measures the photographer again; the strength they tuned by eye stays.
+    ...(existsSync(developIntentsPath()) ? { strength: (await loadIntentThresholds()).strength } : {}),
   };
   const out = path.resolve(args.out ?? developIntentsPath());
   await mkdir(path.dirname(out), { recursive: true });
@@ -120,6 +124,31 @@ function printThresholds(io: ReturnType<typeof makeIo>, t: IntentThresholds): vo
   printHuman(io, `  midtones between        ${cv(t.midLow)}–${Math.round(t.midHigh * 255)}/255 (median)        expose-correctly`);
 }
 
+export interface IntentsSetArgs {
+  strength: number;
+  json?: boolean;
+  verbose?: boolean;
+}
+
+/** Persist the default intent strength, once tuned by eye in the editor. */
+export async function runIntentsSet(args: IntentsSetArgs): Promise<void> {
+  const io = makeIo(args);
+  if (!(args.strength >= 0 && args.strength <= 1)) {
+    logError(`invalid --strength ${args.strength} (use 0..1)`);
+    process.exitCode = 2;
+    return;
+  }
+  const file = developIntentsPath();
+  const current: IntentCalibration = existsSync(file)
+    ? (JSON.parse(await readFile(file, 'utf8')) as IntentCalibration)
+    : { type: 'develop-intents', at: new Date().toISOString(), frames: 0, shoots: 0, thresholds: DEFAULT_THRESHOLDS };
+  current.strength = args.strength;
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, JSON.stringify(current, null, 2) + '\n', 'utf8');
+  if (io.json) printJson({ command: 'develop-intents-set', file, strength: args.strength });
+  else printHuman(io, `Intents now apply at strength ${args.strength} by default (${file})`);
+}
+
 export interface IntentsListArgs {
   json?: boolean;
   verbose?: boolean;
@@ -127,11 +156,12 @@ export interface IntentsListArgs {
 
 export async function runIntentsList(args: IntentsListArgs): Promise<void> {
   const io = makeIo(args);
-  const { thresholds, calibrated } = await loadIntentThresholds();
+  const { thresholds, calibrated, strength } = await loadIntentThresholds();
   if (io.json) {
     printJson({
       command: 'develop-intents-list',
       calibrated,
+      strength,
       thresholds,
       intents: INTENTS.map((i) => ({ id: i.id, label: i.label, controls: i.controls })),
     });
@@ -140,4 +170,5 @@ export async function runIntentsList(args: IntentsListArgs): Promise<void> {
   for (const i of INTENTS) printHuman(io, `${i.id.padEnd(22)} ${i.label.padEnd(22)} moves ${i.controls.join(', ')}`);
   printHuman(io, calibrated ? '\nThresholds measured on your edits:' : '\nDefault thresholds — `shoots develop intents calibrate` measures yours:');
   printThresholds(io, thresholds);
+  printHuman(io, `  default strength        ${strength}  (\`develop intents set --strength\` changes it)`);
 }
