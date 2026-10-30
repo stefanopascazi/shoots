@@ -20,7 +20,9 @@ import type { DevelopProfile, ParamState } from '../types.js';
 import { countStates, stateMap, summariseStates } from '../develop/paramState.js';
 import { applyStyle, loadStyle } from '../style/style.js';
 import { applyIntents, resolveIntents, type IntentDef } from '../intents/intents.js';
-import { frameHistogram } from '../intents/frame.js';
+import { frameHistograms } from '../intents/frame.js';
+import { readVision } from '../../vision/read.js';
+import type { VisionRecord, VisionRegion } from '../../vision/record.js';
 import { loadIntentThresholds } from './intents.js';
 import type { IntentThresholds } from '../intents/calibrate.js';
 import { resolveRawDeveloper } from '../../rawDeveloper.js';
@@ -276,6 +278,11 @@ async function meetIntents(
   // what was asked.
   if (!resolveRawDeveloper()) throw new Error('intents need the RAW developer to read each photograph — run `shoots setup`');
   process.stderr.write(`Meeting ${intents.length} intent(s): ${intents.map((i) => i.id).join(', ')}\n`);
+  // Region intents need to know where the sky and the subject are.
+  const needed = new Set(intents.flatMap((i) => i.regions ?? []));
+  const vision: Map<string, VisionRecord> = needed.size
+    ? await readVision(predictions.map((p) => p.file), (m) => process.stderr.write(`${m}\n`))
+    : new Map();
   let adjusted = 0;
   let next = 0;
   const worker = async (): Promise<void> => {
@@ -284,8 +291,11 @@ async function meetIntents(
       try {
         const meta = asShot.get(p.file);
         if (!meta) throw new Error('no capture metadata in the dataset');
-        const hist = await frameHistogram(p.file, p.develop, meta);
-        const develop = applyIntents(p.develop, hist, intents, thresholds, strength);
+        const masks = Object.fromEntries(
+          Object.entries(vision.get(p.file)?.regions ?? {}).filter(([region]) => needed.has(region as VisionRegion)),
+        );
+        const { frame, regions } = await frameHistograms(p.file, p.develop, meta, masks);
+        const develop = applyIntents(p.develop, frame, intents, thresholds, strength, regions);
         if (develop !== p.develop) {
           p.develop = develop;
           adjusted++;

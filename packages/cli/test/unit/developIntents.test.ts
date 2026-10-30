@@ -127,3 +127,46 @@ describe('intent strength', () => {
     expect(applyIntents(develop, h, intents, undefined, 0)).toBe(develop);
   });
 });
+
+import { regionHistogram } from '../../src/develop/look/tone.js';
+
+describe('region intents', () => {
+  const develop = { Exposure2012: 0, Contrast2012: 0, Highlights2012: 0, Shadows2012: 0, Whites2012: 0, Blacks2012: 0, Saturation: 4 };
+
+  test('save the sky pulls a bright sky under the cap with Highlights and Whites only', () => {
+    const frame = spread(-9, -0.6);
+    const sky = { ...spread(-1, 0), anchor: frame.anchor };
+    const before = lookOf(sky, toneFromDevelop(develop))[at(0.95)]!;
+    const out = applyIntents(develop, frame, resolveIntents(['save-the-sky']), undefined, 1, { sky });
+    const after = lookOf(sky, toneFromDevelop(out))[at(0.95)]!;
+    expect(before).toBeGreaterThan(0.93);
+    expect(after).toBeLessThan(before - 0.02);
+    expect(out.Shadows2012).toBe(0);
+    expect(out.Exposure2012).toBe(0);
+    expect(out.Saturation).toBe(4);
+  });
+
+  test('a frame without that region is left alone', () => {
+    expect(applyIntents(develop, spread(-9, -0.5), resolveIntents(['save-the-sky']))).toBe(develop);
+  });
+
+  test('lift the subject brightens a dark subject', () => {
+    const frame = spread(-9, -1);
+    const subject = { ...spread(-9, -6), anchor: frame.anchor };
+    const out = applyIntents(develop, frame, resolveIntents(['lift-the-subject']), undefined, 1, { subject });
+    expect(lookOf(subject, toneFromDevelop(out))[at(0.5)]!).toBeGreaterThan(lookOf(subject, toneFromDevelop(develop))[at(0.5)]!);
+    expect(out.Highlights2012).toBe(0);
+  });
+});
+
+describe('regionHistogram', () => {
+  test('counts only the masked cells, against the frame anchor', () => {
+    // 4×1 image: left half dark, right half bright; mask on a 2×2 grid selects the right column.
+    const data = new Uint16Array([100, 100, 100, 100, 100, 100, 60000, 60000, 60000, 60000, 60000, 60000]);
+    const h = regionHistogram({ data, width: 4, height: 1 }, [1, 1, 1], Uint8Array.from([0, 1, 0, 1]), 2, -0.5)!;
+    expect(h.anchor).toBe(-0.5);
+    const lit = [...h.counts].findIndex((c) => c > 0);
+    expect(lit / 16 - 16).toBeGreaterThan(-1);
+    expect(regionHistogram({ data, width: 4, height: 1 }, [1, 1, 1], new Uint8Array(4), 2, 0)).toBeNull();
+  });
+});

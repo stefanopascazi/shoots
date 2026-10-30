@@ -10,10 +10,17 @@
  *
  * Applied last, after the general profile and any style: an intent is an
  * explicit instruction and outranks what was learned.
+ *
+ * Region intents (save the sky, lift the subject) bound the look of one region,
+ * found by the vision model, but still move global sliders: Lightroom's plug-in
+ * SDK cannot create masks, so "save the sky" is the global Highlights/Whites
+ * that keep the sky's pixels under the cap. A frame without that region is left
+ * alone by that intent.
  */
 import { meetConstraints, constrained, type LookConstraint, type ToneControl } from '../look/solve.js';
 import { LOOK_PERCENTILES, lookOf, TONE_KEYS, toneFromDevelop, toneToDevelop, type LumaHistogram } from '../look/tone.js';
 import { DEFAULT_THRESHOLDS, type IntentThresholds } from './calibrate.js';
+import type { VisionRegion } from '../../vision/record.js';
 
 const at = (p: number): number => LOOK_PERCENTILES.indexOf(p as (typeof LOOK_PERCENTILES)[number]);
 
@@ -22,8 +29,13 @@ export interface IntentDef {
   label: string;
   /** The sliders a photographer reaches for to do this — the only ones it may move. */
   controls: ToneControl[];
-  /** Bounds given the look the prediction produces on this frame, in the photographer's thresholds. */
-  constraints(look: readonly number[], t: IntentThresholds): LookConstraint[];
+  /** Regions this intent reads; the vision model is consulted only when one is asked for. */
+  regions?: VisionRegion[];
+  /**
+   * Bounds given the look the prediction produces on this frame (and on each
+   * region present in it), in the photographer's thresholds.
+   */
+  constraints(look: readonly number[], t: IntentThresholds, regions: Partial<Record<VisionRegion, readonly number[]>>): LookConstraint[];
 }
 
 /** How much softer or punchier the contrast intents make the 10–90 spread. */
@@ -67,6 +79,24 @@ export const INTENTS: readonly IntentDef[] = [
     controls: ['contrast'],
     constraints: (look) => [{ at: 'spread', min: constrained(look, 'spread') * (1 + CONTRAST_STEP) }],
   },
+  {
+    id: 'save-the-sky',
+    label: 'Save the sky',
+    controls: ['highlights', 'whites'],
+    regions: ['sky'],
+    // The sky's bright end under the photographer's typical highlights: detail kept in the clouds.
+    constraints: (_, t, r) => (r.sky ? [{ region: 'sky', at: at(0.95), max: Math.min(r.sky[at(0.95)]!, t.highlightCap) }] : []),
+  },
+  {
+    id: 'lift-the-subject',
+    label: 'Lift the subject',
+    controls: ['shadows', 'exposure'],
+    regions: ['subject'],
+    // The subject's midtones no darker than the low edge of the photographer's
+    // exposure band. The band's middle was tried first and asked +1.3 EV of
+    // ordinary indoor portraits.
+    constraints: (_, t, r) => (r.subject ? [{ region: 'subject', at: at(0.5), min: Math.max(r.subject[at(0.5)]!, t.midLow) }] : []),
+  },
 ];
 
 /** Pairs that ask for opposite things; asking for both is a mistake, not a compromise. */
@@ -105,13 +135,16 @@ export function applyIntents(
   intents: readonly IntentDef[],
   thresholds: IntentThresholds = DEFAULT_THRESHOLDS,
   strength = 1,
+  regions: Partial<Record<VisionRegion, LumaHistogram>> = {},
 ): Record<string, number> {
   if (!intents.length || strength <= 0) return develop;
   const prior = toneFromDevelop(develop);
   const look = lookOf(hist, prior);
-  const constraints = intents.flatMap((i) => i.constraints(look, thresholds));
+  const regionLooks = Object.fromEntries(Object.entries(regions).map(([k, h]) => [k, lookOf(h!, prior)]));
+  const constraints = intents.flatMap((i) => i.constraints(look, thresholds, regionLooks));
+  if (!constraints.length) return develop;
   const free = [...new Set(intents.flatMap((i) => i.controls))];
-  const solved = meetConstraints(hist, constraints, prior, free);
+  const solved = meetConstraints(hist, constraints, prior, free, undefined, regions as Record<string, LumaHistogram>);
   if (solved === prior) return develop;
   const before = toneToDevelop(prior);
   const full = toneToDevelop(solved);
@@ -120,7 +153,8 @@ export function applyIntents(
   // Only what the solver moved is written, rounded to the editor's own steps
   // (hundredths of EV, whole slider units); the rest keeps the prediction's value.
   for (const k of TONE_KEYS) {
-    if (tone[k] === before[k]) continue;
+    // Below half an editor step the solver only jittered; writing it would round the prediction.
+    if (Math.abs(tone[k] - before[k]) < (k === 'Exposure2012' ? 0.005 : 0.5)) continue;
     out[k] = k === 'Exposure2012' ? Math.round(tone[k] * 100) / 100 : Math.round(tone[k]);
   }
   return out;

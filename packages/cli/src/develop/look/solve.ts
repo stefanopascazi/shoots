@@ -64,6 +64,8 @@ export function solveTone(h: LumaHistogram, target: readonly number[], opts: Sol
  */
 export interface LookConstraint {
   at: number | 'spread';
+  /** A named region's histogram instead of the whole frame's (see meetConstraints' `regions`). */
+  region?: string;
   min?: number;
   max?: number;
 }
@@ -76,11 +78,21 @@ export function constrained(look: readonly number[], at: LookConstraint['at']): 
   return at === 'spread' ? look[P90]! - look[P10]! : look[at]!;
 }
 
-/** How far a look is outside its bounds, in squared code values (0 when inside). */
-export function violation(look: readonly number[], constraints: readonly LookConstraint[]): number {
+/**
+ * How far a look is outside its bounds, in squared code values (0 when inside).
+ * A constraint on a region reads that region's look from `regionLooks`, and is
+ * skipped when the region has none.
+ */
+export function violation(
+  look: readonly number[],
+  constraints: readonly LookConstraint[],
+  regionLooks: Readonly<Record<string, readonly number[]>> = {},
+): number {
   let v = 0;
   for (const c of constraints) {
-    const x = constrained(look, c.at);
+    const source = c.region ? regionLooks[c.region] : look;
+    if (!source) continue;
+    const x = constrained(source, c.at);
     if (c.max !== undefined && x > c.max) v += ((x - c.max) * 255) ** 2;
     if (c.min !== undefined && x < c.min) v += ((c.min - x) * 255) ** 2;
   }
@@ -105,11 +117,14 @@ export function meetConstraints(
   prior: Tone,
   free: readonly ToneControl[] = KEYS,
   stiffness = 25,
+  regions: Readonly<Record<string, LumaHistogram>> = {},
 ): Tone {
-  if (!constraints.length || !free.length || violation(lookOf(h, prior), constraints) === 0) return prior;
+  const looks = (t: Tone): Record<string, number[]> =>
+    Object.fromEntries(Object.entries(regions).map(([k, rh]) => [k, lookOf(rh, t)]));
+  if (!constraints.length || !free.length || violation(lookOf(h, prior), constraints, looks(prior)) === 0) return prior;
   // A full-range slider move costs as much as a 5-code-value miss: bounds win,
   // but a bound that cannot be met does not drag every slider to its end stop.
-  const cost = (t: Tone): number => violation(lookOf(h, t), constraints) + stiffness * penalty(t, prior);
+  const cost = (t: Tone): number => violation(lookOf(h, t), constraints, looks(t)) + stiffness * penalty(t, prior);
   return minimise(cost, prior, free);
 }
 

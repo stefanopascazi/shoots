@@ -228,6 +228,8 @@ any style — an intent is an explicit instruction and outranks what was learned
 | `keep-shadows-deep` | 5th percentile as deep as your deeper third | Shadows, Blacks |
 | `soft-contrast` | 10–90 spread 10 % narrower than predicted | Contrast |
 | `punchy-contrast` | 10–90 spread 10 % wider than predicted | Contrast |
+| `save-the-sky` | the sky's 95th percentile no brighter than your typical highlights | Highlights, Whites |
+| `lift-the-subject` | the subject's median no darker than the low edge of your band | Shadows, Exposure |
 
 Each bound is read on the look the prediction produces for that photograph, and
 relative to it: a frame that already meets an intent is left alone, one that
@@ -236,6 +238,14 @@ A bound those sliders cannot reach is approached as far as they go. Colour,
 curve and white balance are never touched. Contradictory pairs
 (`open-shadows` + `keep-shadows-deep`, `soft-contrast` + `punchy-contrast`)
 are refused.
+
+The two region intents need to know where the sky and the subject are: they
+read each photograph with the vision model ([`shoots vision`](./vision.md)),
+from its cache when the shoot has been read before, and fetch the model on
+first use. They still move **global** sliders — Lightroom's plug-in interface
+cannot create masks — so "save the sky" is the Highlights and Whites that keep
+the sky's own pixels under the cap. A photograph without a sky, or without a
+person, is left alone by that intent.
 
 Each photograph's RAW is decoded to judge it (about a quarter of a second per
 frame, four at a time), so intents need the RAW developer `shoots setup`

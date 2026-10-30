@@ -140,6 +140,35 @@ export function lumaHistogram(img: LinearImage, wb: readonly [number, number, nu
   return { counts, anchor };
 }
 
+/**
+ * The histogram of one region of a frame — the cells of a coarse mask laid over
+ * the image — judged against the *frame's* white, since the tone controls place
+ * every pixel relative to it. Null when the mask covers no pixel.
+ */
+export function regionHistogram(
+  img: LinearImage,
+  wb: readonly [number, number, number],
+  mask: Uint8Array,
+  grid: number,
+  anchor: number,
+): LumaHistogram | null {
+  const counts = new Float64Array(BINS);
+  let n = 0;
+  for (let y = 0; y < img.height; y++) {
+    const row = Math.min(grid - 1, Math.floor((y / img.height) * grid)) * grid;
+    for (let x = 0; x < img.width; x++) {
+      if (!mask[row + Math.min(grid - 1, Math.floor((x / img.width) * grid))]) continue;
+      const i = (y * img.width + x) * 3;
+      const v = (LUMA[0] * img.data[i]! * wb[0] + LUMA[1] * img.data[i + 1]! * wb[1] + LUMA[2] * img.data[i + 2]! * wb[2]) / 65535;
+      counts[binOf(Math.log2(Math.max(v, 1e-7)))]! += 1;
+      n++;
+    }
+  }
+  if (!n) return null;
+  for (let b = 0; b < BINS; b++) counts[b] = counts[b]! / n;
+  return { counts, anchor };
+}
+
 /** Where the look is read: display-value percentiles, shadows to highlights. */
 export const LOOK_PERCENTILES = [0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99] as const;
 
