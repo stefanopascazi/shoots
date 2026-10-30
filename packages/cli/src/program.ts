@@ -14,6 +14,7 @@ import { registerExifCommand } from './commands/exif.js';
 import { registerCullCommand } from './commands/cull.js';
 import { registerRateCommand } from './commands/rate.js';
 import { registerTriageCommand } from './commands/triage.js';
+import { registerVisionCommand } from './commands/vision.js';
 import { registerEmbeddingsCommand } from './commands/embeddings.js';
 import { registerMatchCommand } from './commands/match.js';
 import { registerDevelopCommand } from './commands/develop.js';
@@ -47,6 +48,7 @@ export function buildProgram(): Command {
   registerRateCommand(program);
   registerTriageCommand(program);
   registerEmbeddingsCommand(program);
+  registerVisionCommand(program);
   registerMatchCommand(program);
   registerDevelopCommand(program);
   registerPipelineCommand(program);

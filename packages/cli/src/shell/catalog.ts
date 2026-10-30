@@ -49,6 +49,11 @@ export const COMMANDS: CommandSpec[] = [
     usage: '/embeddings <path> [--out <dir>] [--previews auto|always|never] [--preview-size 1024] [--preview-quality 82] [--json]',
   },
   {
+    name: 'vision',
+    summary: 'Read each photograph with the vision model (caption, objects, sky, subject) for keywords and region intents',
+    usage: '/vision <path> [--no-cache] [--json]',
+  },
+  {
     name: 'match',
     summary: 'Learn your eye from pairwise duels → a rating profile that generalizes it',
     usage:

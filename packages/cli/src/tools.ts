@@ -7,7 +7,7 @@
  * caller can abort cleanly. The same download UX is used by `shoots setup`.
  */
 import { ensureExiftool, ensureLibraw, LibrawMirrorNotConfiguredError } from '@shoots/imaging';
-import { ensureClipModel, ModelMirrorNotConfiguredError } from '@shoots/inference';
+import { ensureClipModel, ensureFlorenceModel, ModelMirrorNotConfiguredError } from '@shoots/inference';
 import { logError, logWarn, markFailure, type CliIo } from './io.js';
 import { emitProgress } from './progressChannel.js';
 
@@ -116,5 +116,25 @@ export async function ensureClipModelReady(io: CliIo): Promise<boolean> {
     }
     markFailure();
     return false;
+  }
+}
+
+/**
+ * The vision model's install dir, provisioning it on first use (630 MB, once).
+ * Null, with the error reported, when it cannot be had.
+ */
+export async function ensureVisionModelReady(io: CliIo): Promise<string | null> {
+  try {
+    return (await ensureFlorenceModel(mirrorProgress(io))).installDir;
+  } catch (err) {
+    logError(
+      err instanceof ModelMirrorNotConfiguredError
+        ? `vision model not available: ${err.message}`
+        : err instanceof Error
+          ? err.message
+          : String(err),
+    );
+    markFailure();
+    return null;
   }
 }

@@ -13,6 +13,7 @@ shoots setup [options]
 
 | Option | Description |
 | --- | --- |
+| `--vision` | Also fetch the vision model (630 MB) behind keywords and region intents |
 | `--json` | Machine-readable JSON on stdout |
 | `--verbose` | Verbose logging on stderr |
 
@@ -25,6 +26,7 @@ shoots setup [options]
 | **exiftool** | `~/.shoots/bin/exiftool/<version>/` | `exif`, `rename`, `cull` (RAW), `rate --write-xmp`, `embeddings`, `develop export` |
 | **LibRaw** (`dcraw_emu`) | `~/.shoots/bin/libraw/<version>/` | Anything on `--baseline external` — which is the **default** for `develop init` and `develop edit` |
 | **CLIP model** (ONNX int8) | `~/.shoots/models/clip/<version>/` | `rate`, `embeddings`, `develop export` |
+| **Vision model** (Florence-2, MIT), only with `--vision` | `~/.shoots/models/florence/<version>/` | `vision`; fetched on first use otherwise |
 
 Each archive is downloaded from a mirror on GitHub Releases and verified against a
 **SHA-256 pinned in the binary** — not supplied by the mirror. A corrupt or

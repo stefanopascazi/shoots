@@ -28,6 +28,7 @@ so scripts are unaffected.
 | Command | Purpose |
 | --- | --- |
 | [`embeddings`](./embeddings.md) | Export profile-neutral CLIP embeddings for preference-learning tools |
+| [`vision`](./vision.md) | Read each photograph with the vision model: caption, objects, sky and subject |
 | [`match`](./match.md) | Learn your eye from pairwise duels: `import` → `serve` → `train` a rating profile |
 | [`develop`](./develop.md) | Personal develop-setting predictor: `init` → `edit` → `refine`, plus the steps underneath (`export`, `train`, `predict`, `feedback`, `learn`, `calibrate`, `diagnose`) |
 
@@ -106,6 +107,7 @@ shoots triage apply <path> [--editor acr|rapidraw] [--redo] [--dry-run] [--json]
 shoots triage clean [--orphans] [--dry-run] [--json]
 
 # ── ML tooling ────────────────────────────────────────────────────────────────
+shoots vision <path> [--no-cache] [--json]
 shoots embeddings <path> [--out <dir>] [--previews auto|always|never]
                          [--preview-size 1024] [--preview-quality 82]
                          [--concurrency 4] [--json]
