@@ -91,3 +91,4 @@
 {"date":"2026-11-05","repo":"stefanopascazi/shoots","latestTag":"v0.7.4","commandRuns":27,"scripts":{"install.sh":25,"install.ps1":2},"attempts":81,"binaries":{"darwin-arm64":41,"linux-arm64":38,"linux-x64":44,"windows-x64":85},"installs":208}
 {"date":"2026-11-06","repo":"stefanopascazi/shoots","latestTag":"v0.7.4","commandRuns":28,"scripts":{"install.sh":25,"install.ps1":3},"attempts":82,"binaries":{"darwin-arm64":41,"linux-arm64":38,"linux-x64":45,"windows-x64":86},"installs":210}
 {"date":"2026-11-07","repo":"stefanopascazi/shoots","latestTag":"v0.7.4","commandRuns":29,"scripts":{"install.sh":26,"install.ps1":3},"attempts":82,"binaries":{"darwin-arm64":42,"linux-arm64":38,"linux-x64":45,"windows-x64":87},"installs":212}
+{"date":"2026-11-08","repo":"stefanopascazi/shoots","latestTag":"v0.7.4","commandRuns":29,"scripts":{"install.sh":26,"install.ps1":3},"attempts":82,"binaries":{"darwin-arm64":42,"linux-arm64":39,"linux-x64":45,"windows-x64":87},"installs":213}
